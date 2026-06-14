@@ -1,0 +1,14 @@
+{
+  "name": "mente-apex",
+  "owner": {
+    "name": "Boris Vujicic"
+  },
+  "description": "Mente Apex private business utilities — client onboarding, proposals, invoices.",
+  "plugins": [
+    {
+      "name": "mente-apex",
+      "source": "./",
+      "description": "Client onboarding (HubSpot + folder), branded proposal generator, and invoice/contract generator for Mente Apex."
+    }
+  ]
+}
