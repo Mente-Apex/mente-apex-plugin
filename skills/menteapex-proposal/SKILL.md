@@ -1,7 +1,7 @@
 ---
 name: menteapex-proposal
 description: >
-  Generate a branded Mente Apex proposal (HTML + PDF) for a client engagement.
+  Generate a branded Mente Apex proposal PDF for a client engagement.
   Follows brand-book conventions: navy cover, Cormorant + DM Sans, gold-dot system.
   Use whenever the user says "generate a proposal", "write a proposal", "create a
   proposal for <client>", "proposal from brief", or "/proposal".
@@ -69,32 +69,51 @@ Copy `fonts.css` from the Tomislav reference into `Customers/<ClientName>/docs/f
 
 ## Step 4 — Generate PDF
 
-Run:
+The HTML is an intermediate asset. The deliverable is the PDF.
+
+First, embed fonts so the PDF renders correctly without a network connection:
 
 ```bash
-cd /Users/ai/Documents/Business/Customers/<ClientName>/docs/
-python embed_fonts.py proposal.html > proposal-embedded.html 2>/dev/null || echo "embed_fonts not available"
+DOCS=/Users/ai/Documents/Business/Customers/<ClientName>/docs
+
+# Copy embed_fonts.py from reference if not present
+[ -f "$DOCS/embed_fonts.py" ] || cp /Users/ai/Documents/Business/Customers/Tomislav/docs/embed_fonts.py "$DOCS/"
+
+# Embed fonts into a self-contained HTML
+python3 "$DOCS/embed_fonts.py" "$DOCS/proposal.html" > "$DOCS/proposal-print.html"
 ```
 
-If `embed_fonts.py` doesn't exist yet, copy it from the Tomislav reference:
+Then render to PDF via Chrome headless:
 
 ```bash
-cp /Users/ai/Documents/Business/Customers/Tomislav/docs/embed_fonts.py \
-   /Users/ai/Documents/Business/Customers/<ClientName>/docs/
+PDF_NAME="Mente-Apex-Proposal-<ClientName>-$(date +%Y-%m-%d).pdf"
+PDF_PATH="$DOCS/$PDF_NAME"
+
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless=new \
+  --run-all-compositor-stages-before-draw \
+  --print-to-pdf="$PDF_PATH" \
+  --print-to-pdf-no-header \
+  --no-pdf-header-footer \
+  "file://$DOCS/proposal-print.html" 2>/dev/null
+
+echo "PDF: $PDF_PATH"
 ```
 
-Then open in browser for PDF export:
-
+If Chrome is not at that path, try:
 ```bash
-open /Users/ai/Documents/Business/Customers/<ClientName>/docs/proposal.html
+which google-chrome-stable || which chromium || ls /Applications/ | grep -i chrome
 ```
+and adjust accordingly.
 
-Tell the user: "Open the file in Chrome/Safari → File → Print → Save as PDF. Name it
-`Mente-Apex-Proposal-<ClientName>-<YYYY-MM-DD>.pdf`."
+Verify the PDF exists and has a non-zero size:
+```bash
+ls -lh "$PDF_PATH"
+```
 
 ---
 
 ## Step 5 — Confirm
 
-Report: file path of the HTML, PDF instructions, any sections that need user input
-before it's client-ready.
+Report the full PDF path. That is the deliverable — hand it to the user directly.
+Note any sections that still need review before sending to the client.
