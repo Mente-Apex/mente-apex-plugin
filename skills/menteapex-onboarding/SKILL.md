@@ -1,5 +1,5 @@
 ---
-name: onboarding
+name: menteapex-onboarding
 description: >
   Onboard a new Mente Apex client end-to-end: collect their details, create a
   HubSpot contact + company, create the Customers/<Name>/ folder with the

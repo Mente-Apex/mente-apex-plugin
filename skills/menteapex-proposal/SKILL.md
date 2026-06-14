@@ -1,5 +1,5 @@
 ---
-name: proposal
+name: menteapex-proposal
 description: >
   Generate a branded Mente Apex proposal (HTML + PDF) for a client engagement.
   Follows brand-book conventions: navy cover, Cormorant + DM Sans, gold-dot system.

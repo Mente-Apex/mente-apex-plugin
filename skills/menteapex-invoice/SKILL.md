@@ -1,5 +1,5 @@
 ---
-name: invoice
+name: menteapex-invoice
 description: >
   Generate a branded Mente Apex invoice or contract (HTML + PDF) for a client.
   Follows brand-book conventions. Use whenever the user says "create an invoice",
