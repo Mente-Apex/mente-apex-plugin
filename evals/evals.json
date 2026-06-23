@@ -1,0 +1,100 @@
+{
+  "skill_name": "open-memory",
+  "evals": [
+    {
+      "id": 1,
+      "skill": "memory-setup",
+      "prompt": "I want to set up open-memory for the first time. I have a private GitHub repo at git@github.com:bvu/open-memory.git ready to go.",
+      "expected_output": "Checks dependencies (git, python3), shows current local brain inventory, warns about private repo requirement, exports local snapshot, pushes to remote, confirms machine ID and network setup.",
+      "assertions": [
+        "Runs python3 brain.py machine-id to get a stable machine ID",
+        "Runs python3 brain.py export to snapshot local state",
+        "Does NOT hardcode /Users/bvu — uses $HOME or ~ everywhere",
+        "Uses git push to the provided remote URL",
+        "Saves open-memory-config.json with remote and last_sync fields",
+        "Confirms success with machine ID and next steps"
+      ]
+    },
+    {
+      "id": 2,
+      "skill": "memory-setup",
+      "prompt": "I'm on my home desktop and I want to join the open-memory network I set up on my work laptop. The remote is git@github.com:bvu/open-memory.git.",
+      "expected_output": "Detects remote already has content, backs up local state, clones repo, asks merge strategy, applies chosen merge, registers this machine, pushes.",
+      "assertions": [
+        "Creates a backup of local state before modifying anything",
+        "Uses git clone (or pull if repo dir exists) to get remote content",
+        "Asks the user for merge strategy (merge / keep mine / take theirs)",
+        "Runs python3 brain.py merge when 'merge' is chosen",
+        "Runs python3 brain.py import to apply the result",
+        "Pushes the new machine snapshot to remote"
+      ]
+    },
+    {
+      "id": 3,
+      "skill": "memory-sync",
+      "prompt": "sync my memory",
+      "expected_output": "Full sync cycle: exports local state, pushes, pulls, merges all machine snapshots into consolidated brain, applies locally, shows summary of what changed.",
+      "assertions": [
+        "Checks for open-memory-config.json and exits clearly if missing",
+        "Runs python3 brain.py export before pushing",
+        "Runs git pull to get remote changes",
+        "Runs python3 brain.py merge for each remote machine snapshot",
+        "Runs python3 brain.py import to apply the merged result",
+        "Updates last_sync in config using Python (not sed)",
+        "Shows a clear summary: pushed N changes, pulled N commits, N files updated"
+      ]
+    },
+    {
+      "id": 4,
+      "skill": "memory-sync",
+      "prompt": "I think my memory is out of sync — my work laptop has different rules than my home machine",
+      "expected_output": "Same full sync as above, but if conflicting files are detected, surfaces them clearly in conversation and asks the user to resolve before continuing.",
+      "assertions": [
+        "Proceeds with sync even when triggered by a problem description",
+        "If merge produces conflict markers, shows them inline in the conversation",
+        "Asks user to choose resolution (A / B / custom) per conflict",
+        "Applies chosen resolution before committing consolidated brain"
+      ]
+    },
+    {
+      "id": 5,
+      "skill": "memory-manage",
+      "prompt": "Show me what's in my memory network",
+      "expected_output": "Runs brain.py status, lists all machines in the repo with their last snapshot timestamps, shows last 5 syncs from sync-log.json.",
+      "assertions": [
+        "Runs python3 brain.py status for local inventory",
+        "Lists machines from open-memory-repo/machines/*.json",
+        "Shows machine IDs and timestamps, not just file names",
+        "Shows recent sync history from meta/sync-log.json if it exists"
+      ]
+    },
+    {
+      "id": 6,
+      "skill": "memory-manage",
+      "prompt": "I keep telling Claude the same coding principles every session — can you promote them to be permanent?",
+      "expected_output": "Runs brain.py promote, parses suggestions, presents each one with type/reason/content, asks accept/skip/edit per suggestion, writes accepted ones to CLAUDE.md or rules/ using Python.",
+      "assertions": [
+        "Runs python3 brain.py promote",
+        "Presents each suggestion clearly with its reason",
+        "Does NOT write to CLAUDE.md without user confirmation",
+        "Uses Python file write (not echo >> or sed) to append to CLAUDE.md",
+        "Creates rule files in ~/.claude/rules/ for rule-type promotions",
+        "Offers to run /memory-sync after promotion is complete"
+      ]
+    },
+    {
+      "id": 7,
+      "skill": "memory-manage",
+      "prompt": "Share my refactor skill with the rest of my machines",
+      "expected_output": "Looks up ~/.claude/skills/refactor, shows a preview, asks for confirmation, copies to repo shared/skills/, commits and pushes.",
+      "assertions": [
+        "Resolves the skill path as ~/.claude/skills/refactor",
+        "Shows a preview of the skill content before sharing",
+        "Asks for user confirmation before copying",
+        "Copies to open-memory-repo/shared/skills/",
+        "Commits with a descriptive message including machine ID",
+        "Confirms whether push succeeded or suggests /memory-sync as fallback"
+      ]
+    }
+  ]
+}
