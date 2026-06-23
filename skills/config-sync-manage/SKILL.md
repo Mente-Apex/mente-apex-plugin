@@ -1,42 +1,46 @@
 ---
-name: memory-manage
+name: config-sync-manage
 description: >
-  This skill should be used when the user wants to inspect their memory network,
-  promote accumulated memory notes into permanent rules or CLAUDE.md, share a
+  This skill should be used when the user wants to inspect their config-sync repo,
+  promote accumulated session notes into permanent rules or CLAUDE.md, share a
   skill or rule with other machines, or see sync history. Trigger phrases include:
-  "memory status", "what's in my brain", "promote my memory", "share this skill",
-  "share this rule", "how many machines", "what did I sync recently", "/memory-manage",
-  "memory manage", "manage my memory".
+  "config sync status", "promote my notes to rules", "share this skill",
+  "share this rule", "how many machines", "what did I sync recently",
+  "/config-sync-manage", "manage config sync".
 user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
-# memory-manage
+# config-sync-manage
 
-Everything except setup and sync. Three sub-actions — detect what the user wants
-and jump to the right section.
+Everything except setup and sync, for **Claude config sync**. Three sub-actions —
+detect what the user wants and jump to the right section.
+
+> **Not the knowledge brain.** This manages the *config-sync* repo (CLAUDE.md, rules,
+> skills, agents, memory files synced across machines). For capturing/recalling facts
+> use **Mente Apex memory** (the `mem` CLI / the `mente-apex-memory` MCP server) — a different system.
 
 | User intent | Section |
 |---|---|
 | "show me status / what's synced / how many machines" | → Status |
-| "promote memory / graduate notes to rules / evolve" | → Promote |
+| "promote notes / graduate notes to rules / evolve" | → Promote |
 | "share a skill / share a rule / share an agent" | → Share |
 
 ---
 
 ## Status
 
-Show a clear picture of the network and local brain state.
+Show a clear picture of the network and local config-sync state.
 
 ```bash
-BRAIN_PY="${CLAUDE_PLUGIN_ROOT}/scripts/brain.py"
-REPO="$HOME/.claude/open-memory-repo"
+ENGINE="${CLAUDE_PLUGIN_ROOT}/scripts/config_sync.py"
+REPO="$HOME/.claude/config-sync-repo"
 
 # Local inventory
-python3 "$BRAIN_PY" status
+python3 "$ENGINE" status
 
 # Network: list all machines in the repo
 if [ -d "$REPO/machines" ]; then
@@ -79,7 +83,7 @@ for type_dir in sorted(shared.iterdir()):
             date = parts[1] if len(parts) > 1 else "unknown"
             print(f"  {str(rel):<40}  shared by {author} on {date}")
 if not found:
-    print("  (none yet — use /memory-manage share to add)")
+    print("  (none yet — use /config-sync-manage share to add)")
 EOF
 fi
 
@@ -105,7 +109,7 @@ fi
 ```
 
 Present the output cleanly. If the repo doesn't exist yet, remind the user to run
-`/memory-setup` first.
+`/config-sync-setup` first.
 
 If the user asks for the **full** log (e.g. "show all my syncs"), read the complete
 `sync-log.json` and paginate or show all entries without the `-10` limit.
@@ -121,9 +125,9 @@ every session, a pattern gets written once into CLAUDE.md or a rules file and is
 always in context from then on.
 
 ```bash
-BRAIN_PY="${CLAUDE_PLUGIN_ROOT}/scripts/brain.py"
+ENGINE="${CLAUDE_PLUGIN_ROOT}/scripts/config_sync.py"
 echo "Analysing memory for promotion candidates..."
-python3 "$BRAIN_PY" promote
+python3 "$ENGINE" promote
 ```
 
 Parse the JSON output (`{"suggestions": [...]}`).
@@ -183,7 +187,7 @@ For "Edit": show the content in the conversation, let the user type their revise
 version, then apply that instead.
 
 After handling all suggestions, offer to sync the changes: "Promotion complete.
-Run `/memory-sync` to push these permanent rules to your other machines."
+Run `/config-sync` to push these permanent rules to your other machines."
 
 ---
 
@@ -194,7 +198,7 @@ other machines in the network receive it on their next sync.
 
 Ask the user what they want to share if not already specified:
 - Type: skill / agent / rule / plugin
-- Name: the filename or plugin key (e.g. `refactor`, `code-reviewer.md`, `python-style.md`, `open-memory@open-memory`)
+- Name: the filename or plugin key (e.g. `refactor`, `code-reviewer.md`, `python-style.md`, `mente-apex@mente-apex`)
 
 For `plugin`, list what is available from `installed_plugins.json` if the user hasn't specified:
 
@@ -221,8 +225,8 @@ EOF
 ```
 
 ```bash
-BRAIN_PY="${CLAUDE_PLUGIN_ROOT}/scripts/brain.py"
-REPO="$HOME/.claude/open-memory-repo"
+ENGINE="${CLAUDE_PLUGIN_ROOT}/scripts/config_sync.py"
+REPO="$HOME/.claude/config-sync-repo"
 CLAUDE_DIR="$HOME/.claude"
 
 TYPE="<skill|agent|rule|plugin>"
@@ -234,7 +238,7 @@ case "$TYPE" in
   agent)   SRC="$CLAUDE_DIR/agents/$NAME" ;;
   rule)    SRC="$CLAUDE_DIR/rules/$NAME" ;;
   plugin)
-    # NAME is a plugin key like "open-memory@open-memory"
+    # NAME is a plugin key like "mente-apex@mente-apex"
     SRC=$(python3 - "$NAME" <<'EOF'
 import json, sys
 from pathlib import Path
@@ -323,8 +327,20 @@ fi
 
 cd "$REPO"
 git add shared/
-git commit -m "share: $TYPE/$NAME from $(python3 "$BRAIN_PY" machine-id)"
+git commit -m "share: $TYPE/$NAME from $(python3 "$ENGINE" machine-id)"
 git push origin main 2>&1 && \
   echo "✓ $TYPE '$NAME' shared — other machines will receive it on next sync." || \
-  echo "⚠ Shared locally but push failed. Run /memory-sync to retry."
+  echo "⚠ Shared locally but push failed. Run /config-sync to retry."
 ```
+
+---
+
+## A note on deletions
+
+Config sync is **union-only** — it has no deletion tombstones. Promoting and sharing
+*add* content that propagates; **deleting** does not. A memory, rule, or shared
+artifact you remove on one machine is resurrected from another machine's snapshot
+(and from `consolidated/snapshot.json`) on the next sync. To remove something
+everywhere: delete it on **every** machine **and** from `consolidated/snapshot.json`
++ each `machines/*.json`, then re-push.
+

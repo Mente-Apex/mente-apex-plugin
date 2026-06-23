@@ -1,7 +1,7 @@
 {
   "name": "mente-apex",
-  "version": "0.2.0",
-  "description": "Mente Apex private utilities — client onboarding, branded proposals and invoices, plus cross-agent memory sync (the brain) across machines via Git.",
+  "version": "0.3.0",
+  "description": "Mente Apex private utilities — client onboarding, branded proposals and invoices, plus Claude config sync across machines via Git.",
   "author": {
     "name": "Boris Vujicic"
   },
@@ -11,9 +11,8 @@
     "onboarding",
     "proposal",
     "invoice",
-    "memory",
+    "config-sync",
     "sync",
-    "brain",
     "git"
   ]
 }
