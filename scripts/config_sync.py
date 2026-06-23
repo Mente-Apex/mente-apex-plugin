@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 """
-open-memory brain.py — cross-platform core for memory sync.
+config_sync.py — cross-platform core for Claude config sync.
+
+Syncs your ~/.claude config files (CLAUDE.md, rules/, skills/, agents/,
+memory/ files, settings.json) across machines via a private Git repo.
+This is NOT the knowledge brain — for capturing/recalling facts use the
+`mem` CLI / the mente-apex-memory MCP server (/memory).
 
 All file manipulation lives here so that SKILL.md files stay clean
 and nothing breaks across macOS (BSD) vs Linux (GNU) environments.
 
 Usage:
-  python3 brain.py export               -> print JSON snapshot to stdout
-  python3 brain.py import <snapshot>    -> apply snapshot to local Claude state
-  python3 brain.py backup               -> save timestamped backup, print path
-  python3 brain.py status               -> print human-readable inventory
-  python3 brain.py merge <a> <b>        -> smart-merge two snapshots, print result
-  python3 brain.py apply-shared <repo>  -> install shared artifacts from repo shared/ dir
-  python3 brain.py log-sync <repo> [action] [summary]  -> append sync entry to meta/sync-log.json
-  python3 brain.py scan                 -> check all exportable files for secret-like content, print JSON report
-  python3 brain.py promote              -> analyse memory, print promotion suggestions as JSON
-  python3 brain.py machine-id           -> print or create stable machine ID
-  python3 brain.py clean-settings <f>   -> strip secrets from settings JSON, print cleaned version
+  python3 config_sync.py export               -> print JSON snapshot to stdout
+  python3 config_sync.py import <snapshot>    -> apply snapshot to local Claude state
+  python3 config_sync.py backup               -> save timestamped backup, print path
+  python3 config_sync.py status               -> print human-readable inventory
+  python3 config_sync.py merge <a> <b>        -> smart-merge two snapshots, print result
+  python3 config_sync.py apply-shared <repo>  -> install shared artifacts from repo shared/ dir
+  python3 config_sync.py log-sync <repo> [action] [summary]  -> append sync entry to meta/sync-log.json
+  python3 config_sync.py scan                 -> check all exportable files for secret-like content, print JSON report
+  python3 config_sync.py promote              -> analyse memory, print promotion suggestions as JSON
+  python3 config_sync.py machine-id           -> print or create stable machine ID
+  python3 config_sync.py clean-settings <f>   -> strip secrets from settings JSON, print cleaned version
+  python3 config_sync.py migrate              -> rename legacy open-memory-* paths to config-sync-* (idempotent)
 """
 
 import hashlib
@@ -35,19 +41,19 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 HOME = Path.home()
 CLAUDE_DIR = HOME / ".claude"
-MEMORY_CONFIG = CLAUDE_DIR / "open-memory-config.json"
-MEMORY_REPO = CLAUDE_DIR / "open-memory-repo"
+CONFIG_FILE = CLAUDE_DIR / "config-sync-config.json"
+CONFIG_REPO = CLAUDE_DIR / "config-sync-repo"
 
 # Directories we capture in a snapshot (relative to CLAUDE_DIR)
 SNAPSHOT_DIRS = ["memory", "rules", "skills", "agents"]
 SNAPSHOT_FILES = ["CLAUDE.md", "settings.json", "keybindings.json"]
 
 # Path prefixes (relative to CLAUDE_DIR) never exported or imported.
-# Keeps plugin-system state and sync-repo internals out of brain snapshots.
+# Keeps plugin-system state and sync-repo internals out of snapshots.
 SNAPSHOT_EXCLUDE_PREFIXES = [
     "plugins/",
-    "open-memory-repo/",
-    "open-memory-backups/",
+    "config-sync-repo/",
+    "config-sync-backups/",
 ]
 
 # Patterns that look like secrets — strip values from settings before export
@@ -78,7 +84,7 @@ def _write(path: Path, content: str) -> None:
 
 def _machine_id() -> str:
     """Return a stable ID for this machine, creating one if needed."""
-    id_file = CLAUDE_DIR / "open-memory-machine-id"
+    id_file = CLAUDE_DIR / "config-sync-machine-id"
     if id_file.exists():
         return id_file.read_text().strip()
     import uuid
@@ -266,24 +272,24 @@ def cmd_import(snapshot_path: str):
 
 
 def cmd_status():
-    """Print a human-readable inventory of the local brain state."""
+    """Print a human-readable inventory of the local config-sync state."""
     lines = []
     lines.append(f"Machine : {_machine_id()}")
     lines.append(f"Host    : {platform.node()}")
     lines.append(f"OS      : {platform.system()}")
     lines.append("")
 
-    config_exists = MEMORY_CONFIG.exists()
-    repo_exists = MEMORY_REPO.exists()
-    lines.append(f"open-memory repo : {'✓  ' + str(MEMORY_REPO) if repo_exists else '✗  not initialised'}")
+    config_exists = CONFIG_FILE.exists()
+    repo_exists = CONFIG_REPO.exists()
+    lines.append(f"config-sync repo : {'✓  ' + str(CONFIG_REPO) if repo_exists else '✗  not initialised'}")
 
     if config_exists:
-        cfg = json.loads(_read(MEMORY_CONFIG))
+        cfg = json.loads(_read(CONFIG_FILE))
         lines.append(f"Remote           : {cfg.get('remote', 'unknown')}")
         lines.append(f"Last sync        : {cfg.get('last_sync', 'never')}")
 
     lines.append("")
-    lines.append("── Local brain inventory ──────────────────────────────")
+    lines.append("── Local config inventory ─────────────────────────────")
 
     claude_md = CLAUDE_DIR / "CLAUDE.md"
     lines.append(f"CLAUDE.md  : {'✓ ' + str(len(_read(claude_md).splitlines())) + ' lines' if claude_md.exists() else '✗ missing'}")
@@ -301,7 +307,7 @@ def cmd_status():
 
 def cmd_merge(path_a: str, path_b: str):
     """
-    Smart-merge two brain snapshots.
+    Smart-merge two config snapshots.
 
     Strategy per file:
       - Identical  -> keep as-is
@@ -526,11 +532,11 @@ def _section_union(a: str, b: str) -> str:
 
 def cmd_backup():
     """
-    Export current local brain state to a timestamped backup file.
+    Export current local config state to a timestamped backup file.
     Prints the backup path so the caller can reference it.
     Safe to call before any destructive operation (sync apply, join, etc).
     """
-    backup_dir = CLAUDE_DIR / "open-memory-backups"
+    backup_dir = CLAUDE_DIR / "config-sync-backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     backup_path = backup_dir / f"snapshot-{ts}.json"
@@ -808,6 +814,51 @@ def cmd_clean_settings(path: str):
     print(json.dumps(_clean_settings(raw), indent=2))
 
 
+def cmd_migrate():
+    """
+    Rename legacy open-memory-* paths to config-sync-* (idempotent).
+
+    Handles the rename from the former "open-memory" branding. Only moves a
+    path when the legacy one exists and the new one does not, so it is a no-op
+    on fresh installs and on machines already migrated. Also renames the repo's
+    consolidated/brain.json -> consolidated/snapshot.json and stages it so the
+    rename is committed on the next sync.
+
+    Prints JSON: {"migrated": [...], "skipped": [...]}.
+    """
+    moves = [
+        (CLAUDE_DIR / "open-memory-config.json", CONFIG_FILE),
+        (CLAUDE_DIR / "open-memory-repo", CONFIG_REPO),
+        (CLAUDE_DIR / "open-memory-machine-id", CLAUDE_DIR / "config-sync-machine-id"),
+        (CLAUDE_DIR / "open-memory-backups", CLAUDE_DIR / "config-sync-backups"),
+    ]
+
+    migrated, skipped = [], []
+    for old, new in moves:
+        if old.exists() and not new.exists():
+            new.parent.mkdir(parents=True, exist_ok=True)
+            old.rename(new)
+            migrated.append(f"{old.name} -> {new.name}")
+        elif old.exists() and new.exists():
+            skipped.append(f"{old.name} (both exist — left in place)")
+
+    # Rename the consolidated snapshot inside the repo, if present.
+    old_snap = CONFIG_REPO / "consolidated" / "brain.json"
+    new_snap = CONFIG_REPO / "consolidated" / "snapshot.json"
+    if old_snap.exists() and not new_snap.exists():
+        old_snap.rename(new_snap)
+        migrated.append("consolidated/brain.json -> consolidated/snapshot.json")
+        # Stage the rename so the next sync commits it (best-effort).
+        if (CONFIG_REPO / ".git").exists():
+            try:
+                subprocess.run(["git", "add", "-A"], cwd=CONFIG_REPO,
+                               capture_output=True, text=True, timeout=30)
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+    print(json.dumps({"migrated": migrated, "skipped": skipped}))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -824,13 +875,14 @@ COMMANDS = {
     "promote": (cmd_promote, 0),
     "machine-id": (cmd_machine_id, 0),
     "clean-settings": (cmd_clean_settings, 1),
+    "migrate": (cmd_migrate, 0),
 }
 
 
 def main():
     args = sys.argv[1:]
     if not args or args[0] not in COMMANDS:
-        print(f"Usage: brain.py <command> [args]\nCommands: {', '.join(COMMANDS)}", file=sys.stderr)
+        print(f"Usage: config_sync.py <command> [args]\nCommands: {', '.join(COMMANDS)}", file=sys.stderr)
         sys.exit(1)
 
     cmd_name = args[0]

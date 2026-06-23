@@ -1,6 +1,6 @@
 # mente-apex
 
-Private Claude Code plugin — Mente Apex business utilities **and** cross-agent memory sync (the brain).
+Private Claude Code plugin — Mente Apex business utilities **and** Claude config sync across machines.
 
 ## Skills
 
@@ -12,18 +12,22 @@ Private Claude Code plugin — Mente Apex business utilities **and** cross-agent
 | proposal | `/proposal` | Generate branded proposal HTML/PDF from client brief |
 | invoice | `/invoice` | Generate branded invoice or service contract HTML/PDF |
 
-### Memory sync (the brain)
+### Config sync
 
-Keeps your Claude memory (CLAUDE.md, rules, skills, agents, memory/) in sync across
-machines via a private Git repo, with smart LLM-powered merge when machines diverge.
-Merged in from the former `open-memory` plugin — same engine (`scripts/brain.py`), now
-shipped here.
+Keeps your Claude **config files** (CLAUDE.md, rules, skills, agents, the `memory/`
+files, settings.json) in sync across machines via a private Git repo, with smart
+LLM-powered merge when machines diverge. Engine: `scripts/config_sync.py`.
 
 | Skill | Command | What it does |
 |-------|---------|-------------|
-| memory-setup | `/memory-setup` | First time, or connecting a new machine to your brain repo |
-| memory-sync | `/memory-sync` | Push/pull/merge memory across machines (run whenever you switch) |
-| memory-manage | `/memory-manage` | Status, promote session notes into rules, share artifacts, sync history |
+| config-sync-setup | `/config-sync-setup` | First time, or connecting a new machine to your config-sync repo |
+| config-sync | `/config-sync` | Push/pull/merge config across machines (run whenever you switch) |
+| config-sync-manage | `/config-sync-manage` | Status, promote session notes into rules, share artifacts, sync history |
+
+> **Two different systems, don't confuse them.** *Config sync* (above) moves your
+> `~/.claude` config files between machines. **Mente Apex memory** — the `mem` CLI and
+> the `mente-apex-memory` MCP server — is the knowledge brain that captures and recalls
+> facts and has its own `mem sync`. Config sync is not the brain.
 
 ## Installation
 
@@ -32,14 +36,18 @@ claude plugin marketplace add menteapex/mente-apex-plugin
 claude plugin install mente-apex
 ```
 
-First-time memory setup (creates the `~/.claude/open-memory-repo` sync repo against a
-private Git remote you control):
+First-time config-sync setup (creates the `~/.claude/config-sync-repo` sync repo against
+a private Git remote you control):
 
 ```
-/memory-setup
+/config-sync-setup
 ```
 
-## What memory sync does and doesn't touch
+> Upgrading from the old `open-memory` naming? The first run of `/config-sync-setup` or
+> `/config-sync` auto-migrates your legacy `~/.claude/open-memory-*` paths to
+> `config-sync-*` (idempotent — a no-op once migrated).
+
+## What config sync does and doesn't touch
 
 | Item | Synced |
 |---|---|
@@ -48,8 +56,12 @@ private Git remote you control):
 | OAuth tokens / API keys | ✗ Never |
 | .claude.json | ✗ Never |
 
+**Note:** the merge is union-only — deletions don't propagate. To remove something
+across the network you must delete it on every machine and from the consolidated
+snapshot. See `/config-sync` for details.
+
 ## Requirements
 
 - `HUBSPOT_API_KEY` env var for automated HubSpot record creation (optional — falls back to manual instructions)
 - Brand reference at `Customers/Tomislav/docs/` (fonts.css, proposal.html, embed_fonts.py)
-- `git` + `python3` (standard library only — no pip installs) for the memory skills, plus a private Git repository to hold your brain
+- `git` + `python3` (standard library only — no pip installs) for the config-sync skills, plus a private Git repository to hold your config

@@ -3,13 +3,13 @@
   "owner": {
     "name": "Boris Vujicic"
   },
-  "description": "Mente Apex private utilities — client onboarding, proposals, invoices, plus cross-agent memory sync.",
+  "description": "Mente Apex private utilities — client onboarding, proposals, invoices, plus Claude config sync.",
   "plugins": [
     {
       "name": "mente-apex",
       "source": "./",
-      "version": "0.2.0",
-      "description": "Client onboarding (HubSpot + folder), branded proposals, invoice/contract generator, and cross-agent memory sync (memory-setup / memory-sync / memory-manage) across machines via Git."
+      "version": "0.3.0",
+      "description": "Client onboarding (HubSpot + folder), branded proposals, invoice/contract generator, and Claude config sync (config-sync-setup / config-sync / config-sync-manage) across machines via Git."
     }
   ]
 }
