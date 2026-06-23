@@ -8,9 +8,9 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 
 | Skill | Command | What it does |
 |-------|---------|-------------|
-| onboarding | `/onboarding` | Create HubSpot contact/company/deal + local Customers/ folder + registry entry |
-| proposal | `/proposal` | Generate branded proposal HTML/PDF from client brief |
-| invoice | `/invoice` | Generate branded invoice or service contract HTML/PDF |
+| menteapex-onboarding | `/menteapex-onboarding` | Create HubSpot contact/company/deal + local Customers/ folder + registry entry |
+| menteapex-proposal | `/menteapex-proposal` | Generate branded proposal HTML/PDF from client brief |
+| menteapex-invoice | `/menteapex-invoice` | Generate branded invoice or service contract HTML/PDF |
 
 ### Config sync
 
