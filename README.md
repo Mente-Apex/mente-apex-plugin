@@ -12,6 +12,12 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 | menteapex-proposal | `/menteapex-proposal` | Generate branded proposal HTML/PDF from client brief |
 | menteapex-invoice | `/menteapex-invoice` | Generate branded invoice or service contract HTML/PDF |
 
+### Dev workflow
+
+| Skill | Command | What it does |
+|-------|---------|-------------|
+| clean-code | `/clean-code` | Clean-code standard for the repo — ranked principles (with the places they should bend) that guide Claude when writing code here, and drive read-only reviews with `file:line` + severity when checking a diff or PR |
+
 ### Config sync
 
 Keeps your Claude **config files** (CLAUDE.md, rules, skills, agents, the `memory/`
