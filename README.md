@@ -16,6 +16,7 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 
 | Skill | Command | What it does |
 |-------|---------|-------------|
+| ship | `/ship` | Branch (if on main) → commit (Conventional Commits) → push → open PR, with one confirmation before anything goes public |
 | clean-code | `/clean-code` | Clean-code standard for the repo — ranked principles (with the places they should bend) that guide Claude when writing code here, and drive read-only reviews with `file:line` + severity when checking a diff or PR |
 
 ### Config sync

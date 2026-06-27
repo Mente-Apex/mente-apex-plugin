@@ -8,8 +8,8 @@
     {
       "name": "mente-apex",
       "source": "./",
-      "version": "0.4.0",
-      "description": "Client onboarding (HubSpot + folder), branded proposals, invoice/contract generator, a clean-code review/writing standard (/clean-code), and Claude config sync (config-sync-setup / config-sync / config-sync-manage) across machines via Git."
+      "version": "0.5.0",
+      "description": "Client onboarding (HubSpot + folder), branded proposals, invoice/contract generator, a one-step ship (/ship: branch, commit, push, open PR), a clean-code review/writing standard (/clean-code), and Claude config sync (config-sync-setup / config-sync / config-sync-manage) across machines via Git."
     }
   ]
 }
