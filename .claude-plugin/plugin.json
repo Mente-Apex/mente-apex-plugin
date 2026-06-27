@@ -1,7 +1,7 @@
 {
   "name": "mente-apex",
-  "version": "0.4.0",
-  "description": "Mente Apex private utilities — client onboarding, branded proposals and invoices, a clean-code review/writing standard, plus Claude config sync across machines via Git.",
+  "version": "0.5.0",
+  "description": "Mente Apex private utilities — client onboarding, branded proposals and invoices, a one-step ship (branch/commit/push/PR) workflow, a clean-code review/writing standard, plus Claude config sync across machines via Git.",
   "author": {
     "name": "Boris Vujicic"
   },
@@ -11,6 +11,8 @@
     "onboarding",
     "proposal",
     "invoice",
+    "ship",
+    "pull-request",
     "clean-code",
     "config-sync",
     "sync",
