@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# skill-creator eval workspaces (transient: eval sets, run logs, review HTML)
+skills/*-workspace/
