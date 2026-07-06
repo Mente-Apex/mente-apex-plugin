@@ -20,6 +20,10 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 | clean-code | `/clean-code` | Clean-code standard for the repo — ranked principles (with the places they should bend) that guide Claude when writing code here, and drive read-only reviews with `file:line` + severity when checking a diff or PR |
 | solid | `/solid [path]` | SOLID analysis & guided refactor: analyzer drafts findings → independent reviewer verifies and writes a tiered refactor plan (Critical/Major/Minor) → after human sign-off, an implementer applies recs one at a time with the full test suite run after each change |
 
+> **Convention for code-modifying skills** ([docs/git-convention.md](docs/git-convention.md)):
+> a `<skill>/<slug>` working branch is opened before the first edit, and at the end the
+> skill *offers* — never auto-runs — a commit + PR (typically by handing off to `/ship`).
+
 ### Config sync
 
 Keeps your Claude **config files** (CLAUDE.md, rules, skills, agents, the `memory/`
