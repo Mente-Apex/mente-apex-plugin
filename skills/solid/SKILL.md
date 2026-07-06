@@ -110,6 +110,12 @@ how to proceed:
 
 ## Phase 4 — Apply (tiered hybrid approval)
 
+**Working branch first.** Before any implementer touches a file, follow the
+plugin's git convention (`../../docs/git-convention.md`): on a git repo's
+default branch, create `solid/<short-slug>` and do all apply-phase work there;
+surface a dirty tree before mixing changes into it. This is what lets the
+human review, land, or discard the whole refactor as one unit.
+
 Split the approved recommendations by their **Risk** field:
 
 - **Low/Medium risk** → dispatched to implementers as described below.
@@ -159,6 +165,11 @@ When the implementer yields:
    architect, not a fourth pass. Say so plainly.
 4. **Summarize**: what was applied (rec IDs + diffstat), what failed and why,
    suite status before/after, and what remains in the doc for a future pass.
+5. **Offer to commit and PR — never auto-publish.** Per the git convention,
+   propose a Conventional Commit for the working branch and ask whether to
+   commit and raise a PR (the plugin's `/ship` skill is exactly that flow).
+   "Leave it on the branch" and "discard it" are first-class answers; pushing
+   needs an explicit yes even when the apply phase was pre-authorized.
 
 ## Guardrails
 
@@ -206,3 +217,6 @@ rubric edit beats re-litigating the same judgment call every run.
 - `references/report-template.md` — the exact report format.
 - `agents/analyzer.md`, `agents/reviewer.md`, `agents/implementer.md` — role
   instructions for the three subagents.
+- `../../docs/git-convention.md` — plugin-wide convention for code-modifying
+  skills: working branch before the first edit, offer (never auto-run)
+  commit + PR at the end.
