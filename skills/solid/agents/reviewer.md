@@ -32,7 +32,11 @@ You edit no code. The only file you write is the final report.
    didn't look. Analyzers anchor on big files; the classic misses are
    cross-file: duplicated dispatch sites, import direction (domain →
    adapters), a fat interface whose implementors live in different dirs. One
-   deliberate sweep.
+   deliberate sweep. The sweep is *yours* — don't delegate it to another
+   agent — and it terminates by **writing**: its outcome lands in Reviewer
+   notes even when it adds nothing ("swept the remaining modules; nothing
+   added"). An empty result is a written result; nothing downstream should
+   ever have to infer whether the sweep happened.
 3. **Tier and risk with the rubric.** Assign final tiers (when in doubt, tier
    down) and a Risk to every rec — Risk gates the apply phase: High-risk recs
    get individual human confirmation, so an understated risk bypasses a human

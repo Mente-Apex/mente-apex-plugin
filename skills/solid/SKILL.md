@@ -14,7 +14,7 @@ description: >
   architecture-level refactor plan — even if they don't say the word "SOLID".
 user-invocable: true
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # solid — SOLID analysis & guided refactor
@@ -112,19 +112,35 @@ how to proceed:
 
 Split the approved recommendations by their **Risk** field:
 
-- **Low/Medium risk** → one implementer batch. The implementer applies them one
-  at a time, runs the full suite after each, and self-reverts any rec it can't
-  get green (details in `agents/implementer.md`).
+- **Low/Medium risk** → dispatched to implementers as described below.
 - **High risk** (public API signatures, cross-module moves, anything
   behavior-adjacent) → confirm **each one individually** with the user first:
   show the recommendation and the planned change, get a yes/no, then dispatch.
   A blanket pre-authorization that explicitly includes high-risk items ("apply
   everything, including high-risk") satisfies this.
 
-Give the implementer: the report path, the approved rec IDs, the test command
-and baseline status, and the verification mode chosen in Phase 3. It updates
-each rec's Status and the report's Apply log in place, then yields back a
-structured summary.
+**One implementer per rec** (or per dependent chain), dispatched
+**sequentially**, each with a fresh context. One implementer grinding through
+a long batch spends its shrinking context window on the later recs — the
+widest change gets reasoned about in the dregs. Per-rec contexts also isolate
+failure: a rec that reverts poisons nothing downstream, and blame stays 1:1.
+
+Order the queue first: recs touching the same file form one **chain** (same
+implementer, dependency order — a rec that moves code into a module another
+rec creates runs after it); order chains Critical → Major → Minor. Give each
+implementer: the report path, its rec ID (or chain), the test command and
+baseline status, and the verification mode from Phase 3. It updates Status and
+the Apply log in place and yields a structured summary — read it before
+dispatching the next.
+
+**Parallel option** — for large approvals (roughly 6+ recs across disjoint
+files) independent chains may run concurrently, each in its own git worktree
+(`isolation: worktree`). Two hard rules: recs touching the same file never run
+in parallel, and per-worktree green proves nothing about the combination —
+after merging, run the full suite once on the merged tree yourself. Merged
+suite red → fall back to the sequential contract: revert the merge and re-land
+chains one at a time until blame is attributable. Parallelism is an
+optimization; sequential is the contract.
 
 ## Phase 5 — Final review & loop
 
@@ -157,6 +173,13 @@ When the implementer yields:
   comprehension, and every finding must argue its reader impact.
 - **Never widen scope silently.** Unrelated problems noticed along the way go
   into the report's Reviewer notes or the final summary — not into the diff.
+- **Fan-in at the orchestrator; artifacts always terminal.** Subagents never
+  wait on a file a *peer* subagent is supposed to produce — you collect each
+  agent's result and dispatch the next phase only once the previous phase's
+  artifact exists and parses. Symmetrically, every agent's last act is writing
+  its artifact *even when empty*: "no findings" is a written result, never an
+  absent file. Then absence can only mean the agent died — record the coverage
+  gap loudly and proceed. A silent stall is worse than a reported hole.
 
 ## Evolving this skill
 
