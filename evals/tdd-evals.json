@@ -1,0 +1,37 @@
+{
+  "skill_name": "tdd",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "feature-rate-limiter",
+      "prompt": "I need a rate limiter for our API, in Python. Sliding window — each client id gets max 100 requests per 60-second window. It should be possible to swap out the clock for testing. We use pytest. Build it in this directory.",
+      "expected_output": "A rate limiter class built test-first: tests written one at a time with spec-like names, clock injected as a dependency (not instantiated inside), full pytest suite passing. Autonomous-mode fallback should kick in (no user available to interview) with assumptions stated.",
+      "files": [],
+      "assertions": [
+        "The full pytest suite passes (run with the workspace venv's pytest)",
+        "The rate limiter receives its clock as an injected dependency (constructor or parameter) instead of calling time.time()/monotonic() directly inside the limiter logic",
+        "Tests control time through a fake/stub clock — no time.sleep() appears anywhere in the tests",
+        "Sliding-window behavior is actually specified by the tests: the 101st request inside a window is rejected, and capacity frees up once old requests age out of the 60s window",
+        "Test names read like behavior specifications (describe outcomes, not implementation)",
+        "Work was done on a tdd/<slug> working branch, not directly on main",
+        "The SUMMARY.md shows a test-first chronology (each behavior's test written and seen failing before its implementation) and states the assumptions made instead of asking questions"
+      ]
+    },
+    {
+      "id": 1,
+      "eval_name": "legacy-characterization-csv",
+      "prompt": "This report_generator.py has been running in production since 2023 and has zero tests. I need it to also support CSV output (same data, comma-separated, with a header row) so finance can import it. Please don't break the existing text report — other systems parse it.",
+      "expected_output": "Characterization tests pinning current text-report behavior (including quirks like int truncation and skipped-row counting) are written BEFORE any change; odd behaviors flagged rather than silently fixed; then CSV support added via red-green-refactor without altering existing output.",
+      "files": ["fixtures/legacy-report/report_generator.py"],
+      "assertions": [
+        "Characterization tests pinning the ORIGINAL text-report behavior were written and passing BEFORE report_generator.py was first modified (per SUMMARY.md chronology and test content)",
+        "The characterization tests capture the quirks: integer truncation of totals/averages (not rounding) and the skipped-bad-rows count in the footer",
+        "For identical input records, the final text report output is byte-identical to the original fixture's output (verified by running both)",
+        "CSV output is implemented: comma-separated rows with a header row, importable data matching the report's numbers",
+        "The truncation quirk was flagged to the user as suspicious but NOT silently changed",
+        "The full pytest suite passes (run with the workspace venv's pytest)",
+        "Work was done on a tdd/<slug> working branch, not directly on main"
+      ]
+    }
+  ]
+}
