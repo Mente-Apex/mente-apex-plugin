@@ -19,6 +19,7 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 | ship | `/ship` | Branch (if on main) → commit (Conventional Commits) → push → open PR, with one confirmation before anything goes public |
 | clean-code | `/clean-code` | Clean-code standard for the repo — ranked principles (with the places they should bend) that guide Claude when writing code here, and drive read-only reviews with `file:line` + severity when checking a diff or PR |
 | solid | `/solid [path]` | SOLID analysis & guided refactor: analyzer drafts findings → independent reviewer verifies and writes a tiered refactor plan (Critical/Major/Minor) → after human sign-off, an implementer applies recs one at a time with the full test suite run after each change |
+| tdd | `/tdd` | Test-driven development: strict red-green-refactor (one test at a time) with a requirements interview up front; feature + legacy-code modes (characterization pins before touching untested code), Python/pytest adapter, refactor handoffs to `/clean-code` and `/solid`. Other skills can invoke it programmatically to get code built test-first. Bugs are out of scope (they belong to a debug skill) |
 
 > **Convention for code-modifying skills** ([docs/git-convention.md](docs/git-convention.md)):
 > a `<skill>/<slug>` working branch is opened before the first edit, and at the end the

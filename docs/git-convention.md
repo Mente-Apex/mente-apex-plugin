@@ -1,7 +1,7 @@
 # Plugin convention — skills that modify a codebase
 
 This applies to **every skill in this plugin that edits, creates, or deletes
-files in a user's codebase** (today: `solid`; any future code-modifying skill
+files in a user's codebase** (today: `solid` and `tdd`; any future code-modifying skill
 adopts it by linking this file from its SKILL.md). Report/document generators
 that only add gitignored artifacts are exempt.
 
