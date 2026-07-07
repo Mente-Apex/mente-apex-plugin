@@ -99,6 +99,9 @@ def test_plan_skips_malformed_manifest_without_crashing(tmp_path):
     manifest_dir = repo_dir / "plugins"
     manifest_dir.mkdir(parents=True)
     (manifest_dir / "bad.json").write_text(json.dumps({"marketplaces": None, "plugins": None}))
+    (manifest_dir / "arr.json").write_text(json.dumps([1, 2, 3]))                       # top-level array
+    (manifest_dir / "badval.json").write_text(json.dumps(                               # per-entry non-dict value
+        {"marketplaces": {"official": "not-a-dict"}, "plugins": {}}))
     official = {"source": {"source": "github", "repo": "a/b"}}
     _write_manifest(repo_dir, "m1", marketplaces={"official": official},
                     plugins={"alpha@official": {"marketplace": "official", "name": "alpha", "version": "1.0"}})
