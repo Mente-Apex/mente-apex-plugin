@@ -366,34 +366,9 @@ def cmd_merge(path_a: str, path_b: str):
     snap_a = json.loads(Path(path_a).read_text(encoding="utf-8"))
     snap_b = json.loads(Path(path_b).read_text(encoding="utf-8"))
 
-    files_a = snap_a.get("files", {})
-    files_b = snap_b.get("files", {})
-    all_keys = sorted(set(files_a) | set(files_b))
-
-    merged_files = {}
-    merge_log = []
-
-    for key in all_keys:
-        a = files_a.get(key)
-        b = files_b.get(key)
-
-        if a is None:
-            merged_files[key] = b
-            merge_log.append({"file": key, "strategy": "b-only"})
-        elif b is None:
-            merged_files[key] = a
-            merge_log.append({"file": key, "strategy": "a-only"})
-        elif a == b:
-            merged_files[key] = a
-            merge_log.append({"file": key, "strategy": "identical"})
-        else:
-            # JSON files (settings.json) need deep-merge, not text merge
-            if key.endswith(".json"):
-                merged, strategy = _deep_merge_json(a, b)
-            else:
-                merged, strategy = _smart_merge_text(a, b, context=key)
-            merged_files[key] = merged
-            merge_log.append({"file": key, "strategy": strategy})
+    merged_files, merge_log = _merge_snapshot_files(
+        snap_a.get("files", {}), snap_b.get("files", {})
+    )
 
     result = {
         "machine_id": f"merged-{snap_a['machine_id']}-{snap_b['machine_id']}",
@@ -404,6 +379,81 @@ def cmd_merge(path_a: str, path_b: str):
         "merge_log": merge_log,
     }
     print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _merge_snapshot_files(files_base: dict, files_override: dict) -> tuple:
+    """Merge two snapshots' {path: content} maps into one.
+
+    On conflict the override side wins (scalars), markdown unions by section,
+    JSON deep-merges. Returns (merged_files, merge_log). This is the shared core
+    used by both `cmd_merge` (pairwise CLI) and `cmd_consolidate` (timestamp fold).
+    """
+    all_keys = sorted(set(files_base) | set(files_override))
+    merged_files = {}
+    merge_log = []
+
+    for key in all_keys:
+        base_content = files_base.get(key)
+        override_content = files_override.get(key)
+
+        if base_content is None:
+            merged_files[key] = override_content
+            merge_log.append({"file": key, "strategy": "b-only"})
+        elif override_content is None:
+            merged_files[key] = base_content
+            merge_log.append({"file": key, "strategy": "a-only"})
+        elif base_content == override_content:
+            merged_files[key] = base_content
+            merge_log.append({"file": key, "strategy": "identical"})
+        else:
+            # JSON files (settings.json) need deep-merge, not text merge
+            if key.endswith(".json"):
+                merged, strategy = _deep_merge_json(base_content, override_content)
+            else:
+                merged, strategy = _smart_merge_text(base_content, override_content, context=key)
+            merged_files[key] = merged
+            merge_log.append({"file": key, "strategy": strategy})
+
+    return merged_files, merge_log
+
+
+def cmd_consolidate(repo_path: str):
+    """Fold all machine snapshots (+ existing consolidated) into consolidated/snapshot.json.
+
+    Merge order is ascending `timestamp`, so the most recent snapshot is applied
+    last and its scalars win — recency decides, not filename sort order. Runs the
+    whole fold in-process, replacing the SKILL's predictable-/tmp fold-loop.
+    """
+    repo = Path(repo_path)
+    consolidated_path = repo / "consolidated" / "snapshot.json"
+    machines_dir = repo / "machines"
+
+    snapshots = []
+    if machines_dir.exists():
+        for snapshot_file in sorted(machines_dir.glob("*.json")):
+            snapshots.append(json.loads(snapshot_file.read_text(encoding="utf-8")))
+    snapshots.sort(key=lambda snapshot: snapshot.get("timestamp", ""))
+
+    if consolidated_path.exists():
+        base_files = json.loads(consolidated_path.read_text(encoding="utf-8")).get("files", {})
+    else:
+        base_files = {}
+
+    merge_log = []
+    for snapshot in snapshots:
+        base_files, log = _merge_snapshot_files(base_files, snapshot.get("files", {}))
+        merge_log.extend(log)
+
+    result = {
+        "machine_id": "consolidated",
+        "hostname": "consolidated",
+        "platform": platform.system(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "files": base_files,
+    }
+    consolidated_path.parent.mkdir(parents=True, exist_ok=True)
+    consolidated_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps({"consolidated": str(consolidated_path), "machines": len(snapshots)}))
 
 
 def _deep_merge_json(a: str, b: str) -> tuple:
@@ -937,6 +987,7 @@ COMMANDS = {
     "backup": (cmd_backup, 0),
     "status": (cmd_status, 0),
     "merge": (cmd_merge, 2),
+    "consolidate": (cmd_consolidate, 1),
     "apply-shared": (cmd_apply_shared, 1),
     "log-sync": (cmd_log_sync, None),   # variadic: repo [action] [summary]
     "scan": (cmd_scan, 0),
