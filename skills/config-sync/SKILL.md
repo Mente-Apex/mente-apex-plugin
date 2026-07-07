@@ -83,7 +83,10 @@ echo "$EXPORT_OUT"
 # because their marketplace isn't a shareable git/GitHub remote.
 echo "$EXPORT_OUT" | python3 -c "
 import json, sys
-data = json.load(sys.stdin)
+try:
+    data = json.load(sys.stdin)
+except (json.JSONDecodeError, ValueError):
+    data = {}
 for warning in data.get('marketplace', {}).get('warnings', []):
     print('⚠ ' + warning)
 "
