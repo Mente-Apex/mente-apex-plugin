@@ -54,10 +54,19 @@ class ApplyResult:
 
 
 @runtime_checkable
-class Propagator(Protocol):
+class Exporter(Protocol):
+    """Writes this machine's state into the repo. One reason to change: export format."""
     name: str
 
     def export(self, context: SyncContext) -> ExportResult: ...
+
+
+@runtime_checkable
+class Applier(Protocol):
+    """Idempotently converges LOCAL files from the repo and reports what changed.
+    Plugins deliberately do NOT implement this — their apply mutates external
+    install state and needs consent, so it lives in a separate plan/execute pair."""
+    name: str
 
     def apply(self, context: SyncContext) -> ApplyResult: ...
 
@@ -317,4 +326,9 @@ class SnapshotPropagator:
 def default_propagators() -> list:
     """Composition root — the ordered list injected into run_export/run_apply.
     C2 appends MarketplacePropagator() here (open/closed)."""
+    return [SnapshotPropagator(), ContentBundlePropagator()]
+
+
+def apply_propagators() -> list:
+    """Composition root for the local-file apply sweep (Snapshot + ContentBundle)."""
     return [SnapshotPropagator(), ContentBundlePropagator()]
