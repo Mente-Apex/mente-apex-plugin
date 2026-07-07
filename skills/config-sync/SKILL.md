@@ -16,8 +16,9 @@ metadata:
 # config-sync
 
 The daily sync cycle for your Claude config: export local state → push → pull →
-smart-merge → apply. Plugins are synced too: local plugins are exported to
-`shared/plugins/` so other machines pick them up automatically via `apply-shared`.
+smart-merge → apply. Plugins are synced too: marketplace plugins converge via a
+desired-state manifest — `plugins-plan` proposes marketplace refreshes and
+installs/updates, and nothing is applied until you approve it in Step 4b.
 Conflict resolution happens inline — no separate command needed.
 
 > **Not the knowledge brain.** This syncs your `~/.claude` *config files* across
@@ -230,7 +231,7 @@ Show the user a clean summary:
   Pushed   : <N> local change(s), <N> plugin(s) exported
   Pulled   : <N> remote commit(s)
   Merged   : <list of files that changed>
-  Plugins  : <N> new plugin(s) installed (or "none new")
+  Plugins  : <N> plugin(s) installed/updated via consent (or "none")
   MCP servers: <N> new server(s) added (or "none new")
   Network  : <N> machine(s) in sync
   Last sync: <timestamp>
