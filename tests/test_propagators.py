@@ -124,3 +124,27 @@ def test_apply_rejects_escaping_bundle_name(tmp_path):
 
     assert not (claude_dir.parent / "escaped").exists()
     assert any("escape" in skipped for skipped in result.skipped)
+
+
+def test_resolve_bundle_repo_overwrites_local(tmp_path):
+    claude_dir = tmp_path / "c"
+    repo_dir = tmp_path / "r"
+    (claude_dir / "skills" / "demo").mkdir(parents=True)
+    (claude_dir / "skills" / "demo" / "SKILL.md").write_text("LOCAL")
+    _write_repo_bundle(repo_dir, "skill", "demo", {"SKILL.md": "REPO"}, content_hash="h")
+    context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
+
+    propagators.resolve_bundle(context, "skill", "demo", "repo")
+    assert (claude_dir / "skills" / "demo" / "SKILL.md").read_text() == "REPO"
+
+
+def test_resolve_bundle_local_reexports_into_repo(tmp_path):
+    claude_dir = tmp_path / "c"
+    repo_dir = tmp_path / "r"
+    (claude_dir / "skills" / "demo").mkdir(parents=True)
+    (claude_dir / "skills" / "demo" / "SKILL.md").write_text("LOCAL-NEW")
+    _write_repo_bundle(repo_dir, "skill", "demo", {"SKILL.md": "OLD"}, content_hash="old")
+    context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
+
+    propagators.resolve_bundle(context, "skill", "demo", "local")
+    assert (repo_dir / "bundles" / "skills" / "demo" / "SKILL.md").read_text() == "LOCAL-NEW"

@@ -65,6 +65,28 @@ def run_apply(context: SyncContext, propagators: list) -> list:
     return [propagator.apply(context) for propagator in propagators]
 
 
+def resolve_bundle(context: SyncContext, kind: str, name: str, winner: str) -> None:
+    """Perform a prompted bundle-conflict resolution.
+
+    winner="repo"  -> overwrite the local skill/agent from the repo bundle.
+    winner="local" -> re-export the local entry into the repo bundle (local wins).
+    """
+    propagator = ContentBundlePropagator()
+    if winner == "repo":
+        bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
+        manifest = _read_manifest(bundle_dir)
+        destination = propagator._local_entry_path(context, kind, name, manifest.get("is_dir", True))
+        propagator._install(bundle_dir, destination, manifest)
+    elif winner == "local":
+        entry = context.claude_dir / BUNDLE_KINDS[kind] / name
+        payload = _payload_files(entry)
+        bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
+        propagator._write_bundle(bundle_dir, payload, kind, name, entry.is_dir(),
+                                 _content_hash(payload), context)
+    else:
+        raise ValueError(f"winner must be 'local' or 'repo', got {winner!r}")
+
+
 # ---------------------------------------------------------------------------
 # Bundle helpers (content-hashed, file-or-dir aware)
 # ---------------------------------------------------------------------------
