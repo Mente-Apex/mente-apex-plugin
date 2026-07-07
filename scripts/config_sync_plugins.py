@@ -252,3 +252,13 @@ def execute_plan(context: propagators.SyncContext, plan: MarketplacePlan,
             outcome = ActionOutcome(action.verb, action.target, ok=False, message="unknown verb")
         result.outcomes.append(outcome)
     return result
+
+
+def export_propagators() -> list:
+    """Composition root for the export sweep: config snapshot, skill/agent
+    bundles, and the marketplace plugin manifest. Open/closed extension point."""
+    return [
+        propagators.SnapshotPropagator(),
+        propagators.ContentBundlePropagator(),
+        MarketplacePropagator(),
+    ]

@@ -1,6 +1,6 @@
 """The Propagator seam — substitutable propagation channels for config-sync.
 
-DIP: the sync cycle depends only on the Propagator Protocol; concrete
+DIP: the sync cycle depends only on the Exporter / Applier Protocols; concrete
 propagators receive an injected SyncContext per call (no module globals);
 run_export/run_apply iterate an injected list. See the C1 design spec.
 """
@@ -321,12 +321,6 @@ class SnapshotPropagator:
             config_sync._write(destination, content)
             result.applied.append(relative_path)
         return result
-
-
-def default_propagators() -> list:
-    """Composition root — the ordered list injected into run_export/run_apply.
-    C2 appends MarketplacePropagator() here (open/closed)."""
-    return [SnapshotPropagator(), ContentBundlePropagator()]
 
 
 def apply_propagators() -> list:

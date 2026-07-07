@@ -1087,7 +1087,8 @@ def _sync_context(repo_path):
 
 def cmd_propagate_export(repo_path):
     propagators, context = _sync_context(repo_path)
-    results = propagators.run_export(context, propagators.default_propagators())
+    import config_sync_plugins as plugins_module
+    results = propagators.run_export(context, plugins_module.export_propagators())
     print(json.dumps({result.propagator: {"written": result.written, "skipped": result.skipped}
                       for result in results}, indent=2))
 
