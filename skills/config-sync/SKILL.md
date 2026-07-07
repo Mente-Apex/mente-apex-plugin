@@ -10,7 +10,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # config-sync
@@ -72,13 +72,16 @@ to ask whether to continue anyway. If the user declines, stop here. If they acce
 # Kept separate from export so export/backup stay pure, side-effect-free queries.
 python3 "$ENGINE" reconcile
 
-# Snapshot current local config (pure — mutates nothing)
-python3 "$ENGINE" export > "$REPO/machines/$MACHINE_ID.json"
+# Export through the propagator seam: writes the machine snapshot (config —
+# CLAUDE.md/memory/rules/settings) AND skill/agent bundles under bundles/
+# (all files, hash-gated). Replaces the old `export > machines/…` line.
+python3 "$ENGINE" propagate-export "$REPO"
 ```
 
-Then export installed plugins to `shared/plugins/` so other machines can install them
-via `apply-shared`. Each plugin gets its own subdirectory named by its key, containing a
-`plugin-meta.json` and a copy of all its cache files. Plugins already present in
+Then export installed **plugins** to `shared/plugins/` so other machines can install them
+via `apply-shared`. (Plugins still use this channel in C1; the marketplace/local-plugin
+propagator lands in C2.) Each plugin gets its own subdirectory named by its key, containing
+a `plugin-meta.json` and a copy of all its cache files. Plugins already present in
 `shared/plugins/` are skipped — only new ones are added.
 
 ```bash
@@ -143,7 +146,7 @@ PYEOF
 
 ```bash
 cd "$REPO"
-git add machines/ shared/plugins/
+git add machines/ bundles/ shared/plugins/
 git diff --cached --quiet && echo "no local changes" || \
   git commit -m "sync: $MACHINE_ID at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -188,7 +191,7 @@ python3 "$ENGINE" consolidate "$REPO"
 > the next sync. To remove something everywhere: delete it on **every** machine **and**
 > from `consolidated/snapshot.json` + each `machines/*.json`, then re-push.
 
-## Step 4 — Backup, then apply merged snapshot locally
+## Step 4 — Backup, then apply through the propagator seam
 
 Always back up before touching local state so the user has a rollback path.
 
@@ -196,28 +199,41 @@ Always back up before touching local state so the user has a rollback path.
 BACKUP_PATH=$(python3 "$ENGINE" backup)
 echo "Backup saved: $BACKUP_PATH"
 
-RESULT=$(python3 "$ENGINE" import "$CONSOLIDATED")
-echo "$RESULT"
+# Applies config (SnapshotPropagator: consolidated snapshot → CLAUDE.md/memory/rules/
+# settings) AND skill/agent bundles (ContentBundlePropagator). Prints per-propagator
+# {applied, skipped, conflicts}. Replaces the old standalone `import`.
+APPLY=$(python3 "$ENGINE" propagate-apply "$REPO")
+echo "$APPLY"
 ```
 
-Parse the JSON result and tell the user clearly:
-- How many files were updated vs already up to date
-- Which specific files changed (CLAUDE.md? memory/? rules/?)
+Parse `$APPLY` and tell the user which config files and which skill/agent bundles were
+applied vs already up to date.
 
-## Step 4b — Apply shared artifacts from the network
+**Resolve bundle conflicts (if any).** For each entry in `content-bundle.conflicts` — a
+skill/agent that differs between this machine and the network — ask the user with
+**AskUserQuestion** ("Skill/agent `<name>` differs between this machine and the network —
+keep your local version, or take the network's?"), then apply their choice:
 
-Other machines may have pushed skills, rules, agents, or plugins to `shared/`.
-Install any that aren't already present locally. Skills/rules/agents are never
-overwritten; plugins are registered only if absent from `installed_plugins.json`.
+```bash
+# winner is "local" (keep this machine's) or "repo" (take the network's)
+python3 "$ENGINE" resolve-bundle "$REPO" "<kind>" "<name>" "<winner>"
+```
+
+## Step 4b — Apply shared plugins from the network
+
+Skills/agents now flow through `propagate-apply` (above). This step installs shared
+**plugins** (and any legacy `shared/skills|rules|agents` from older machines, never
+overwriting local copies). Plugins are registered only if absent from
+`installed_plugins.json`.
 
 ```bash
 SHARED_RESULT=$(python3 "$ENGINE" apply-shared "$REPO")
 echo "$SHARED_RESULT"
 ```
 
-Parse and mention any newly installed shared artifacts to the user, calling out
-plugins specifically (e.g. "Installed 2 new plugin(s): playwright@claude-plugins-official,
-superpowers@claude-plugins-official — restart Claude to activate them").
+Parse and mention any newly installed plugins to the user (e.g. "Installed 2 new
+plugin(s): playwright@claude-plugins-official, superpowers@claude-plugins-official —
+restart Claude to activate them").
 
 ## Step 5 — Commit the updated consolidated snapshot and push
 
@@ -233,8 +249,8 @@ git push origin main 2>&1
 ## Step 6 — Write sync log entry and update config
 
 ```bash
-# Summarise what changed for the log (count applied files from import result)
-APPLIED=$(echo "$RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['applied']))" 2>/dev/null || echo "?")
+# Summarise what changed for the log (sum applied entries across both propagators)
+APPLIED=$(echo "$APPLY" | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(len(section.get('applied',[])) for section in d.values()))" 2>/dev/null || echo "?")
 SHARED_IN=$(echo "$SHARED_RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['installed']))" 2>/dev/null || echo "0")
 
 python3 "$ENGINE" log-sync "$REPO" "sync" "$APPLIED file(s) updated, $SHARED_IN shared artifact(s) installed"
@@ -294,10 +310,10 @@ Which should win? (A / B / let me write my own)
 Once the user provides a resolution, write it into the consolidated snapshot and re-apply locally before committing:
 
 ```bash
-# Write the resolved content into the consolidated snapshot file
-# (replace the conflicted section with the chosen version)
-# Then re-import so local files reflect the resolution
-python3 "$ENGINE" import "$CONSOLIDATED"
+# Write the resolved content into $REPO/consolidated/snapshot.json
+# (replace the conflicted section with the chosen version), then re-apply so
+# local files reflect the resolution.
+python3 "$ENGINE" propagate-apply "$REPO"
 ```
 
 Then continue to Step 5 (commit and push the resolved consolidated snapshot).
