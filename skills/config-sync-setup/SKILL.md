@@ -76,10 +76,10 @@ Before asking for the remote, inform the user exactly what will be synced:
 
 Then ask the user for their Git remote URL (e.g. `git@github.com:you/claude-config.git`).
 
-Security check: if the URL looks like a public GitHub repo (no `.git` private indicator
-or matches common public patterns), warn them:
-> "⚠ This looks like it could be a public repository. Your CLAUDE.md, memory, rules,
-> and skills will be stored there. Please make sure the repo is private before continuing."
+Security check: a URL can't reliably reveal whether the repo is private, so **always**
+warn — never gate this on the URL "looking" public:
+> "⚠ This repo will hold your CLAUDE.md, memory, rules, and skills. Make **sure** it is
+> private before continuing — a public repo would expose all of it. Confirm it's private?"
 
 Ask for confirmation before proceeding.
 
