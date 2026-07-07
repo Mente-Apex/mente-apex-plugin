@@ -189,6 +189,20 @@ def _clean_settings(raw: str) -> dict:
     return _scrub(data)
 
 
+def _merge_import_settings(incoming_scrubbed: dict, existing_local: dict) -> dict:
+    """Overlay the snapshot's (secret-scrubbed) settings onto the live local file.
+
+    Start from the live local dict so env/apiKeyHelper/secret keys — which the
+    export deliberately omits — are never deleted. Incoming non-secret fields win
+    (they are the merged network truth). Consistent with the union-only contract:
+    import adds/updates, never deletes.
+    """
+    merged = dict(existing_local)
+    for key, value in incoming_scrubbed.items():
+        merged[key] = value
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -261,6 +275,18 @@ def cmd_import(snapshot_path: str):
             skipped.append(rel)
             continue
         dest = CLAUDE_DIR / rel
+        if rel == "settings.json":
+            incoming = json.loads(content) if content.strip() else {}
+            local_raw = _read(dest)
+            existing_local = json.loads(local_raw) if local_raw.strip() else {}
+            merged = _merge_import_settings(incoming, existing_local)
+            new_content = json.dumps(merged, indent=2, ensure_ascii=False)
+            if local_raw == new_content:
+                skipped.append(rel)
+                continue
+            _write(dest, new_content)
+            applied.append(rel)
+            continue
         existing = _read(dest)
         if existing == content:
             skipped.append(rel)
