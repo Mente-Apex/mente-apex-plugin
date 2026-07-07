@@ -78,25 +78,19 @@ Ask for confirmation before proceeding.
 ## Step 3b — Scan for secrets before export
 
 Before exporting any local state to the repo, scan for secrets that shouldn't be
-committed. This is the same secret-scan gate `/config-sync` runs before every push:
+committed. This is the same secret-scan gate `/config-sync` runs before every push
+— `scan --gate` prints any findings and exits non-zero when the config isn't clean:
 
 ```bash
-SCAN_RESULT=$(python3 "$ENGINE" scan)
-WARNINGS=$(echo "$SCAN_RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d['warnings']))")
-
-if [ "$WARNINGS" -gt 0 ]; then
-  echo "⚠ Secret scan found $WARNINGS potential issue(s) in your config files:"
-  echo "$SCAN_RESULT" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-for w in d['warnings']:
-    print(f\"  {w['file']}:{w['line']} — {w['preview']}\")
-"
-  echo ""
-  echo "Review the files above before pushing. Continue anyway? (yes/no)"
-  # If user says no, stop here. If yes, proceed.
+if python3 "$ENGINE" scan --gate; then
+  SCAN_CLEAN=1
+else
+  SCAN_CLEAN=0
 fi
 ```
+
+If `SCAN_CLEAN` is `0`, the findings were printed above — use **AskUserQuestion**
+to ask whether to continue anyway. If the user declines, stop here.
 
 ## Step 4 — Detect: new repo or joining?
 

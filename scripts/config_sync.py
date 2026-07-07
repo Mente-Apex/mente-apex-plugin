@@ -863,15 +863,11 @@ def cmd_log_sync(repo_path: str, action: str = "sync", summary: str = ""):
     print(f"Sync logged ({len(log['syncs'])} total entries)")
 
 
-def cmd_scan():
-    """
-    Scan all files that would be exported for secret-like content.
+def _collect_scan_warnings() -> list:
+    """Scan all exportable files for secret-like content.
 
-    Checks CLAUDE.md, memory/, rules/, skills/, agents/ for patterns that look
-    like API keys, tokens, passwords, etc. — things you probably don't want
-    committed to a Git remote even in a private repo.
-
-    Prints JSON: {"warnings": [{"file": ..., "line": ..., "match": ...}], "clean": bool}
+    Returns a list of {file, line, match, preview}. Shared by the JSON `scan`
+    output and the `scan --gate` UX so the detection lives in exactly one place.
     """
     warnings = []
 
@@ -892,27 +888,49 @@ def cmd_scan():
 
     # Top-level files (excluding settings.json — already scrubbed)
     for fname in ["CLAUDE.md"]:
-        p = CLAUDE_DIR / fname
-        if p.exists():
-            files_to_scan[fname] = _read(p)
+        path = CLAUDE_DIR / fname
+        if path.exists():
+            files_to_scan[fname] = _read(path)
 
     # Subdirectories
-    for d in SNAPSHOT_DIRS:
-        files_to_scan.update(_collect_dir(CLAUDE_DIR, d))
+    for directory in SNAPSHOT_DIRS:
+        files_to_scan.update(_collect_dir(CLAUDE_DIR, directory))
 
     for rel, content in files_to_scan.items():
         for lineno, line in enumerate(content.splitlines(), start=1):
-            for pat in scan_patterns:
-                match = pat.search(line)
-                if match:
+            for pattern in scan_patterns:
+                if pattern.search(line):
                     # Redact the actual matched value in output
                     warnings.append({
                         "file": rel,
                         "line": lineno,
-                        "match": pat.pattern[:40] + "…",
+                        "match": pattern.pattern[:40] + "…",
                         "preview": line.strip()[:80] + ("…" if len(line.strip()) > 80 else ""),
                     })
                     break  # one warning per line is enough
+
+    return warnings
+
+
+def cmd_scan(*flags):
+    """Scan exportable files for secret-like content.
+
+    Default: print JSON {"warnings": [...], "clean": bool}.
+    `--gate`: print a human-readable block and exit 2 if anything matched, else 0.
+    Both skills call `scan --gate` so the warning gate lives in one place.
+    """
+    warnings = _collect_scan_warnings()
+
+    if "--gate" in flags:
+        if warnings:
+            print(f"⚠ Secret scan found {len(warnings)} potential issue(s) in your config files:")
+            for warning in warnings:
+                print(f"  {warning['file']}:{warning['line']} — {warning['preview']}")
+            print("")
+            print("Review the files above before pushing.")
+            sys.exit(2)
+        print("✓ Secret scan clean.")
+        sys.exit(0)
 
     result = {"warnings": warnings, "clean": len(warnings) == 0}
     print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -1055,7 +1073,7 @@ COMMANDS = {
     "consolidate": (cmd_consolidate, 1),
     "apply-shared": (cmd_apply_shared, 1),
     "log-sync": (cmd_log_sync, None),   # variadic: repo [action] [summary]
-    "scan": (cmd_scan, 0),
+    "scan": (cmd_scan, None),   # variadic: optional --gate flag
     "promote": (cmd_promote, 0),
     "machine-id": (cmd_machine_id, 0),
     "clean-settings": (cmd_clean_settings, 1),
