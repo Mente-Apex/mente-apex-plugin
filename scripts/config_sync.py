@@ -64,6 +64,12 @@ SECRET_PATTERNS = [
 PLUGINS_DIR = CLAUDE_DIR / "plugins"
 INSTALLED_PLUGINS_FILE = PLUGINS_DIR / "installed_plugins.json"
 
+# Nested `claude -p` merges are OFF by default: /config-sync runs *inside* Claude
+# Code, so shelling out spawns a nested Claude per differing file. Opt in with
+# CONFIG_SYNC_LLM_MERGE=1, and even then cap invocations per run.
+LLM_MERGE_ENV = "CONFIG_SYNC_LLM_MERGE"
+MAX_LLM_MERGES = 10
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -381,12 +387,13 @@ def cmd_merge(path_a: str, path_b: str):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def _merge_snapshot_files(files_base: dict, files_override: dict) -> tuple:
+def _merge_snapshot_files(files_base: dict, files_override: dict, budget=None) -> tuple:
     """Merge two snapshots' {path: content} maps into one.
 
     On conflict the override side wins (scalars), markdown unions by section,
     JSON deep-merges. Returns (merged_files, merge_log). This is the shared core
     used by both `cmd_merge` (pairwise CLI) and `cmd_consolidate` (timestamp fold).
+    `budget` is an optional _LlmMergeBudget threaded into text merges.
     """
     all_keys = sorted(set(files_base) | set(files_override))
     merged_files = {}
@@ -410,7 +417,9 @@ def _merge_snapshot_files(files_base: dict, files_override: dict) -> tuple:
             if key.endswith(".json"):
                 merged, strategy = _deep_merge_json(base_content, override_content)
             else:
-                merged, strategy = _smart_merge_text(base_content, override_content, context=key)
+                merged, strategy = _smart_merge_text(
+                    base_content, override_content, context=key, budget=budget
+                )
             merged_files[key] = merged
             merge_log.append({"file": key, "strategy": strategy})
 
@@ -439,9 +448,12 @@ def cmd_consolidate(repo_path: str):
     else:
         base_files = {}
 
+    budget = _LlmMergeBudget(MAX_LLM_MERGES)
     merge_log = []
     for snapshot in snapshots:
-        base_files, log = _merge_snapshot_files(base_files, snapshot.get("files", {}))
+        base_files, log = _merge_snapshot_files(
+            base_files, snapshot.get("files", {}), budget=budget
+        )
         merge_log.extend(log)
 
     result = {
@@ -499,14 +511,35 @@ def _deep_merge_json(a: str, b: str) -> tuple:
         return a, "json-fallback-kept-a"
 
 
-def _smart_merge_text(a: str, b: str, context: str = "") -> tuple:
+class _LlmMergeBudget:
+    """Caps how many nested `claude -p` merges a single run may spend.
+
+    Injected into the merge fold so the cap is explicit state, not a hidden
+    module global. `None` (the default) means "no cap object" — the env gate
+    alone decides, appropriate for a single pairwise `merge`.
+    """
+
+    def __init__(self, limit: int):
+        self.remaining = limit
+
+    def try_consume(self) -> bool:
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
+
+
+def _smart_merge_text(a: str, b: str, context: str = "", budget: "_LlmMergeBudget | None" = None) -> tuple:
     """
     Merge two text blobs. Returns (merged_text, strategy_name).
 
-    1. Try LLM merge via `claude -p` if available.
-    2. Fall back to section-aware union (headings as boundaries).
+    Structured section-union is the default. The LLM path (`claude -p`) is only
+    taken when explicitly opted in via CONFIG_SYNC_LLM_MERGE=1 and the injected
+    budget still has room — this run executes *inside* Claude Code, so nesting a
+    Claude per differing file is a cost/latency dead-end left off by default.
     """
-    if shutil.which("claude"):
+    llm_enabled = os.environ.get(LLM_MERGE_ENV) == "1"
+    if llm_enabled and shutil.which("claude") and (budget is None or budget.try_consume()):
         prompt = (
             f"Merge these two versions of '{context}' into one coherent document.\n"
             "Rules:\n"
@@ -528,7 +561,7 @@ def _smart_merge_text(a: str, b: str, context: str = "") -> tuple:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-    # Fallback: section-aware union
+    # Default / fallback: section-aware union
     return _section_union(a, b), "section-union"
 
 
@@ -879,6 +912,10 @@ def cmd_promote():
 
     if not memory_files:
         print(json.dumps({"suggestions": []}))
+        return
+
+    if os.environ.get(LLM_MERGE_ENV) != "1":
+        print(json.dumps({"suggestions": [], "note": "LLM promotion disabled — set CONFIG_SYNC_LLM_MERGE=1 to enable nested claude -p analysis"}))
         return
 
     if not shutil.which("claude"):
