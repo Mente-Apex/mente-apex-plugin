@@ -35,7 +35,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import TYPE_CHECKING, Optional, Protocol
 
 # The text/JSON merge engine lives in its own module (SRP extraction). Re-exported
 # here so cmd_merge/cmd_consolidate and existing callers keep using the config_sync.*
@@ -49,6 +49,12 @@ from config_sync_merge import (
     _line_key,
     _section_union,
 )
+
+if TYPE_CHECKING:
+    # Runtime-free import (TYPE_CHECKING is False at import time) so cmd_status can
+    # name BundleExportFilter in an annotation without forming the config_sync <->
+    # config_sync_propagators import cycle (SOLID M2).
+    from config_sync_propagators import BundleExportFilter
 
 # ---------------------------------------------------------------------------
 # Paths — always derived from $HOME, never hardcoded
@@ -427,13 +433,20 @@ class GitRemoteResolver:
         return url or None
 
 
-def cmd_status(remote_resolver: Optional[RemoteResolver] = None):
+def cmd_status(remote_resolver: Optional[RemoteResolver] = None,
+               export_filter: "Optional[BundleExportFilter]" = None):
     """Print a human-readable inventory of the local config-sync state.
 
-    `remote_resolver` is injected (default: git-backed) so the remote lookup is
-    substitutable — the CLI passes nothing and gets GitRemoteResolver."""
+    Both collaborators are injected (defaults: git-backed remote lookup, default
+    bundle filter) so they are substitutable — the CLI passes nothing and gets the
+    real implementations, while a test can fake either one."""
     if remote_resolver is None:
         remote_resolver = GitRemoteResolver()
+    if export_filter is None:
+        # Deferred import: config_sync <-> config_sync_propagators is a two-way
+        # dependency; keep it call-time (SOLID M2).
+        from config_sync_propagators import DefaultBundleExportFilter
+        export_filter = DefaultBundleExportFilter()
     lines = []
     lines.append(f"Machine : {_machine_id()}")
     lines.append(f"Host    : {platform.node()}")
@@ -456,16 +469,10 @@ def cmd_status(remote_resolver: Optional[RemoteResolver] = None):
     claude_md = CLAUDE_DIR / "CLAUDE.md"
     lines.append(f"CLAUDE.md  : {'✓ ' + str(len(_read(claude_md).splitlines())) + ' lines' if claude_md.exists() else '✗ missing'}")
 
-    # Deferred import (not module-top): config_sync <-> config_sync_propagators is a
-    # two-way dependency. Hoisting this together with the `import config_sync` sites in
-    # that module to module scope reintroduces a circular import when propagators is
-    # imported first — keep it call-time. (SOLID report M2.)
-    from config_sync_propagators import DefaultBundleExportFilter
-    inventory_filter = DefaultBundleExportFilter()
     for directory in SNAPSHOT_DIRS:
         target = CLAUDE_DIR / directory
         if target.exists():
-            count = _inventory_file_count(target, inventory_filter)
+            count = _inventory_file_count(target, export_filter)
             lines.append(f"{directory:<10} : {count} file(s)")
         else:
             lines.append(f"{directory:<10} : (empty)")
