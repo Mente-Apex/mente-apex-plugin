@@ -34,6 +34,22 @@ def _read_known_marketplaces(claude_dir: Path) -> dict:
         return {}
 
 
+SHAREABLE_SOURCE_KINDS = {"github", "git"}
+
+
+def _is_shareable_marketplace(marketplace_meta) -> bool:
+    """True iff the marketplace's source is a git/GitHub remote another machine
+    can `claude plugin marketplace add`. Local/path/directory sources, or
+    missing/malformed metadata, are not shareable — a plugin behind one won't
+    reach the owner's other machines."""
+    if not isinstance(marketplace_meta, dict):
+        return False
+    source = marketplace_meta.get("source")
+    if not isinstance(source, dict):
+        return False
+    return source.get("source") in SHAREABLE_SOURCE_KINDS
+
+
 @runtime_checkable
 class PluginRegistryReader(Protocol):
     def installed_plugins(self) -> dict: ...      # {key: entry_dict}
@@ -111,9 +127,22 @@ class MarketplacePropagator:
         known = _read_known_marketplaces(context.claude_dir)
         marketplaces: dict = {}
         plugins: dict = {}
+        warnings: list = []
         for plugin_key, entries in installed.get("plugins", {}).items():
             marketplace_name = plugin_key.split("@", 1)[1] if "@" in plugin_key else ""
+            marketplace_meta = known.get(marketplace_name)
             if marketplace_name not in known:
+                warnings.append(
+                    f"{plugin_key}: no known marketplace — won't sync to your other "
+                    f"machines; publish it to a GitHub marketplace")
+                continue
+            if not _is_shareable_marketplace(marketplace_meta):
+                source_value = marketplace_meta.get("source") if isinstance(marketplace_meta, dict) else None
+                source_kind = source_value.get("source") if isinstance(source_value, dict) else None
+                warnings.append(
+                    f"{plugin_key}: marketplace '{marketplace_name}' source is "
+                    f"'{source_kind}' (not a shareable git/GitHub remote) — won't sync "
+                    f"to your other machines; publish it to GitHub")
                 continue
             entry = entries[0] if isinstance(entries, list) and entries else entries
             version = entry.get("version", "unknown") if isinstance(entry, dict) else "unknown"
@@ -127,7 +156,8 @@ class MarketplacePropagator:
             try:
                 existing = json.loads(manifest_path.read_text(encoding="utf-8"))
                 if existing.get("marketplaces") == marketplaces and existing.get("plugins") == plugins:
-                    return propagators.ExportResult(self.name, skipped=[f"plugins/{machine_id}.json (unchanged)"])
+                    return propagators.ExportResult(
+                        self.name, skipped=[f"plugins/{machine_id}.json (unchanged)"], warnings=warnings)
             except (json.JSONDecodeError, OSError):
                 pass
 
@@ -139,7 +169,8 @@ class MarketplacePropagator:
         }
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
-        return propagators.ExportResult(self.name, written=[f"plugins/{machine_id}.json"])
+        return propagators.ExportResult(
+            self.name, written=[f"plugins/{machine_id}.json"], warnings=warnings)
 
 
 @dataclass
