@@ -1112,6 +1112,32 @@ def cmd_resolve_bundle(repo_path, kind, name, winner):
     print(json.dumps({"resolved": f"{kind}/{name}", "winner": winner}))
 
 
+def cmd_plugins_plan(repo_path, host=None):
+    propagators, context = _sync_context(repo_path)
+    import config_sync_plugins as plugins_module
+    reader = host if host is not None else plugins_module.ClaudePluginHost(context)
+    plan = plugins_module.plan_convergence(context, reader)
+    print(json.dumps({
+        "actions": [{"verb": action.verb, "target": action.target, "detail": action.detail}
+                    for action in plan.actions],
+        "skipped": plan.skipped,
+    }, indent=2))
+
+
+def cmd_plugins_apply(repo_path, host=None):
+    propagators, context = _sync_context(repo_path)
+    import config_sync_plugins as plugins_module
+    plugin_host = host if host is not None else plugins_module.ClaudePluginHost(context)
+    plan = plugins_module.plan_convergence(context, plugin_host)
+    result = plugins_module.execute_plan(context, plan, plugin_host)
+    print(json.dumps({
+        "outcomes": [{"verb": outcome.verb, "target": outcome.target,
+                      "ok": outcome.ok, "message": outcome.message}
+                     for outcome in result.outcomes],
+        "skipped": result.skipped,
+    }, indent=2))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -1127,6 +1153,8 @@ COMMANDS = {
     "propagate-export": (cmd_propagate_export, 1),
     "propagate-apply": (cmd_propagate_apply, 1),
     "resolve-bundle": (cmd_resolve_bundle, 4),
+    "plugins-plan": (cmd_plugins_plan, 1),
+    "plugins-apply": (cmd_plugins_apply, 1),
     "apply-shared": (cmd_apply_shared, 1),
     "log-sync": (cmd_log_sync, None),   # variadic: repo [action] [summary]
     "scan": (cmd_scan, None),   # variadic: optional --gate flag
