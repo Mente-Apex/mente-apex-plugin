@@ -1094,7 +1094,7 @@ def cmd_propagate_export(repo_path):
 
 def cmd_propagate_apply(repo_path):
     propagators, context = _sync_context(repo_path)
-    results = propagators.run_apply(context, propagators.default_propagators())
+    results = propagators.run_apply(context, propagators.apply_propagators())
     payload = {}
     for result in results:
         payload[result.propagator] = {
