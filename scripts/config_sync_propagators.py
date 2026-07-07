@@ -94,12 +94,53 @@ def resolve_bundle(context: SyncContext, kind: str, name: str, winner: str) -> N
         propagator._install(bundle_dir, destination, manifest)
     elif winner == "local":
         entry = context.claude_dir / BUNDLE_KINDS[kind] / name
-        payload = _payload_files(entry)
+        payload = _payload_files(entry, propagator._export_filter)
         bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
         propagator._write_bundle(bundle_dir, payload, kind, name, entry.is_dir(),
                                  _content_hash(payload), context)
     else:
         raise ValueError(f"winner must be 'local' or 'repo', got {winner!r}")
+
+
+# ---------------------------------------------------------------------------
+# Bundle export filter — which files of a skill/agent source belong in a bundle
+# ---------------------------------------------------------------------------
+
+@runtime_checkable
+class BundleExportFilter(Protocol):
+    """Decides whether a file — addressed by its bundle-relative POSIX path —
+    belongs in a synced skill/agent bundle. One reason to change: the exclusion
+    policy. Injected into ContentBundlePropagator so the policy is substitutable
+    and the copy loop stays closed for modification (OCP)."""
+
+    def should_include(self, relative_path: str) -> bool: ...
+
+
+class DefaultBundleExportFilter:
+    """Excludes vendored / build / scratch artefacts that pollute skill bundles:
+    virtualenvs, bytecode caches, VCS metadata, node_modules, packaging dirs.
+    A skill's *authored* content (SKILL.md, references/, scripts/*.py) travels; a
+    virtualenv left inside the skill dir does not — that was the #44 bloat."""
+
+    #: a path segment equal to any of these excludes the file
+    EXCLUDED_SEGMENTS = frozenset({
+        "venv", ".venv", "__pycache__", ".git", "node_modules",
+        ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".ipynb_checkpoints",
+    })
+    #: a path segment ending in any of these (packaging metadata dirs) excludes it
+    EXCLUDED_SEGMENT_SUFFIXES = (".dist-info", ".egg-info")
+    #: a file ending in any of these (compiled bytecode) is excluded
+    EXCLUDED_FILE_SUFFIXES = (".pyc", ".pyo")
+
+    def should_include(self, relative_path: str) -> bool:
+        segments = relative_path.split("/")
+        if any(segment in self.EXCLUDED_SEGMENTS for segment in segments):
+            return False
+        if any(segment.endswith(self.EXCLUDED_SEGMENT_SUFFIXES) for segment in segments):
+            return False
+        if relative_path.endswith(self.EXCLUDED_FILE_SUFFIXES):
+            return False
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -119,14 +160,24 @@ def _machine_id(context: SyncContext) -> str:
     return machine_id
 
 
-def _payload_files(entry: Path) -> dict:
-    """Map {relative_posix_path: bytes} for a bundle source (file or dir)."""
+def _payload_files(entry: Path, export_filter: "BundleExportFilter | None" = None) -> dict:
+    """Map {relative_posix_path: bytes} for a bundle source (file or dir).
+
+    When an export_filter is supplied, files it rejects (vendored venvs, bytecode,
+    …) are omitted — so they neither travel in the bundle nor affect the content
+    hash. Export and apply pass the SAME filter, so a skill whose only local
+    difference is scratch hashes identically on both sides and raises no false
+    conflict (see ContentBundlePropagator.apply)."""
     if entry.is_file():
         return {entry.name: entry.read_bytes()}
     payload = {}
     for file_path in sorted(entry.rglob("*")):
-        if file_path.is_file() and file_path.name != MANIFEST_NAME:
-            payload[file_path.relative_to(entry).as_posix()] = file_path.read_bytes()
+        if not (file_path.is_file() and file_path.name != MANIFEST_NAME):
+            continue
+        relative_path = file_path.relative_to(entry).as_posix()
+        if export_filter is not None and not export_filter.should_include(relative_path):
+            continue
+        payload[relative_path] = file_path.read_bytes()
     return payload
 
 
@@ -160,6 +211,12 @@ class ContentBundlePropagator:
 
     name = "content-bundle"
 
+    def __init__(self, export_filter: "BundleExportFilter | None" = None):
+        # DIP: the exclusion policy is an injected collaborator. Default to the
+        # production filter, but the constructor is the seam — tests and future
+        # callers substitute their own without touching the copy/hash logic.
+        self._export_filter = export_filter if export_filter is not None else DefaultBundleExportFilter()
+
     def _sources(self, context: SyncContext):
         for kind, subdir in BUNDLE_KINDS.items():
             root = context.claude_dir / subdir
@@ -174,7 +231,7 @@ class ContentBundlePropagator:
         result = ExportResult(self.name)
         for kind, entry in self._sources(context):
             name = entry.name
-            payload = _payload_files(entry)
+            payload = _payload_files(entry, self._export_filter)
             local_hash = _content_hash(payload)
             bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
             if _read_manifest(bundle_dir).get("content_hash") == local_hash:
@@ -227,7 +284,7 @@ class ContentBundlePropagator:
                     self._install(bundle_dir, destination, manifest)
                     result.applied.append(f"{kind}/{name}")
                     continue
-                local_hash = _content_hash(_payload_files(destination))
+                local_hash = _content_hash(_payload_files(destination, self._export_filter))
                 if local_hash == repo_hash:
                     result.skipped.append(f"{kind}/{name}")
                     continue

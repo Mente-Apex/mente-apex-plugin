@@ -365,6 +365,17 @@ def cmd_import(snapshot_path: str):
     print(json.dumps({"applied": applied, "skipped": skipped}))
 
 
+def _inventory_file_count(target, export_filter):
+    """Count files under `target`, excluding the vendored/build/scratch the export
+    filter rejects — so `status` reports a skill/agent's authored files, not a
+    virtualenv left inside a skill dir (#44). Uses the SAME filter as the bundle
+    export, so the inventory count and what actually syncs agree."""
+    return sum(
+        1 for path in target.rglob("*")
+        if path.is_file() and export_filter.should_include(path.relative_to(target).as_posix())
+    )
+
+
 def cmd_status():
     """Print a human-readable inventory of the local config-sync state."""
     lines = []
@@ -388,10 +399,12 @@ def cmd_status():
     claude_md = CLAUDE_DIR / "CLAUDE.md"
     lines.append(f"CLAUDE.md  : {'✓ ' + str(len(_read(claude_md).splitlines())) + ' lines' if claude_md.exists() else '✗ missing'}")
 
+    from config_sync_propagators import DefaultBundleExportFilter
+    inventory_filter = DefaultBundleExportFilter()
     for directory in SNAPSHOT_DIRS:
         target = CLAUDE_DIR / directory
         if target.exists():
-            count = sum(1 for path in target.rglob("*") if path.is_file())
+            count = _inventory_file_count(target, inventory_filter)
             lines.append(f"{directory:<10} : {count} file(s)")
         else:
             lines.append(f"{directory:<10} : (empty)")
