@@ -60,6 +60,40 @@ class ClaudePluginHost:
     def known_marketplaces(self) -> dict:
         return _read_known_marketplaces(self._context.claude_dir)
 
+    def _run(self, arguments: list) -> tuple:
+        try:
+            completed = subprocess.run(
+                ["claude", "plugin", *arguments],
+                capture_output=True, text=True, timeout=180,
+            )
+            ok = completed.returncode == 0
+            message = (completed.stderr or completed.stdout or "").strip()[-500:]
+            return ok, message
+        except FileNotFoundError:
+            return False, "claude CLI not found"
+        except subprocess.TimeoutExpired:
+            return False, "claude plugin command timed out"
+
+    def add_marketplace(self, name: str, source: dict) -> ActionOutcome:
+        source = source or {}
+        spec = source.get("repo") if source.get("source") == "github" else source.get("url")
+        if not spec:
+            return ActionOutcome("add_marketplace", name, ok=False, message="no source spec")
+        ok, message = self._run(["marketplace", "add", spec])
+        return ActionOutcome("add_marketplace", name, ok=ok, message=message)
+
+    def update_marketplace(self, name: str) -> ActionOutcome:
+        ok, message = self._run(["marketplace", "update", name])
+        return ActionOutcome("update_marketplace", name, ok=ok, message=message)
+
+    def install_plugin(self, key: str) -> ActionOutcome:
+        ok, message = self._run(["install", key])
+        return ActionOutcome("install_plugin", key, ok=ok, message=message)
+
+    def update_plugin(self, key: str) -> ActionOutcome:
+        ok, message = self._run(["update", key])
+        return ActionOutcome("update_plugin", key, ok=ok, message=message)
+
 
 class MarketplacePropagator:
     """Exporter for marketplace-sourced plugins (desired-state manifest).
@@ -173,3 +207,48 @@ def plan_convergence(context: propagators.SyncContext, reader: PluginRegistryRea
         else:
             plan.actions.append(PlannedAction("install_plugin", plugin_key))
     return plan
+
+
+@dataclass
+class ActionOutcome:
+    verb: str
+    target: str
+    ok: bool
+    message: str = ""
+
+
+@dataclass
+class MarketplaceResult:
+    outcomes: list = field(default_factory=list)    # list[ActionOutcome]
+    skipped: list = field(default_factory=list)
+
+
+@runtime_checkable
+class PluginInstaller(Protocol):
+    def add_marketplace(self, name: str, source: dict) -> ActionOutcome: ...
+
+    def update_marketplace(self, name: str) -> ActionOutcome: ...
+
+    def install_plugin(self, key: str) -> ActionOutcome: ...
+
+    def update_plugin(self, key: str) -> ActionOutcome: ...
+
+
+def execute_plan(context: propagators.SyncContext, plan: MarketplacePlan,
+                 installer: PluginInstaller) -> MarketplaceResult:
+    """Run each planned action via the injected installer; capture per-action
+    outcomes and never abort the batch on a single failure."""
+    result = MarketplaceResult(skipped=list(plan.skipped))
+    for action in plan.actions:
+        if action.verb == "add_marketplace":
+            outcome = installer.add_marketplace(action.target, action.detail.get("source", {}))
+        elif action.verb == "update_marketplace":
+            outcome = installer.update_marketplace(action.target)
+        elif action.verb == "install_plugin":
+            outcome = installer.install_plugin(action.target)
+        elif action.verb == "update_plugin":
+            outcome = installer.update_plugin(action.target)
+        else:
+            outcome = ActionOutcome(action.verb, action.target, ok=False, message="unknown verb")
+        result.outcomes.append(outcome)
+    return result

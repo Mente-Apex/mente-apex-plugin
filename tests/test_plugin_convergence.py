@@ -110,3 +110,58 @@ def test_plan_skips_malformed_manifest_without_crashing(tmp_path):
 
     verbs = _verbs(plugins_module.plan_convergence(context, reader))   # must NOT raise
     assert ("install_plugin", "alpha@official") in verbs               # good manifest still processed
+
+
+class _FakeInstaller:
+    def __init__(self, fail_targets=None):
+        self.calls = []
+        self._fail_targets = set(fail_targets or [])
+
+    def _outcome(self, verb, target):
+        self.calls.append((verb, target))
+        ok = target not in self._fail_targets
+        return plugins_module.ActionOutcome(verb, target, ok=ok, message="" if ok else "boom")
+
+    def add_marketplace(self, name, source):
+        return self._outcome("add_marketplace", name)
+
+    def update_marketplace(self, name):
+        return self._outcome("update_marketplace", name)
+
+    def install_plugin(self, key):
+        return self._outcome("install_plugin", key)
+
+    def update_plugin(self, key):
+        return self._outcome("update_plugin", key)
+
+
+def test_execute_plan_runs_each_action_and_preserves_skips():
+    plan = plugins_module.MarketplacePlan(
+        actions=[
+            plugins_module.PlannedAction("add_marketplace", "official", {"source": {"source": "github", "repo": "a/b"}}),
+            plugins_module.PlannedAction("install_plugin", "new@official"),
+        ],
+        skipped=["plugin z@ghost: marketplace ghost unavailable"],
+    )
+    installer = _FakeInstaller()
+    context = propagators.SyncContext(claude_dir=Path("/x"), repo_dir=Path("/y"))
+
+    result = plugins_module.execute_plan(context, plan, installer)
+
+    assert installer.calls == [("add_marketplace", "official"), ("install_plugin", "new@official")]
+    assert all(outcome.ok for outcome in result.outcomes)
+    assert result.skipped == ["plugin z@ghost: marketplace ghost unavailable"]
+
+
+def test_execute_plan_captures_failure_without_aborting():
+    plan = plugins_module.MarketplacePlan(actions=[
+        plugins_module.PlannedAction("install_plugin", "bad@official"),
+        plugins_module.PlannedAction("install_plugin", "good@official"),
+    ])
+    installer = _FakeInstaller(fail_targets={"bad@official"})
+    context = propagators.SyncContext(claude_dir=Path("/x"), repo_dir=Path("/y"))
+
+    result = plugins_module.execute_plan(context, plan, installer)
+
+    outcomes = {outcome.target: outcome.ok for outcome in result.outcomes}
+    assert outcomes == {"bad@official": False, "good@official": True}   # continues past failure
