@@ -83,23 +83,11 @@ def run_apply(context: SyncContext, propagators: list) -> list:
 def resolve_bundle(context: SyncContext, kind: str, name: str, winner: str) -> None:
     """Perform a prompted bundle-conflict resolution.
 
-    winner="repo"  -> overwrite the local skill/agent from the repo bundle.
-    winner="local" -> re-export the local entry into the repo bundle (local wins).
+    Thin module-level entry point delegating to
+    ContentBundlePropagator.resolve_conflict, where the logic lives with the class
+    whose install/export internals it needs (SOLID N3).
     """
-    propagator = ContentBundlePropagator()
-    if winner == "repo":
-        bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
-        manifest = _read_manifest(bundle_dir)
-        destination = propagator._local_entry_path(context, kind, name, manifest.get("is_dir", True))
-        propagator._install(bundle_dir, destination, manifest)
-    elif winner == "local":
-        entry = context.claude_dir / BUNDLE_KINDS[kind] / name
-        payload = _payload_files(entry, propagator._export_filter)
-        bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
-        propagator._write_bundle(bundle_dir, payload, kind, name, entry.is_dir(),
-                                 _content_hash(payload), context)
-    else:
-        raise ValueError(f"winner must be 'local' or 'repo', got {winner!r}")
+    ContentBundlePropagator().resolve_conflict(context, kind, name, winner)
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +297,27 @@ class ContentBundlePropagator:
         else:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(next(iter(payload.values())))
+
+    def resolve_conflict(self, context: SyncContext, kind: str, name: str, winner: str) -> None:
+        """Apply a prompted bundle-conflict resolution using this propagator's own
+        install/export internals.
+
+        winner="repo"  -> overwrite the local skill/agent from the repo bundle.
+        winner="local" -> re-export the local entry into the repo bundle (local wins).
+        """
+        if winner == "repo":
+            bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
+            manifest = _read_manifest(bundle_dir)
+            destination = self._local_entry_path(context, kind, name, manifest.get("is_dir", True))
+            self._install(bundle_dir, destination, manifest)
+        elif winner == "local":
+            entry = context.claude_dir / BUNDLE_KINDS[kind] / name
+            payload = _payload_files(entry, self._export_filter)
+            bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
+            self._write_bundle(bundle_dir, payload, kind, name, entry.is_dir(),
+                               _content_hash(payload), context)
+        else:
+            raise ValueError(f"winner must be 'local' or 'repo', got {winner!r}")
 
 
 class SnapshotPropagator:
