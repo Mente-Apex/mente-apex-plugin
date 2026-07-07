@@ -737,8 +737,6 @@ def cmd_apply_shared(repo_path: str):
     """
     Install shared artifacts from the repo's shared/ directory into ~/.claude/.
     Reads shared/skills/, shared/rules/, shared/agents/ and copies new files locally.
-    Also handles shared/plugins/: copies plugin files into the cache and registers
-    them in installed_plugins.json if not already present.
     Prints a summary of what was installed.
     """
     repo = Path(repo_path)
@@ -776,68 +774,6 @@ def cmd_apply_shared(repo_path: str):
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
             installed.append(f"{shared_type}/{rel}")
-
-    # Handle shared plugins: each subdir is named <plugin-key> and contains
-    # a plugin-meta.json plus the plugin's files.
-    plugins_src = shared / "plugins"
-    if plugins_src.exists():
-        installed_plugins_path = CLAUDE_DIR / "plugins" / "installed_plugins.json"
-        try:
-            plugins_manifest = json.loads(installed_plugins_path.read_text())
-        except (FileNotFoundError, json.JSONDecodeError):
-            plugins_manifest = {"version": 2, "plugins": {}}
-
-        for plugin_dir in sorted(plugins_src.iterdir()):
-            if not plugin_dir.is_dir():
-                continue
-            meta_file = plugin_dir / "plugin-meta.json"
-            if not meta_file.exists():
-                skipped.append(f"plugins/{plugin_dir.name} (missing plugin-meta.json)")
-                continue
-            meta = json.loads(meta_file.read_text())
-            plugin_key = meta.get("key", plugin_dir.name)
-            marketplace = meta.get("marketplace", "unknown")
-            plugin_name = meta.get("name", plugin_dir.name)
-            version = meta.get("version", "unknown")
-
-            # Skip if already registered in installed_plugins.json
-            if plugin_key in plugins_manifest.get("plugins", {}):
-                skipped.append(f"plugins/{plugin_key}")
-                continue
-
-            # Copy plugin files (excluding plugin-meta.json) into the cache.
-            # marketplace/plugin_name/version come from plugin-meta.json — guard
-            # against a crafted meta escaping the cache tree.
-            install_path = CLAUDE_DIR / "plugins" / "cache" / marketplace / plugin_name / version
-            if not _is_within(install_path, CLAUDE_DIR):
-                skipped.append(f"plugins/{plugin_key} (meta escapes ~/.claude)")
-                continue
-            install_path.mkdir(parents=True, exist_ok=True)
-            for src_file in sorted(plugin_dir.rglob("*")):
-                if not src_file.is_file() or src_file.name == "plugin-meta.json":
-                    continue
-                rel = src_file.relative_to(plugin_dir)
-                dest = install_path / rel
-                if not _is_within(dest, CLAUDE_DIR):
-                    skipped.append(f"plugins/{plugin_key}/{rel} (escapes ~/.claude)")
-                    continue
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src_file, dest)
-
-            # Register in installed_plugins.json
-            now = datetime.now(timezone.utc).isoformat()
-            entry = {
-                "scope": "user",
-                "installPath": str(install_path),
-                "version": version,
-                "installedAt": now,
-                "lastUpdated": now,
-            }
-            if meta.get("gitCommitSha"):
-                entry["gitCommitSha"] = meta["gitCommitSha"]
-            plugins_manifest.setdefault("plugins", {})[plugin_key] = [entry]
-            installed_plugins_path.write_text(json.dumps(plugins_manifest, indent=4))
-            installed.append(f"plugins/{plugin_key}")
 
     print(json.dumps({"installed": installed, "skipped": skipped}))
 

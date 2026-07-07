@@ -10,7 +10,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # config-sync
@@ -78,75 +78,9 @@ python3 "$ENGINE" reconcile
 python3 "$ENGINE" propagate-export "$REPO"
 ```
 
-Then export installed **plugins** to `shared/plugins/` so other machines can install them
-via `apply-shared`. (Plugins still use this channel in C1; the marketplace/local-plugin
-propagator lands in C2.) Each plugin gets its own subdirectory named by its key, containing
-a `plugin-meta.json` and a copy of all its cache files. Plugins already present in
-`shared/plugins/` are skipped — only new ones are added.
-
-```bash
-# Pass $REPO as an argument so the (quoted) heredoc body never needs shell expansion.
-python3 - "$REPO" <<'PYEOF'
-import json, shutil, sys
-from pathlib import Path
-
-repo = Path(sys.argv[1])
-claude_dir = Path.home() / ".claude"
-installed_path = claude_dir / "plugins" / "installed_plugins.json"
-shared_plugins = repo / "shared" / "plugins"
-shared_plugins.mkdir(parents=True, exist_ok=True)
-
-if not installed_path.exists():
-    print("No installed_plugins.json found — skipping plugin export")
-    sys.exit(0)
-
-data = json.loads(installed_path.read_text())
-for plugin_key, entries in data.get("plugins", {}).items():
-    plugin_dest = shared_plugins / plugin_key
-    if plugin_dest.exists():
-        print(f"skip (already shared): {plugin_key}")
-        continue
-
-    entry = entries[0] if isinstance(entries, list) else entries
-    install_path = Path(entry["installPath"])
-
-    # Derive marketplace + name from the key (format: name@marketplace)
-    parts = plugin_key.split("@", 1)
-    name = parts[0]
-    marketplace = parts[1] if len(parts) > 1 else "unknown"
-    version = entry.get("version", "unknown")
-
-    plugin_dest.mkdir(parents=True, exist_ok=True)
-
-    # Write plugin-meta.json — apply-shared reads this to register the plugin
-    meta = {
-        "key": plugin_key,
-        "name": name,
-        "marketplace": marketplace,
-        "version": version,
-    }
-    if entry.get("gitCommitSha"):
-        meta["gitCommitSha"] = entry["gitCommitSha"]
-    (plugin_dest / "plugin-meta.json").write_text(json.dumps(meta, indent=2))
-
-    # Copy all plugin files from the local cache so apply-shared can install them
-    if install_path.exists():
-        for src in sorted(install_path.rglob("*")):
-            if not src.is_file():
-                continue
-            rel = src.relative_to(install_path)
-            dest = plugin_dest / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-        print(f"exported: {plugin_key} ({version})")
-    else:
-        print(f"exported meta only (cache missing): {plugin_key}")
-PYEOF
-```
-
 ```bash
 cd "$REPO"
-git add machines/ bundles/ shared/plugins/
+git add machines/ bundles/ plugins/
 git diff --cached --quiet && echo "no local changes" || \
   git commit -m "sync: $MACHINE_ID at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -219,21 +153,41 @@ keep your local version, or take the network's?"), then apply their choice:
 python3 "$ENGINE" resolve-bundle "$REPO" "<kind>" "<name>" "<winner>"
 ```
 
-## Step 4b — Apply shared plugins from the network
+## Step 4b — Converge marketplace plugins (plan → consent → apply)
 
-Skills/agents now flow through `propagate-apply` (above). This step installs shared
-**plugins** (and any legacy `shared/skills|rules|agents` from older machines, never
-overwriting local copies). Plugins are registered only if absent from
-`installed_plugins.json`.
+Skills/agents flow through `propagate-apply` (above); config through the snapshot
+propagator. **Plugins** converge here from the desired-state manifest. First compute
+the plan (pure — nothing is mutated):
+
+```bash
+PLAN=$(python3 "$ENGINE" plugins-plan "$REPO")
+echo "$PLAN"
+```
+
+Parse `$PLAN`. If `.actions` is empty, tell the user "plugins already up to date" and
+continue. Otherwise render the actions (each has `verb` + `target`) and ask with
+**AskUserQuestion**: "Apply these plugin changes? — refresh N marketplace(s),
+install M, update K plugin(s)." Also surface any `.skipped` entries (e.g. a
+marketplace whose source is unknown).
+
+If the user declines, stop here — nothing has been changed. If they accept, execute:
+
+```bash
+APPLIED_PLUGINS=$(python3 "$ENGINE" plugins-apply "$REPO")
+echo "$APPLIED_PLUGINS"
+```
+
+Parse `.outcomes` and report which plugins were installed/updated; surface any
+`ok:false` entries with their `message`. Remind the user to restart Claude to
+activate newly installed plugins.
+
+Finally, install any **legacy** shared skills/rules/agents from older machines
+(never overwriting local copies):
 
 ```bash
 SHARED_RESULT=$(python3 "$ENGINE" apply-shared "$REPO")
 echo "$SHARED_RESULT"
 ```
-
-Parse and mention any newly installed plugins to the user (e.g. "Installed 2 new
-plugin(s): playwright@claude-plugins-official, superpowers@claude-plugins-official —
-restart Claude to activate them").
 
 ## Step 5 — Commit the updated consolidated snapshot and push
 
