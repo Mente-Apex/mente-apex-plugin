@@ -263,9 +263,13 @@ def cmd_machine_id():
 
 
 def cmd_export():
-    """Collect Claude state into a JSON snapshot and print to stdout."""
+    """Collect Claude state into a JSON snapshot and print to stdout.
+
+    A pure query: it reads local state and prints a snapshot, mutating nothing.
+    Dropping orphaned plugins / pruning stale caches is the job of the explicit
+    `reconcile` command (Command-Query Separation) — so `backup` stays safe.
+    """
     files = {}
-    reconcile_info = {}
 
     # Top-level files
     for fname in SNAPSHOT_FILES:
@@ -273,21 +277,7 @@ def cmd_export():
         if p.exists():
             if fname == "settings.json":
                 cleaned = _clean_settings(_read(p))
-                cleaned, orphans = _reconcile_plugins(cleaned)
-                if orphans:
-                    # Write the reconciled settings back so the live file is clean too
-                    p.write_text(
-                        json.dumps(
-                            json.loads(_read(p)) | {"enabledPlugins": cleaned.get("enabledPlugins", {})},
-                            indent=2, ensure_ascii=False
-                        ),
-                        encoding="utf-8",
-                    )
-                    stale_cache = _prune_stale_plugin_cache(_installed_plugin_ids())
-                    reconcile_info = {
-                        "orphaned_plugins_removed": orphans,
-                        "stale_cache_dirs_removed": stale_cache,
-                    }
+                cleaned, _orphans = _reconcile_plugins(cleaned)  # in-memory only for the snapshot
                 files[fname] = json.dumps(cleaned)
             else:
                 files[fname] = _read(p)
@@ -309,9 +299,33 @@ def cmd_export():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "files": files,
     }
-    if reconcile_info:
-        snapshot["reconcile"] = reconcile_info
     print(json.dumps(snapshot, indent=2, ensure_ascii=False))
+
+
+def cmd_reconcile():
+    """Reconcile local plugin state (mutating) — the command half of D6.
+
+    Drops orphaned enabledPlugins entries from the live settings.json (keeping
+    env/secret keys intact) and prunes stale plugin cache dirs. Split out of
+    `export` so a snapshot/backup never carries surprise side effects.
+    """
+    settings_path = CLAUDE_DIR / "settings.json"
+    orphans = []
+    stale_cache = []
+    if settings_path.exists():
+        raw = _read(settings_path)
+        reconciled, orphans = _reconcile_plugins(_clean_settings(raw))
+        if orphans:
+            live = json.loads(raw)
+            live["enabledPlugins"] = reconciled.get("enabledPlugins", {})
+            settings_path.write_text(
+                json.dumps(live, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            stale_cache = _prune_stale_plugin_cache(_installed_plugin_ids())
+    print(json.dumps({
+        "orphaned_plugins_removed": orphans,
+        "stale_cache_dirs_removed": stale_cache,
+    }))
 
 
 def cmd_import(snapshot_path: str):
@@ -1066,6 +1080,7 @@ def cmd_migrate():
 
 COMMANDS = {
     "export": (cmd_export, 0),
+    "reconcile": (cmd_reconcile, 0),
     "import": (cmd_import, 1),
     "backup": (cmd_backup, 0),
     "status": (cmd_status, 0),
