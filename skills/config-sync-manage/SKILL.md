@@ -73,24 +73,40 @@ if [ -d "$REPO/shared" ]; then
   python3 - "$REPO" <<'EOF'
 import sys, subprocess
 from pathlib import Path
+
 repo = Path(sys.argv[1])
 shared = repo / "shared"
+ENUMERATION_CAP = 20  # list this many files per type, then summarise the rest
+
+
+def last_touch(pathspec):
+    """Author/date of the most recent commit touching pathspec — one `git log`
+    for the whole type dir, so attribution costs one subprocess per type rather
+    than one per file (which made status O(files) subprocesses)."""
+    record = subprocess.run(
+        ["git", "log", "--format=%an|%ad", "--date=short", "-1", "--", pathspec],
+        cwd=repo, capture_output=True, text=True,
+    ).stdout.strip()
+    author, _, date = record.partition("|")
+    return author or "unknown", date or "unknown"
+
+
 found = False
 for type_dir in sorted(shared.iterdir()):
     if not type_dir.is_dir():
         continue
-    for path in sorted(type_dir.rglob("*")):
-        if path.is_file():
-            found = True
-            rel = path.relative_to(shared)
-            git_info = subprocess.run(
-                ["git", "log", "--format=%an|%ad", "--date=short", "-1", "--", f"shared/{rel}"],
-                cwd=repo, capture_output=True, text=True
-            ).stdout.strip() or "unknown|unknown"
-            parts = git_info.split("|")
-            author = parts[0] if parts else "unknown"
-            date = parts[1] if len(parts) > 1 else "unknown"
-            print(f"  {str(rel):<40}  shared by {author} on {date}")
+    files = [path for path in sorted(type_dir.rglob("*")) if path.is_file()]
+    if not files:
+        continue
+    found = True
+    type_name = type_dir.name
+    author, date = last_touch(f"shared/{type_name}")
+    print(f"  {type_name}: {len(files)} file(s) — last updated by {author} on {date}")
+    for path in files[:ENUMERATION_CAP]:
+        print(f"      {path.relative_to(shared)}")
+    remaining = len(files) - ENUMERATION_CAP
+    if remaining > 0:
+        print(f"      … and {remaining} more")
 if not found:
     print("  (none yet — use /config-sync-manage share to add)")
 EOF
