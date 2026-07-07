@@ -140,6 +140,34 @@ def _installed_plugin_ids() -> set:
         return set()
 
 
+def _derive_plugin_meta(plugin_key: str, entry: dict) -> dict:
+    """Best-effort {key,marketplace,name,version[,gitCommitSha]} for a plugin.
+
+    Prefers the cache path layout `.../cache/<marketplace>/<name>/<version>/`;
+    falls back to the key (`name@marketplace`) and the registry entry's version
+    when the installPath has no `cache` segment (a dev/linked plugin) — so
+    sharing never crashes with an uncaught StopIteration.
+    """
+    parts = Path(entry.get("installPath", "")).parts
+    marketplace = name = version = None
+    if "cache" in parts:
+        cache_index = parts.index("cache")
+        segments = parts[cache_index + 1:cache_index + 4]
+        if len(segments) == 3:
+            marketplace, name, version = segments
+    if name is None or marketplace is None:
+        key_parts = plugin_key.split("@", 1)
+        name = key_parts[0]
+        marketplace = key_parts[1] if len(key_parts) > 1 else "unknown"
+    if version is None:
+        version = entry.get("version", "unknown")
+
+    meta = {"key": plugin_key, "marketplace": marketplace, "name": name, "version": version}
+    if entry.get("gitCommitSha"):
+        meta["gitCommitSha"] = entry["gitCommitSha"]
+    return meta
+
+
 def _reconcile_plugins(settings: dict) -> tuple:
     """
     Drop orphaned keys from enabledPlugins — entries whose plugin ID is absent

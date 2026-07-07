@@ -11,7 +11,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # config-sync-manage
@@ -292,32 +292,22 @@ if [ "$TYPE" = "plugin" ]; then
   mkdir -p "$DEST_DIR"
   cp -r "$SRC/." "$DEST_DIR/"
 
-  # Write plugin-meta.json so apply-shared can register it on other machines
-  python3 - "$PLUGIN_KEY" "$DEST_DIR" <<'EOF'
+  # Write plugin-meta.json so apply-shared can register it on other machines.
+  # Reuse the engine's guarded _derive_plugin_meta so a dev/linked install
+  # (installPath without a 'cache' segment) never crashes with StopIteration.
+  python3 - "$PLUGIN_KEY" "$DEST_DIR" "$(dirname "$ENGINE")" <<'EOF'
 import json, sys
 from pathlib import Path
 plugin_key = sys.argv[1]
 dest_dir = Path(sys.argv[2])
-p = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-data = json.loads(p.read_text())
-entry = data["plugins"][plugin_key][0]
-install_path = Path(entry["installPath"])
-# Derive marketplace and plugin name from cache path structure:
-# .../.claude/plugins/cache/<marketplace>/<plugin-name>/<version>/
-parts = install_path.parts
-cache_idx = next(i for i, part in enumerate(parts) if part == "cache")
-marketplace = parts[cache_idx + 1]
-plugin_name  = parts[cache_idx + 2]
-version      = parts[cache_idx + 3]
-meta = {
-    "key": plugin_key,
-    "marketplace": marketplace,
-    "name": plugin_name,
-    "version": version,
-    "gitCommitSha": entry.get("gitCommitSha", ""),
-}
+sys.path.insert(0, sys.argv[3])
+from config_sync import _derive_plugin_meta
+installed = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+entries = json.loads(installed.read_text())["plugins"][plugin_key]
+entry = entries[0] if isinstance(entries, list) else entries
+meta = _derive_plugin_meta(plugin_key, entry)
 (dest_dir / "plugin-meta.json").write_text(json.dumps(meta, indent=2))
-print(f"Wrote plugin-meta.json for {plugin_key} v{version}")
+print(f"Wrote plugin-meta.json for {plugin_key} v{meta['version']}")
 EOF
 
 else
