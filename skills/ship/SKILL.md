@@ -18,7 +18,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, AskUserQuestion
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # ship
@@ -46,10 +46,10 @@ consistent so shipped history stays clean:
 - **Never commit directly to the default branch.** If the current branch is `main` or
   `master`, create a feature branch first. This mirrors the harness rule and keeps the
   default branch clean.
-- **Commit message footer** — every commit ends with the user's required trailer:
-  ```
-  Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
-  ```
+- **Commit message footer** — every commit ends with the co-author trailer the harness
+  prescribes for the *active* model this session (Claude Code injects the exact model
+  name). Use that trailer verbatim; if none is configured, fall back to a model-neutral
+  `Co-Authored-By: Claude <noreply@anthropic.com>`. Never hardcode a specific model name.
 - **PR body footer** — every PR body ends with:
   ```
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
@@ -143,13 +143,15 @@ git checkout -b "<branch>"            # skip if already on a feature branch
 # 2. Stage everything the user is working on
 git add -A
 
-# 3. Commit (heredoc keeps the trailer intact)
+# 3. Commit (heredoc keeps the trailer intact).
+# Replace the trailer below with the active model's trailer prescribed by the
+# harness this session; use the neutral form only if none is configured.
 git commit -F - <<'MSG'
 <conventional commit subject>
 
 <optional body>
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 MSG
 
 # 4. Push and set upstream
