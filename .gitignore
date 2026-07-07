@@ -3,5 +3,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Python test tooling
+.venv/
+.pytest_cache/
+tests/__pycache__/
+
 # skill-creator eval workspaces (transient: eval sets, run logs, review HTML)
 skills/*-workspace/
