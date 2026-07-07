@@ -47,7 +47,6 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
-REMOTE=$(python3 -c "import json; print(json.load(open('$CONFIG'))['remote'])")
 MACHINE_ID=$(python3 "$ENGINE" machine-id)
 ```
 
