@@ -1075,6 +1075,43 @@ def cmd_migrate():
 
 
 # ---------------------------------------------------------------------------
+# Propagator seam — thin CLI wrappers (logic lives in config_sync_propagators)
+# ---------------------------------------------------------------------------
+
+def _sync_context(repo_path):
+    """Build a SyncContext injecting the live CLAUDE_DIR + the repo path."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import config_sync_propagators as propagators
+    return propagators, propagators.SyncContext(claude_dir=CLAUDE_DIR, repo_dir=Path(repo_path))
+
+
+def cmd_propagate_export(repo_path):
+    propagators, context = _sync_context(repo_path)
+    results = propagators.run_export(context, propagators.default_propagators())
+    print(json.dumps({result.propagator: {"written": result.written, "skipped": result.skipped}
+                      for result in results}, indent=2))
+
+
+def cmd_propagate_apply(repo_path):
+    propagators, context = _sync_context(repo_path)
+    results = propagators.run_apply(context, propagators.default_propagators())
+    payload = {}
+    for result in results:
+        payload[result.propagator] = {
+            "applied": result.applied,
+            "skipped": result.skipped,
+            "conflicts": [vars(conflict) for conflict in result.conflicts],
+        }
+    print(json.dumps(payload, indent=2))
+
+
+def cmd_resolve_bundle(repo_path, kind, name, winner):
+    propagators, context = _sync_context(repo_path)
+    propagators.resolve_bundle(context, kind, name, winner)
+    print(json.dumps({"resolved": f"{kind}/{name}", "winner": winner}))
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1086,6 +1123,9 @@ COMMANDS = {
     "status": (cmd_status, 0),
     "merge": (cmd_merge, 2),
     "consolidate": (cmd_consolidate, 1),
+    "propagate-export": (cmd_propagate_export, 1),
+    "propagate-apply": (cmd_propagate_apply, 1),
+    "resolve-bundle": (cmd_resolve_bundle, 4),
     "apply-shared": (cmd_apply_shared, 1),
     "log-sync": (cmd_log_sync, None),   # variadic: repo [action] [summary]
     "scan": (cmd_scan, None),   # variadic: optional --gate flag
