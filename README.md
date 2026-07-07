@@ -28,8 +28,9 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 ### Config sync
 
 Keeps your Claude **config files** (CLAUDE.md, rules, skills, agents, the `memory/`
-files, settings.json) in sync across machines via a private Git repo, with smart
-LLM-powered merge when machines diverge. Engine: `scripts/config_sync.py`.
+files, settings.json) in sync across machines via a private Git repo, with a structured
+section-aware merge when machines diverge (optional LLM merge via
+`CONFIG_SYNC_LLM_MERGE=1`). Engine: `scripts/config_sync.py`.
 
 | Skill | Command | What it does |
 |-------|---------|-------------|
@@ -48,6 +49,11 @@ LLM-powered merge when machines diverge. Engine: `scripts/config_sync.py`.
 claude plugin marketplace add menteapex/mente-apex-plugin
 claude plugin install mente-apex
 ```
+
+> **Fresh-machine bootstrap.** Config sync propagates your `~/.claude` *content*, but
+> the plugin's own skills and `config_sync.py` engine are **not** part of a snapshot —
+> they live in the plugin cache. On a new machine you must run the two install lines
+> above **before** `/config-sync-setup`, otherwise there is nothing to run the sync.
 
 First-time config-sync setup (creates the `~/.claude/config-sync-repo` sync repo against
 a private Git remote you control):

@@ -10,7 +10,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, AskUserQuestion
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # config-sync-setup
@@ -28,7 +28,15 @@ sync across machines via a private Git repo. Handles both cases automatically:
 ## Step 1 — Migrate legacy paths, then check state
 
 ```bash
-ENGINE="${CLAUDE_PLUGIN_ROOT}/scripts/config_sync.py"
+ENGINE="${CLAUDE_PLUGIN_ROOT:-}/scripts/config_sync.py"
+if [ ! -f "$ENGINE" ]; then
+  # CLAUDE_PLUGIN_ROOT is unset outside plugin context (e.g. a standalone-copied
+  # skill) — fall back to the installed plugin cache.
+  for candidate in "$HOME/.claude/plugins/cache/"*/mente-apex/*/scripts/config_sync.py; do
+    [ -f "$candidate" ] && ENGINE="$candidate" && break
+  done
+fi
+[ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
 CONFIG="$HOME/.claude/config-sync-config.json"
 
 # One-time, idempotent rename of any legacy open-memory-* paths. No-op otherwise.
