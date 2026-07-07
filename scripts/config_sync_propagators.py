@@ -361,23 +361,8 @@ class SnapshotPropagator:
             if not config_sync._is_within(destination, context.claude_dir):
                 result.skipped.append(relative_path)
                 continue
-            if relative_path == "settings.json":
-                incoming = config_sync.json.loads(content) if content.strip() else {}
-                local_raw = config_sync._read(destination)
-                existing = config_sync.json.loads(local_raw) if local_raw.strip() else {}
-                merged = config_sync.json.dumps(
-                    config_sync._merge_import_settings(incoming, existing), indent=2, ensure_ascii=False)
-                if local_raw == merged:
-                    result.skipped.append(relative_path)
-                    continue
-                config_sync._write(destination, merged)
-                result.applied.append(relative_path)
-                continue
-            if config_sync._read(destination) == content:
-                result.skipped.append(relative_path)
-                continue
-            config_sync._write(destination, content)
-            result.applied.append(relative_path)
+            outcome = config_sync._apply_snapshot_file(destination, relative_path, content)
+            (result.applied if outcome == "applied" else result.skipped).append(relative_path)
         return result
 
 
