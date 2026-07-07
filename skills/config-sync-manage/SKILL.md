@@ -209,6 +209,12 @@ Run `/config-sync` to push these permanent rules to your other machines."
 
 ## Share
 
+> **Skills & agents auto-propagate now.** Since config-sync v0.6.0 every local
+> `~/.claude/skills/` and `~/.claude/agents/` entry is exported as a hash-gated bundle
+> on each `/config-sync` — you no longer need to share them explicitly. `share` remains
+> for **plugins** (until the marketplace propagator lands) and is a harmless no-op-ish
+> convenience for skills/agents already covered by the automatic bundle channel.
+
 Copy a local skill, agent, rule, or plugin into the repo's `shared/` namespace so
 other machines in the network receive it on their next sync.
 
