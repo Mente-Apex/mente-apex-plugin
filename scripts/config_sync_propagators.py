@@ -264,6 +264,8 @@ class ContentBundlePropagator:
         return context.claude_dir / BUNDLE_KINDS[kind] / name
 
     def apply(self, context: SyncContext) -> ApplyResult:
+        # Deferred: config_sync_propagators <-> config_sync is a two-way dependency;
+        # keep this call-time (hoisting reintroduces a circular import — SOLID M2).
         import config_sync
         result = ApplyResult(self.name)
         for kind, subdir in BUNDLE_KINDS.items():
@@ -319,6 +321,7 @@ class SnapshotPropagator:
 
     def export(self, context: SyncContext) -> ExportResult:
         import platform
+        # Deferred: two-way dep with config_sync; call-time keeps it acyclic (SOLID M2).
         import config_sync
         files = {}
         for filename in SNAPSHOT_CONFIG_FILES:
@@ -347,6 +350,7 @@ class SnapshotPropagator:
         return ExportResult(self.name, written=[f"machines/{machine_id}.json"])
 
     def apply(self, context: SyncContext) -> ApplyResult:
+        # Deferred: two-way dep with config_sync; call-time keeps it acyclic (SOLID M2).
         import config_sync
         result = ApplyResult(self.name)
         consolidated = context.repo_dir / "consolidated" / "snapshot.json"
