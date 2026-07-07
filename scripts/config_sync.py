@@ -82,6 +82,23 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    """True if `path` resolves to `root` itself or somewhere beneath it."""
+    resolved = path.resolve()
+    root_resolved = root.resolve()
+    return resolved == root_resolved or resolved.is_relative_to(root_resolved)
+
+
+def _safe_dest(rel: str):
+    """Resolve `rel` under CLAUDE_DIR; return None if it escapes the tree.
+
+    Guards against `../` traversal and absolute keys (`CLAUDE_DIR / "/abs"`
+    discards the left side) in snapshots that were hand-edited or corrupted.
+    """
+    candidate = CLAUDE_DIR / rel
+    return candidate if _is_within(candidate, CLAUDE_DIR) else None
+
+
 def _machine_id() -> str:
     """Return a stable ID for this machine, creating one if needed."""
     id_file = CLAUDE_DIR / "config-sync-machine-id"
@@ -274,7 +291,10 @@ def cmd_import(snapshot_path: str):
         if any(rel.startswith(prefix) for prefix in SNAPSHOT_EXCLUDE_PREFIXES):
             skipped.append(rel)
             continue
-        dest = CLAUDE_DIR / rel
+        dest = _safe_dest(rel)
+        if dest is None:
+            skipped.append(rel)
+            continue
         if rel == "settings.json":
             incoming = json.loads(content) if content.strip() else {}
             local_raw = _read(dest)
@@ -610,6 +630,9 @@ def cmd_apply_shared(repo_path: str):
                 continue
             rel = src.relative_to(src_dir)
             dest = local_dest / rel
+            if not _is_within(dest, CLAUDE_DIR):
+                skipped.append(f"{shared_type}/{rel} (escapes ~/.claude)")
+                continue
             if dest.exists():
                 # Don't overwrite local customisations — skip silently
                 skipped.append(f"{shared_type}/{rel}")
@@ -646,14 +669,22 @@ def cmd_apply_shared(repo_path: str):
                 skipped.append(f"plugins/{plugin_key}")
                 continue
 
-            # Copy plugin files (excluding plugin-meta.json) into the cache
+            # Copy plugin files (excluding plugin-meta.json) into the cache.
+            # marketplace/plugin_name/version come from plugin-meta.json — guard
+            # against a crafted meta escaping the cache tree.
             install_path = CLAUDE_DIR / "plugins" / "cache" / marketplace / plugin_name / version
+            if not _is_within(install_path, CLAUDE_DIR):
+                skipped.append(f"plugins/{plugin_key} (meta escapes ~/.claude)")
+                continue
             install_path.mkdir(parents=True, exist_ok=True)
             for src_file in sorted(plugin_dir.rglob("*")):
                 if not src_file.is_file() or src_file.name == "plugin-meta.json":
                     continue
                 rel = src_file.relative_to(plugin_dir)
                 dest = install_path / rel
+                if not _is_within(dest, CLAUDE_DIR):
+                    skipped.append(f"plugins/{plugin_key}/{rel} (escapes ~/.claude)")
+                    continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_file, dest)
 
