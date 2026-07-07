@@ -10,7 +10,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.8.1"
+  version: "0.8.2"
 ---
 
 # config-sync
@@ -78,11 +78,11 @@ python3 "$ENGINE" reconcile
 # CLAUDE.md/memory/rules/settings) AND skill/agent bundles under bundles/
 # (all files, hash-gated). Replaces the old `export > machines/…` line.
 EXPORT_OUT=$(python3 "$ENGINE" propagate-export "$REPO")
-echo "$EXPORT_OUT"
+printf '%s\n' "$EXPORT_OUT"
 
 # Surface plugin-provenance warnings: plugins that can't reach your other machines
 # because their marketplace isn't a shareable git/GitHub remote.
-echo "$EXPORT_OUT" | python3 -c "
+printf '%s\n' "$EXPORT_OUT" | python3 -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -156,7 +156,7 @@ echo "Backup saved: $BACKUP_PATH"
 # settings) AND skill/agent bundles (ContentBundlePropagator). Prints per-propagator
 # {applied, skipped, conflicts}. Replaces the old standalone `import`.
 APPLY=$(python3 "$ENGINE" propagate-apply "$REPO")
-echo "$APPLY"
+printf '%s\n' "$APPLY"
 ```
 
 Parse `$APPLY` and tell the user which config files and which skill/agent bundles were
@@ -180,7 +180,7 @@ the plan (pure — nothing is mutated):
 
 ```bash
 PLAN=$(python3 "$ENGINE" plugins-plan "$REPO")
-echo "$PLAN"
+printf '%s\n' "$PLAN"
 ```
 
 Parse `$PLAN`. If `.actions` is empty, tell the user "plugins already up to date" and
@@ -193,7 +193,7 @@ If the user declines, stop here — nothing has been changed. If they accept, ex
 
 ```bash
 APPLIED_PLUGINS=$(python3 "$ENGINE" plugins-apply "$REPO")
-echo "$APPLIED_PLUGINS"
+printf '%s\n' "$APPLIED_PLUGINS"
 ```
 
 Parse `.outcomes` and report which plugins were installed/updated; surface any
@@ -205,7 +205,7 @@ Finally, install any **legacy** shared skills/rules/agents from older machines
 
 ```bash
 SHARED_RESULT=$(python3 "$ENGINE" apply-shared "$REPO")
-echo "$SHARED_RESULT"
+printf '%s\n' "$SHARED_RESULT"
 ```
 
 ## Step 5 — Commit the updated consolidated snapshot and push
@@ -223,10 +223,18 @@ git push origin main 2>&1
 
 ```bash
 # Summarise what changed for the log (sum applied entries across both propagators)
-APPLIED=$(echo "$APPLY" | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(len(section.get('applied',[])) for section in d.values()))" 2>/dev/null || echo "?")
-SHARED_IN=$(echo "$SHARED_RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['installed']))" 2>/dev/null || echo "0")
+APPLIED=$(printf '%s\n' "$APPLY" | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(len(section.get('applied',[])) for section in d.values()))" 2>/dev/null || echo "?")
+SHARED_IN=$(printf '%s\n' "$SHARED_RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['installed']))" 2>/dev/null || echo "0")
 
 python3 "$ENGINE" log-sync "$REPO" "sync" "$APPLIED file(s) updated, $SHARED_IN shared artifact(s) installed"
+
+# Persist the log entry. log-sync writes meta/sync-log.json but does not commit it,
+# so without this the sync log never reaches the remote — it just accumulates as an
+# uncommitted local change. Commit + push it now (a no-op when nothing changed).
+cd "$REPO"
+git add meta/
+git diff --cached --quiet && echo "sync log unchanged" || \
+  { git commit -m "log: sync entry for $MACHINE_ID at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; git push origin main 2>&1; }
 
 # Update last_sync timestamp in local config
 python3 - <<EOF
