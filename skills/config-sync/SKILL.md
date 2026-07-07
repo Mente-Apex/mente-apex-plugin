@@ -10,7 +10,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # config-sync
@@ -76,8 +76,22 @@ python3 "$ENGINE" reconcile
 # Export through the propagator seam: writes the machine snapshot (config —
 # CLAUDE.md/memory/rules/settings) AND skill/agent bundles under bundles/
 # (all files, hash-gated). Replaces the old `export > machines/…` line.
-python3 "$ENGINE" propagate-export "$REPO"
+EXPORT_OUT=$(python3 "$ENGINE" propagate-export "$REPO")
+echo "$EXPORT_OUT"
+
+# Surface plugin-provenance warnings: plugins that can't reach your other machines
+# because their marketplace isn't a shareable git/GitHub remote.
+echo "$EXPORT_OUT" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for warning in data.get('marketplace', {}).get('warnings', []):
+    print('⚠ ' + warning)
+"
 ```
+
+> If any `⚠` lines appeared, tell the user those plugins won't sync to their other
+> machines and suggest publishing each to a GitHub marketplace. This is advisory
+> only — **do not** stop the sync; continue to the next step.
 
 ```bash
 cd "$REPO"
