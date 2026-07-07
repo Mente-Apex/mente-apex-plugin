@@ -10,7 +10,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, AskUserQuestion
 metadata:
-  version: "0.3.0"
+  version: "0.3.1"
 ---
 
 # config-sync-setup
@@ -31,10 +31,11 @@ sync across machines via a private Git repo. Handles both cases automatically:
 ENGINE="${CLAUDE_PLUGIN_ROOT:-}/scripts/config_sync.py"
 if [ ! -f "$ENGINE" ]; then
   # CLAUDE_PLUGIN_ROOT is unset outside plugin context (e.g. a standalone-copied
-  # skill) — fall back to the installed plugin cache.
-  for candidate in "$HOME/.claude/plugins/cache/"*/mente-apex/*/scripts/config_sync.py; do
-    [ -f "$candidate" ] && ENGINE="$candidate" && break
-  done
+  # skill) — fall back to the newest engine in the installed plugin cache.
+  # sort -V version-sorts the cached versions; tail -1 takes the highest, so an
+  # older cached version can never shadow the current one.
+  ENGINE=$(ls -d "$HOME/.claude/plugins/cache/"*/mente-apex/*/scripts/config_sync.py \
+    2>/dev/null | sort -V | tail -1)
 fi
 [ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
 CONFIG="$HOME/.claude/config-sync-config.json"
