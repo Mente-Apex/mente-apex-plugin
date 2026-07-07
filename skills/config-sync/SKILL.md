@@ -68,7 +68,11 @@ to ask whether to continue anyway. If the user declines, stop here. If they acce
 (or the scan was clean), proceed:
 
 ```bash
-# Snapshot current local config
+# Reconcile first (mutating): drop orphaned plugin flags + prune stale caches.
+# Kept separate from export so export/backup stay pure, side-effect-free queries.
+python3 "$ENGINE" reconcile
+
+# Snapshot current local config (pure — mutates nothing)
 python3 "$ENGINE" export > "$REPO/machines/$MACHINE_ID.json"
 ```
 
