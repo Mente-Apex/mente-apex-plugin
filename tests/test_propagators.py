@@ -188,13 +188,7 @@ def test_snapshot_apply_writes_config_and_skips_skill_keys(tmp_path):
     assert "skills/legacy/SKILL.md" in result.skipped
 
 
-def test_default_propagators_runs_both_channels(tmp_path):
-    claude_dir = tmp_path / "c"
-    repo_dir = tmp_path / "r"
-    claude_dir.mkdir()
-    (claude_dir / "config-sync-machine-id").write_text("m2")
-    (claude_dir / "CLAUDE.md").write_text("hi")
-    context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
-
-    results = propagators.run_export(context, propagators.default_propagators())
-    assert {result.propagator for result in results} == {"snapshot", "content-bundle"}
+def test_export_propagators_include_marketplace(tmp_path):
+    import config_sync_plugins as plugins_module
+    names = {propagator.name for propagator in plugins_module.export_propagators()}
+    assert names == {"snapshot", "content-bundle", "marketplace"}
