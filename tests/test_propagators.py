@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import config_sync  # noqa: E402
 import config_sync_propagators as propagators  # noqa: E402
 
 
@@ -148,3 +149,52 @@ def test_resolve_bundle_local_reexports_into_repo(tmp_path):
 
     propagators.resolve_bundle(context, "skill", "demo", "local")
     assert (repo_dir / "bundles" / "skills" / "demo" / "SKILL.md").read_text() == "LOCAL-NEW"
+
+
+def test_snapshot_export_excludes_skills_and_agents(tmp_path):
+    claude_dir = tmp_path / "c"
+    repo_dir = tmp_path / "r"
+    (claude_dir / "rules").mkdir(parents=True)
+    (claude_dir / "rules" / "style.md").write_text("be nice")
+    (claude_dir / "skills" / "demo").mkdir(parents=True)
+    (claude_dir / "skills" / "demo" / "SKILL.md").write_text("# demo")
+    (claude_dir / "config-sync-machine-id").write_text("m1")
+    context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
+
+    propagators.SnapshotPropagator().export(context)
+
+    snapshot = config_sync.json.loads((repo_dir / "machines" / "m1.json").read_text())
+    assert "rules/style.md" in snapshot["files"]
+    assert not any(key.startswith("skills/") for key in snapshot["files"])   # skills excluded
+
+
+def test_snapshot_apply_writes_config_and_skips_skill_keys(tmp_path):
+    claude_dir = tmp_path / "c"
+    repo_dir = tmp_path / "r"
+    claude_dir.mkdir()
+    consolidated = repo_dir / "consolidated"
+    consolidated.mkdir(parents=True)
+    consolidated.joinpath("snapshot.json").write_text(config_sync.json.dumps({"files": {
+        "CLAUDE.md": "hello",
+        "rules/style.md": "be nice",
+        "skills/legacy/SKILL.md": "SHOULD BE SKIPPED",
+    }}))
+    context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
+
+    result = propagators.SnapshotPropagator().apply(context)
+
+    assert (claude_dir / "CLAUDE.md").read_text() == "hello"
+    assert not (claude_dir / "skills" / "legacy" / "SKILL.md").exists()   # legacy skill key skipped
+    assert "skills/legacy/SKILL.md" in result.skipped
+
+
+def test_default_propagators_runs_both_channels(tmp_path):
+    claude_dir = tmp_path / "c"
+    repo_dir = tmp_path / "r"
+    claude_dir.mkdir()
+    (claude_dir / "config-sync-machine-id").write_text("m2")
+    (claude_dir / "CLAUDE.md").write_text("hi")
+    context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
+
+    results = propagators.run_export(context, propagators.default_propagators())
+    assert {result.propagator for result in results} == {"snapshot", "content-bundle"}
