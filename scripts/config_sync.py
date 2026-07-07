@@ -284,9 +284,11 @@ def cmd_machine_id():
 def cmd_export():
     """Collect Claude state into a JSON snapshot and print to stdout.
 
-    A pure query: it reads local state and prints a snapshot, mutating nothing.
-    Dropping orphaned plugins / pruning stale caches is the job of the explicit
-    `reconcile` command (Command-Query Separation) — so `backup` stays safe.
+    Effectively a query: it reads local state and prints a snapshot. Its only
+    side effect is creating the stable machine-id file on a machine's very first
+    run (via `_machine_id`); it never drops orphaned plugins or prunes stale
+    caches — that is the job of the explicit `reconcile` command (Command-Query
+    Separation), so `backup` stays safe.
     """
     files = {}
 
