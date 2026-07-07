@@ -341,6 +341,32 @@ def cmd_reconcile():
     }))
 
 
+def _apply_snapshot_file(dest: Path, relative_path: str, content: str) -> str:
+    """Apply one snapshot file to `dest`; return "applied" or "skipped".
+
+    settings.json is JSON-merged with the local copy (env/secret keys are already
+    stripped on export) and written only when the merge changes it; every other
+    file is written only when its content differs. This is the single per-file
+    apply policy shared by `cmd_import` and `SnapshotPropagator.apply`, so the two
+    entry points can never drift — adding a second merge-eligible file is one edit
+    here, not two.
+    """
+    if relative_path == "settings.json":
+        incoming = json.loads(content) if content.strip() else {}
+        local_raw = _read(dest)
+        existing_local = json.loads(local_raw) if local_raw.strip() else {}
+        merged = json.dumps(
+            _merge_import_settings(incoming, existing_local), indent=2, ensure_ascii=False)
+        if local_raw == merged:
+            return "skipped"
+        _write(dest, merged)
+        return "applied"
+    if _read(dest) == content:
+        return "skipped"
+    _write(dest, content)
+    return "applied"
+
+
 def cmd_import(snapshot_path: str):
     """Apply a snapshot to local Claude state. Prints a summary of changes."""
     raw = Path(snapshot_path).read_text(encoding="utf-8")
@@ -356,24 +382,8 @@ def cmd_import(snapshot_path: str):
         if dest is None:
             skipped.append(rel)
             continue
-        if rel == "settings.json":
-            incoming = json.loads(content) if content.strip() else {}
-            local_raw = _read(dest)
-            existing_local = json.loads(local_raw) if local_raw.strip() else {}
-            merged = _merge_import_settings(incoming, existing_local)
-            new_content = json.dumps(merged, indent=2, ensure_ascii=False)
-            if local_raw == new_content:
-                skipped.append(rel)
-                continue
-            _write(dest, new_content)
-            applied.append(rel)
-            continue
-        existing = _read(dest)
-        if existing == content:
-            skipped.append(rel)
-            continue
-        _write(dest, content)
-        applied.append(rel)
+        outcome = _apply_snapshot_file(dest, rel, content)
+        (applied if outcome == "applied" else skipped).append(rel)
 
     print(json.dumps({"applied": applied, "skipped": skipped}))
 
