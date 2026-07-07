@@ -124,3 +124,52 @@ def test_overlap_map_covers_all_23_patterns():
     text = OVERLAP_MAP.read_text()
     missing = [pattern for pattern in GOF_PATTERNS if pattern not in text]
     assert not missing, f"overlap map missing patterns: {missing}"
+
+
+PATTERNS_MD = SKILLS_DIR / "gof" / "references" / "patterns.md"
+REQUIRED_PATTERN_SUBSECTIONS = (
+    "**Intent**", "**Detect by**", "**Grade A**",
+    "**Grade C/D issues**", "**Suggest when**", "**Don't suggest when**",
+)
+
+
+def _pattern_blocks(text):
+    """Map each '### <pattern>' heading to the text of its block (up to the next heading)."""
+    blocks = {}
+    current_name = None
+    current_lines = []
+    for line in text.splitlines():
+        heading = re.match(r"^###\s+(.*\S)\s*$", line)
+        if heading:
+            if current_name is not None:
+                blocks[current_name] = "\n".join(current_lines)
+            current_name = heading.group(1)
+            current_lines = []
+        elif re.match(r"^##\s", line):  # a category header closes the current block
+            if current_name is not None:
+                blocks[current_name] = "\n".join(current_lines)
+                current_name = None
+                current_lines = []
+        elif current_name is not None:
+            current_lines.append(line)
+    if current_name is not None:
+        blocks[current_name] = "\n".join(current_lines)
+    return blocks
+
+
+def test_patterns_md_has_all_23_with_required_subsections():
+    blocks = _pattern_blocks(PATTERNS_MD.read_text())
+    missing_patterns = [pattern for pattern in GOF_PATTERNS if pattern not in blocks]
+    assert not missing_patterns, f"patterns.md missing: {missing_patterns}"
+    incomplete = []
+    for pattern in GOF_PATTERNS:
+        for subsection in REQUIRED_PATTERN_SUBSECTIONS:
+            if subsection not in blocks[pattern]:
+                incomplete.append(f"{pattern}: missing {subsection}")
+    assert not incomplete, "patterns.md incomplete:\n" + "\n".join(incomplete)
+
+
+def test_patterns_md_defines_shared_rubrics():
+    text = PATTERNS_MD.read_text()
+    for required_block in ("## Grade rubric", "## Tier rubric", "## Risk rubric"):
+        assert required_block in text, f"patterns.md missing '{required_block}'"
