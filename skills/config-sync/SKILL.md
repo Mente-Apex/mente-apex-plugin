@@ -164,33 +164,17 @@ git pull origin main --no-rebase 2>&1
 If `git pull` produces merge conflicts in the repo itself (unlikely but possible),
 resolve them by keeping the remote's `consolidated/snapshot.json` and re-running this skill.
 
-## Step 3 — Smart-merge all machine snapshots into the consolidated snapshot
+## Step 3 — Consolidate all machine snapshots (timestamp-ordered, most-recent-wins)
 
-Read all machine snapshots and merge them one by one into the consolidated snapshot.
-This is where diverged CLAUDE.md / memory files get combined intelligently.
+Fold every machine snapshot into the consolidated snapshot in one pass. The engine
+reads all `machines/*.json` plus the existing consolidated snapshot, sorts them by
+`timestamp` ascending (so the most recent snapshot is applied last and its scalar
+values win), and merges entirely in-process — no predictable `/tmp` temp files and
+no dependence on filename sort order. This is where diverged CLAUDE.md / memory
+files get combined intelligently.
 
 ```bash
-CONSOLIDATED="$REPO/consolidated/snapshot.json"
-
-# Always merge our own snapshot into the consolidated snapshot first.
-# The consolidated snapshot is not guaranteed to already contain our latest local state —
-# e.g. on first join, after a reset, or if the consolidated snapshot drifted. Merging
-# our snapshot in explicitly ensures MCP servers, settings, and other local data
-# are never silently dropped.
-python3 "$ENGINE" merge "$CONSOLIDATED" "$REPO/machines/$MACHINE_ID.json" > /tmp/config-sync-base.json
-
-# Merge in each other machine's snapshot
-for snap in "$REPO/machines/"*.json; do
-  mid=$(python3 -c "import json; print(json.load(open('$snap'))['machine_id'])")
-  if [ "$mid" = "$MACHINE_ID" ]; then
-    continue  # already merged above
-  fi
-  echo "Merging snapshot from: $mid"
-  python3 "$ENGINE" merge /tmp/config-sync-base.json "$snap" > /tmp/config-sync-merged.json
-  cp /tmp/config-sync-merged.json /tmp/config-sync-base.json
-done
-
-cp /tmp/config-sync-base.json "$CONSOLIDATED"
+python3 "$ENGINE" consolidate "$REPO"
 ```
 
 > **Deletions don't propagate.** The merge is **union-only** — there are no deletion
