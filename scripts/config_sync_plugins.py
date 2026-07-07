@@ -106,3 +106,62 @@ class MarketplacePropagator:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
         return propagators.ExportResult(self.name, written=[f"plugins/{machine_id}.json"])
+
+
+@dataclass
+class PlannedAction:
+    verb: str            # add_marketplace | update_marketplace | install_plugin | update_plugin
+    target: str          # marketplace name or plugin key
+    detail: dict = field(default_factory=dict)
+
+
+@dataclass
+class MarketplacePlan:
+    actions: list = field(default_factory=list)     # list[PlannedAction]
+    skipped: list = field(default_factory=list)     # list[str] human reasons
+
+
+def plan_convergence(context: propagators.SyncContext, reader: PluginRegistryReader) -> MarketplacePlan:
+    """Pure planner: union all repo manifests, diff against the live registry,
+    emit ordered actions (marketplaces first). Never emits an uninstall."""
+    desired_marketplaces: dict = {}    # name -> source (or None)
+    desired_plugins: dict = {}         # key -> meta
+    manifests_dir = context.repo_dir / "plugins"
+    if manifests_dir.exists():
+        for manifest_path in sorted(manifests_dir.glob("*.json")):
+            try:
+                data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            for marketplace_name, marketplace_meta in data.get("marketplaces", {}).items():
+                desired_marketplaces.setdefault(marketplace_name, (marketplace_meta or {}).get("source"))
+            for plugin_key, plugin_meta in data.get("plugins", {}).items():
+                desired_plugins[plugin_key] = plugin_meta
+
+    local_marketplaces = reader.known_marketplaces()
+    installed = reader.installed_plugins()
+
+    plan = MarketplacePlan()
+    unresolved_marketplaces = set()
+    for marketplace_name in sorted(desired_marketplaces):
+        source = desired_marketplaces[marketplace_name]
+        if marketplace_name not in local_marketplaces:
+            if source:
+                plan.actions.append(PlannedAction("add_marketplace", marketplace_name, {"source": source}))
+            else:
+                plan.skipped.append(f"marketplace {marketplace_name}: not registered and source unknown")
+                unresolved_marketplaces.add(marketplace_name)
+                continue
+        plan.actions.append(PlannedAction("update_marketplace", marketplace_name))
+
+    for plugin_key in sorted(desired_plugins):
+        marketplace_name = plugin_key.split("@", 1)[1] if "@" in plugin_key else ""
+        if marketplace_name in unresolved_marketplaces:
+            plan.skipped.append(f"plugin {plugin_key}: marketplace {marketplace_name} unavailable")
+            continue
+        if plugin_key in installed:
+            current_version = installed[plugin_key].get("version", "unknown")
+            plan.actions.append(PlannedAction("update_plugin", plugin_key, {"current_version": current_version}))
+        else:
+            plan.actions.append(PlannedAction("install_plugin", plugin_key))
+    return plan
