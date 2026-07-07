@@ -16,6 +16,11 @@ from typing import Protocol, runtime_checkable
 MANIFEST_NAME = "bundle-manifest.json"
 BUNDLE_KINDS = {"skill": "skills", "agent": "agents"}  # kind -> ~/.claude subdir
 
+# SnapshotPropagator owns only mergeable config — skills/agents are bundles now.
+SNAPSHOT_CONFIG_FILES = ["CLAUDE.md", "settings.json", "keybindings.json"]
+SNAPSHOT_CONFIG_DIRS = ["memory", "rules"]
+_SKIP_APPLY_PREFIXES = ("skills/", "agents/")
+
 
 @dataclass(frozen=True)
 class SyncContext:
@@ -235,3 +240,81 @@ class ContentBundlePropagator:
         else:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(next(iter(payload.values())))
+
+
+class SnapshotPropagator:
+    """Propagates the mergeable text config (CLAUDE.md, memory/, rules/, settings,
+    keybindings). Skills/agents are deliberately out of scope — they are bundles.
+    On apply it defensively skips any legacy skills/agents keys so old snapshots
+    go inert (graceful migration)."""
+
+    name = "snapshot"
+
+    def export(self, context: SyncContext) -> ExportResult:
+        import platform
+        import config_sync
+        files = {}
+        for filename in SNAPSHOT_CONFIG_FILES:
+            path = context.claude_dir / filename
+            if not path.exists():
+                continue
+            if filename == "settings.json":
+                files[filename] = config_sync.json.dumps(config_sync._clean_settings(config_sync._read(path)))
+            else:
+                files[filename] = config_sync._read(path)
+        for directory in SNAPSHOT_CONFIG_DIRS:
+            files.update(config_sync._collect_dir(context.claude_dir, directory))
+
+        machine_id = _machine_id(context)
+        snapshot = {
+            "machine_id": machine_id,
+            "hostname": platform.node(),
+            "platform": platform.system(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "files": files,
+        }
+        machines_dir = context.repo_dir / "machines"
+        machines_dir.mkdir(parents=True, exist_ok=True)
+        (machines_dir / f"{machine_id}.json").write_text(
+            config_sync.json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+        return ExportResult(self.name, written=[f"machines/{machine_id}.json"])
+
+    def apply(self, context: SyncContext) -> ApplyResult:
+        import config_sync
+        result = ApplyResult(self.name)
+        consolidated = context.repo_dir / "consolidated" / "snapshot.json"
+        if not consolidated.exists():
+            return result
+        files = config_sync.json.loads(consolidated.read_text(encoding="utf-8")).get("files", {})
+        for relative_path, content in files.items():
+            if relative_path.startswith(_SKIP_APPLY_PREFIXES):
+                result.skipped.append(relative_path)
+                continue
+            destination = context.claude_dir / relative_path
+            if not config_sync._is_within(destination, context.claude_dir):
+                result.skipped.append(relative_path)
+                continue
+            if relative_path == "settings.json":
+                incoming = config_sync.json.loads(content) if content.strip() else {}
+                local_raw = config_sync._read(destination)
+                existing = config_sync.json.loads(local_raw) if local_raw.strip() else {}
+                merged = config_sync.json.dumps(
+                    config_sync._merge_import_settings(incoming, existing), indent=2, ensure_ascii=False)
+                if local_raw == merged:
+                    result.skipped.append(relative_path)
+                    continue
+                config_sync._write(destination, merged)
+                result.applied.append(relative_path)
+                continue
+            if config_sync._read(destination) == content:
+                result.skipped.append(relative_path)
+                continue
+            config_sync._write(destination, content)
+            result.applied.append(relative_path)
+        return result
+
+
+def default_propagators() -> list:
+    """Composition root — the ordered list injected into run_export/run_apply.
+    C2 appends MarketplacePropagator() here (open/closed)."""
+    return [SnapshotPropagator(), ContentBundlePropagator()]
