@@ -133,9 +133,15 @@ def plan_convergence(context: propagators.SyncContext, reader: PluginRegistryRea
                 data = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 continue
-            for marketplace_name, marketplace_meta in data.get("marketplaces", {}).items():
+            if not isinstance(data, dict):
+                continue
+            marketplaces_section = data.get("marketplaces", {})
+            plugins_section = data.get("plugins", {})
+            if not isinstance(marketplaces_section, dict) or not isinstance(plugins_section, dict):
+                continue
+            for marketplace_name, marketplace_meta in marketplaces_section.items():
                 desired_marketplaces.setdefault(marketplace_name, (marketplace_meta or {}).get("source"))
-            for plugin_key, plugin_meta in data.get("plugins", {}).items():
+            for plugin_key, plugin_meta in plugins_section.items():
                 desired_plugins[plugin_key] = plugin_meta
 
     local_marketplaces = reader.known_marketplaces()

@@ -77,3 +77,33 @@ def test_plan_skips_plugin_when_marketplace_source_unknown(tmp_path):
     plan = plugins_module.plan_convergence(context, reader)
     assert plan.actions == []
     assert any("ghost" in reason for reason in plan.skipped)
+
+
+def test_plan_unions_across_multiple_manifests(tmp_path):
+    repo_dir = tmp_path / "repo"
+    official = {"source": {"source": "github", "repo": "a/b"}}
+    _write_manifest(repo_dir, "m1", marketplaces={"official": official},
+                    plugins={"alpha@official": {"marketplace": "official", "name": "alpha", "version": "1.0"}})
+    _write_manifest(repo_dir, "m2", marketplaces={"official": official},
+                    plugins={"beta@official": {"marketplace": "official", "name": "beta", "version": "1.0"}})
+    context = propagators.SyncContext(claude_dir=tmp_path / ".claude", repo_dir=repo_dir)
+    reader = _FakeReader(installed={}, marketplaces={"official": official})
+
+    verbs = _verbs(plugins_module.plan_convergence(context, reader))
+    assert ("install_plugin", "alpha@official") in verbs   # from m1
+    assert ("install_plugin", "beta@official") in verbs    # from m2 — union across machines
+
+
+def test_plan_skips_malformed_manifest_without_crashing(tmp_path):
+    repo_dir = tmp_path / "repo"
+    manifest_dir = repo_dir / "plugins"
+    manifest_dir.mkdir(parents=True)
+    (manifest_dir / "bad.json").write_text(json.dumps({"marketplaces": None, "plugins": None}))
+    official = {"source": {"source": "github", "repo": "a/b"}}
+    _write_manifest(repo_dir, "m1", marketplaces={"official": official},
+                    plugins={"alpha@official": {"marketplace": "official", "name": "alpha", "version": "1.0"}})
+    context = propagators.SyncContext(claude_dir=tmp_path / ".claude", repo_dir=repo_dir)
+    reader = _FakeReader(installed={}, marketplaces={"official": official})
+
+    verbs = _verbs(plugins_module.plan_convergence(context, reader))   # must NOT raise
+    assert ("install_plugin", "alpha@official") in verbs               # good manifest still processed
