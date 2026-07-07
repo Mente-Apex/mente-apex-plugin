@@ -482,6 +482,19 @@ def _smart_merge_text(a: str, b: str, context: str = "") -> tuple:
     return _section_union(a, b), "section-union"
 
 
+def _line_key(line: str):
+    """Conflict identity of a line, or None if it can only be unioned.
+
+    List items (-, *, +, `N.`) and blank lines never conflict — they union.
+    Only `key: value` style lines carry an identity that can contradict.
+    """
+    stripped = line.strip()
+    if not stripped or stripped[0] in "-*+" or re.match(r"\d+\.", stripped):
+        return None
+    match = re.match(r"([^:]+):", stripped)
+    return match.group(1).strip() if match else None
+
+
 def _section_union(a: str, b: str) -> str:
     """
     Section-aware merge: split both texts on markdown headings.
@@ -530,28 +543,26 @@ def _section_union(a: str, b: str) -> str:
                 result_parts.append(heading)
             result_parts.append(body_a)
         else:
-            # Different — line-union: keep A's lines, append unique lines from B
+            # Different — line-union: keep A's lines, append unique lines from B.
+            # A genuine conflict is only same-key/different-value on `key:` lines;
+            # list bullets and prose always union (never fabricate a conflict).
             lines_a = body_a.splitlines()
             lines_b = body_b.splitlines()
-            lines_a_stripped = {l.strip() for l in lines_a}
+            lines_a_stripped = {line.strip() for line in lines_a}
+            keys_a = {}
+            for line in lines_a:
+                key = _line_key(line)
+                if key is not None:
+                    keys_a.setdefault(key, line)
 
             merged_lines = list(lines_a)
             conflicts = []
             for line_b in lines_b:
-                if line_b.strip() in lines_a_stripped or not line_b.strip():
+                if not line_b.strip() or line_b.strip() in lines_a_stripped:
                     continue
-                # Check for contradiction: same start of line but different value
-                contradiction = any(
-                    la.strip() and lb.strip() and
-                    la.strip().split()[0] == line_b.strip().split()[0] and
-                    la.strip() != line_b.strip()
-                    for la, lb in [(l, line_b) for l in lines_a]
-                )
-                if contradiction:
-                    conflicts.append((
-                        next(l for l in lines_a if l.strip().split()[:1] == line_b.strip().split()[:1]),
-                        line_b
-                    ))
+                key_b = _line_key(line_b)
+                if key_b is not None and key_b in keys_a and keys_a[key_b].strip() != line_b.strip():
+                    conflicts.append((keys_a[key_b], line_b))
                 else:
                     merged_lines.append(line_b)
 
