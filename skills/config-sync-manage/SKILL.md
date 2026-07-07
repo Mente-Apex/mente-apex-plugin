@@ -11,7 +11,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.2.1"
+  version: "0.3.0"
 ---
 
 # config-sync-manage
@@ -212,39 +212,18 @@ Run `/config-sync` to push these permanent rules to your other machines."
 > **Skills & agents auto-propagate now.** Since config-sync v0.6.0 every local
 > `~/.claude/skills/` and `~/.claude/agents/` entry is exported as a hash-gated bundle
 > on each `/config-sync` — you no longer need to share them explicitly. `share` remains
-> for **plugins** (until the marketplace propagator lands) and is a harmless no-op-ish
-> convenience for skills/agents already covered by the automatic bundle channel.
+> useful for **rules**, and as an explicit, reviewable alternative for skills/agents.
+> **Plugins are not shared through this flow.** Since the marketplace propagator
+> landed, every `/config-sync` records this machine's installed plugins in a
+> desired-state manifest, and `plugins-plan` / `plugins-apply` refresh marketplaces
+> and install/update plugins on other machines automatically (with your consent).
 
-Copy a local skill, agent, rule, or plugin into the repo's `shared/` namespace so
+Copy a local skill, agent, or rule into the repo's `shared/` namespace so
 other machines in the network receive it on their next sync.
 
 Ask the user what they want to share if not already specified:
-- Type: skill / agent / rule / plugin
-- Name: the filename or plugin key (e.g. `refactor`, `code-reviewer.md`, `python-style.md`, `mente-apex@mente-apex`)
-
-For `plugin`, list what is available from `installed_plugins.json` if the user hasn't specified:
-
-```bash
-CLAUDE_DIR="$HOME/.claude"
-python3 - <<'EOF'
-import json
-from pathlib import Path
-p = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-if not p.exists():
-    print("No installed_plugins.json found.")
-else:
-    data = json.loads(p.read_text())
-    plugins = data.get("plugins", {})
-    if not plugins:
-        print("No plugins installed.")
-    else:
-        print("Installed plugins:")
-        for plugin_key, entries in plugins.items():
-            entry = entries[0] if entries else {}
-            version = entry.get("version", "unknown")
-            print(f"  {plugin_key}  (v{version})")
-EOF
-```
+- Type: skill / agent / rule
+- Name: the filename (e.g. `refactor`, `code-reviewer.md`, `python-style.md`)
 
 ```bash
 ENGINE="${CLAUDE_PLUGIN_ROOT:-}/scripts/config_sync.py"
@@ -259,91 +238,40 @@ fi
 REPO="$HOME/.claude/config-sync-repo"
 CLAUDE_DIR="$HOME/.claude"
 
-TYPE="<skill|agent|rule|plugin>"
+TYPE="<skill|agent|rule>"
 NAME="<name>"
+
+# Plugins converge automatically now — there is no manual plugin-share step. On
+# every /config-sync, propagate-export records this machine's installed plugins in
+# a desired-state manifest, and plugins-plan / plugins-apply refresh marketplaces
+# and install/update them on other machines (after you approve the plan). Only
+# skills, agents, and rules are shared through this flow.
+if [ "$TYPE" = "plugin" ]; then
+  echo "Plugins sync automatically — run /config-sync on each machine; no manual share needed."
+  exit 0
+fi
 
 # Resolve source path
 case "$TYPE" in
   skill)   SRC="$CLAUDE_DIR/skills/$NAME" ;;
   agent)   SRC="$CLAUDE_DIR/agents/$NAME" ;;
   rule)    SRC="$CLAUDE_DIR/rules/$NAME" ;;
-  plugin)
-    # NAME is a plugin key like "mente-apex@mente-apex"
-    SRC=$(python3 - "$NAME" <<'EOF'
-import json, sys
-from pathlib import Path
-plugin_key = sys.argv[1]
-p = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-if not p.exists():
-    print("")
-    sys.exit(1)
-data = json.loads(p.read_text())
-entries = data.get("plugins", {}).get(plugin_key, [])
-if not entries:
-    print("")
-    sys.exit(1)
-print(entries[0].get("installPath", ""))
-EOF
-    )
-    ;;
 esac
 
 if [ ! -e "$SRC" ]; then
   echo "Not found: $SRC"
-  if [ "$TYPE" = "plugin" ]; then
-    echo "Available plugins:"
-    python3 - <<'EOF'
-import json
-from pathlib import Path
-p = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-data = json.loads(p.read_text()) if p.exists() else {}
-for key in data.get("plugins", {}):
-    print(f"  {key}")
-EOF
-  else
-    echo "Available ${TYPE}s:"
-    ls "$CLAUDE_DIR/${TYPE}s/" 2>/dev/null || echo "  (none)"
-  fi
+  echo "Available ${TYPE}s:"
+  ls "$CLAUDE_DIR/${TYPE}s/" 2>/dev/null || echo "  (none)"
   exit 1
 fi
 ```
 
-Show the user a preview of what will be shared:
-- For skills/agents/rules: first 20 lines of the main file
-- For plugins: list the top-level files in the install directory
-
-Then ask for confirmation.
+Show the user a preview of what will be shared (the first 20 lines of the main
+file), then ask for confirmation.
 
 ```bash
-if [ "$TYPE" = "plugin" ]; then
-  # Write plugin files + a plugin-meta.json into shared/plugins/<NAME>/
-  PLUGIN_KEY="$NAME"
-  DEST_DIR="$REPO/shared/plugins/$PLUGIN_KEY"
-  mkdir -p "$DEST_DIR"
-  cp -r "$SRC/." "$DEST_DIR/"
-
-  # Write plugin-meta.json so apply-shared can register it on other machines.
-  # Reuse the engine's guarded _derive_plugin_meta so a dev/linked install
-  # (installPath without a 'cache' segment) never crashes with StopIteration.
-  python3 - "$PLUGIN_KEY" "$DEST_DIR" "$(dirname "$ENGINE")" <<'EOF'
-import json, sys
-from pathlib import Path
-plugin_key = sys.argv[1]
-dest_dir = Path(sys.argv[2])
-sys.path.insert(0, sys.argv[3])
-from config_sync import _derive_plugin_meta
-installed = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-entries = json.loads(installed.read_text())["plugins"][plugin_key]
-entry = entries[0] if isinstance(entries, list) else entries
-meta = _derive_plugin_meta(plugin_key, entry)
-(dest_dir / "plugin-meta.json").write_text(json.dumps(meta, indent=2))
-print(f"Wrote plugin-meta.json for {plugin_key} v{meta['version']}")
-EOF
-
-else
-  mkdir -p "$REPO/shared/${TYPE}s"
-  cp -r "$SRC" "$REPO/shared/${TYPE}s/"
-fi
+mkdir -p "$REPO/shared/${TYPE}s"
+cp -r "$SRC" "$REPO/shared/${TYPE}s/"
 
 cd "$REPO"
 git add shared/
