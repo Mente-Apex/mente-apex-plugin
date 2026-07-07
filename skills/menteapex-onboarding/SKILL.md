@@ -15,6 +15,10 @@ allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 
 Two steps: (1) HubSpot, (2) local filesystem. Always do both in the same session.
 
+> **Paths (portable).** The business folder resolves from `$BUSINESS_ROOT`
+> (default `$HOME/Documents/Business`). Set it to relocate on another machine; every
+> path below is relative to it — no absolute `/Users/...` paths.
+
 ---
 
 ## Step 1 — Collect client info
@@ -123,7 +127,7 @@ Tell the user:
 Create the standard customer folder structure:
 
 ```
-/Users/ai/Documents/Business/Customers/<ClientName>/
+$BUSINESS_ROOT/Customers/<ClientName>/
 ├── PROJECT.md
 ├── customer_input/
 └── docs/
@@ -150,7 +154,7 @@ Code and engineering specs live in the repo above, outside the Business folder.
 
 ## Step 4 — Registry + memory
 
-**Add to client registry** (`/Users/ai/Documents/Business/memory/projects/clients.md`):
+**Add to client registry** (`$BUSINESS_ROOT/memory/projects/clients.md`):
 
 Add a row to the Registry table:
 
@@ -158,7 +162,7 @@ Add a row to the Registry table:
 | `<slug>` | <ClientName> | ⚪ scoping / pre-contract | `~/Projects/<slug>` | `Customers/<ClientName>/docs/` | <today's date> |
 ```
 
-**Create per-engagement memory file** (`/Users/ai/Documents/Business/memory/projects/<slug>.md`):
+**Create per-engagement memory file** (`$BUSINESS_ROOT/memory/projects/<slug>.md`):
 
 ```markdown
 # <slug>
