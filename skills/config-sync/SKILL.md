@@ -7,10 +7,10 @@ description: >
   config", "push my config", "pull config from other machines", "sync with my other
   machines", "my config is out of date", "/config-sync".
 user-invocable: true
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.8.2"
+  version: "0.8.3"
 ---
 
 # config-sync
