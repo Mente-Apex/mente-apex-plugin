@@ -57,6 +57,13 @@ class PluginRegistryReader(Protocol):
     def known_marketplaces(self) -> dict: ...     # {name: {"source": {...}}}
 
 
+def _first_entry(entries):
+    """Normalize a plugin-registry value that may be a single dict or a list of
+    dicts down to its first entry, so every reader decodes the on-disk shape the
+    same way (SOLID N4)."""
+    return entries[0] if isinstance(entries, list) and entries else entries
+
+
 class ClaudePluginHost:
     """Real host: reads the two registry JSON files; shells out to `claude plugin`
     for mutations (added in Task 5). Injected via the CLI wrappers; faked in tests."""
@@ -68,7 +75,7 @@ class ClaudePluginHost:
         raw = _read_installed_plugins(self._context.claude_dir)
         flattened = {}
         for plugin_key, entries in raw.get("plugins", {}).items():
-            entry = entries[0] if isinstance(entries, list) and entries else entries
+            entry = _first_entry(entries)
             if isinstance(entry, dict):
                 flattened[plugin_key] = entry
         return flattened
@@ -146,7 +153,7 @@ class MarketplacePropagator:
                     f"'{source_kind}' (not a shareable git/GitHub remote) — won't sync "
                     f"to your other machines; publish it to GitHub")
                 continue
-            entry = entries[0] if isinstance(entries, list) and entries else entries
+            entry = _first_entry(entries)
             version = entry.get("version", "unknown") if isinstance(entry, dict) else "unknown"
             plugin_name = plugin_key.split("@", 1)[0]
             plugins[plugin_key] = {"marketplace": marketplace_name, "name": plugin_name, "version": version}
