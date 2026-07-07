@@ -10,3 +10,6 @@ tests/__pycache__/
 
 # skill-creator eval workspaces (transient: eval sets, run logs, review HTML)
 skills/*-workspace/
+
+# SOLID skill reports (regenerable)
+solid-reports/
