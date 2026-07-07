@@ -16,7 +16,7 @@ description: >-
   invoke this skill in programmatic mode to get code implemented test-first.
 user-invocable: true
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # TDD — Test-Driven Development
@@ -57,6 +57,12 @@ Pick based on what's being asked, not on how the user phrased it:
   it *actually does*. When current behavior looks wrong, flag it to the user instead of
   silently "fixing" it — that oddity may be load-bearing. Once the pins are green,
   switch to feature mode on top of that safety net.
+- **Refactor** (programmatic) — a lens skill (`solid`, `gof`) asks you to apply a
+  behavior-preserving structural change under a green safety net. Read
+  `references/refactor-jobs.md` for the calling contract. In short: pin untested
+  targets first (legacy mode), apply the smallest faithful change, keep the full
+  suite green, revert the whole job on red. Any genuinely-new behavior the change
+  introduces runs as a normal feature cycle.
 
 **Not this skill: bugfixes.** When the task is that existing behavior is *wrong* — an
 error, a wrong result, a regression — hand off to the debug skill rather than handling
@@ -155,7 +161,10 @@ Escalate beyond the checklist when it's warranted:
   `mente-apex:clean-code` skill if it's installed.
 - When architecture-level smells recur across cycles — a god class every feature
   touches, type switches spreading between files — don't derail the cycle to fix them.
-  Note the pattern and suggest a `/solid` audit as separate work.
+  Note the pattern and suggest a `/solid` audit as separate work. When the smell is
+  specifically pattern-shaped — a missing, duplicated, or forced design pattern (a
+  hand-rolled dispatch that wants Strategy, copy-pasted algorithm skeletons that want
+  Template Method) — suggest a `/gof` audit instead.
 - Running standalone without those skills? The checklist above is the whole standard;
   carry on.
 
