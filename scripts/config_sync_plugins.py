@@ -140,6 +140,8 @@ def plan_convergence(context: propagators.SyncContext, reader: PluginRegistryRea
             if not isinstance(marketplaces_section, dict) or not isinstance(plugins_section, dict):
                 continue
             for marketplace_name, marketplace_meta in marketplaces_section.items():
+                if marketplace_meta is not None and not isinstance(marketplace_meta, dict):
+                    continue
                 desired_marketplaces.setdefault(marketplace_name, (marketplace_meta or {}).get("source"))
             for plugin_key, plugin_meta in plugins_section.items():
                 desired_plugins[plugin_key] = plugin_meta
