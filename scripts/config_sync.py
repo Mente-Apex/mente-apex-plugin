@@ -456,6 +456,10 @@ def cmd_status(remote_resolver: Optional[RemoteResolver] = None):
     claude_md = CLAUDE_DIR / "CLAUDE.md"
     lines.append(f"CLAUDE.md  : {'✓ ' + str(len(_read(claude_md).splitlines())) + ' lines' if claude_md.exists() else '✗ missing'}")
 
+    # Deferred import (not module-top): config_sync <-> config_sync_propagators is a
+    # two-way dependency. Hoisting this together with the `import config_sync` sites in
+    # that module to module scope reintroduces a circular import when propagators is
+    # imported first — keep it call-time. (SOLID report M2.)
     from config_sync_propagators import DefaultBundleExportFilter
     inventory_filter = DefaultBundleExportFilter()
     for directory in SNAPSHOT_DIRS:
@@ -846,6 +850,8 @@ def cmd_migrate():
 def _sync_context(repo_path):
     """Build a SyncContext injecting the live CLAUDE_DIR + the repo path."""
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    # Deferred import: config_sync <-> config_sync_propagators is a two-way dependency;
+    # keep this call-time so hoisting can't form a circular import (SOLID report M2).
     import config_sync_propagators as propagators
     return propagators, propagators.SyncContext(claude_dir=CLAUDE_DIR, repo_dir=Path(repo_path))
 
