@@ -8,9 +8,9 @@ description: >
   machines", "my config is out of date", "/config-sync".
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Bash, Read, Write, Edit
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # config-sync
