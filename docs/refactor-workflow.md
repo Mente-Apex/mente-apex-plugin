@@ -74,7 +74,7 @@ Spawn the reviewer with the draft path and the same references. The reviewer
 re-opens the actual code for **every** finding, prunes what doesn't hold up,
 re-tiers what does, hunts for cross-file violations the analyzer's
 file-by-file pass tends to miss, and **cross-references the other lens** —
-check `docs/solid-gof-overlap.md` for findings that overlap or conflict with
+check [docs/solid-gof-overlap.md](solid-gof-overlap.md) for findings that overlap or conflict with
 the sibling lens's territory so the two reports don't contradict each other —
 before writing the final report to `<lens>-reports/<LENS>-REFACTOR-<YYYY-MM-DD>.md`
 using the lens's `references/report-template.md` **exactly**: the apply

@@ -45,7 +45,7 @@ report template, and output path.
    notes even when it adds nothing ("swept the remaining modules; nothing
    added"). An empty result is a written result; nothing downstream should
    ever have to infer whether the sweep happened.
-3. **Cross-reference the other lens.** Check `docs/solid-gof-overlap.md` for
+3. **Cross-reference the other lens.** Check [docs/solid-gof-overlap.md](../solid-gof-overlap.md) for
    findings that overlap or conflict with the sibling lens's territory: for
    each rec, note the overlapping principle/pattern; if a rec is better
    expressed in the other lens, mark it and recommend that skill instead of

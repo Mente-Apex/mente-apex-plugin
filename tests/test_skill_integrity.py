@@ -115,3 +115,12 @@ def test_version_mirrors_match():
         f"version drift — plugin.json={plugin_version} "
         f"pyproject={pyproject_version} marketplace={marketplace_version}"
     )
+
+
+OVERLAP_MAP = DOCS_DIR / "solid-gof-overlap.md"
+
+
+def test_overlap_map_covers_all_23_patterns():
+    text = OVERLAP_MAP.read_text()
+    missing = [pattern for pattern in GOF_PATTERNS if pattern not in text]
+    assert not missing, f"overlap map missing patterns: {missing}"
