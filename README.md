@@ -82,5 +82,7 @@ snapshot. See `/config-sync` for details.
 ## Requirements
 
 - `HUBSPOT_API_KEY` env var for automated HubSpot record creation (optional — falls back to manual instructions)
-- Brand reference at `Customers/Tomislav/docs/` (fonts.css, proposal.html, embed_fonts.py)
+- Business skills resolve paths from `$BUSINESS_ROOT` (default `$HOME/Documents/Business`)
+  and the brand reference from `$BRAND_REF` (default `$BUSINESS_ROOT/Customers/Tomislav/docs`,
+  holding fonts.css, proposal.html, embed_fonts.py). Override either to run on another machine.
 - `git` + `python3` (standard library only — no pip installs) for the config-sync skills, plus a private Git repository to hold your config

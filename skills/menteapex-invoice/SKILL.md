@@ -14,6 +14,11 @@ allowed-tools: Bash, Read, Write, Edit
 Produces branded documents derived from the brand book CSS system.
 Two modes: **Invoice** (billing) and **Contract** (service agreement).
 
+> **Paths (portable).** Resolve the business folder from `$BUSINESS_ROOT`
+> (default `$HOME/Documents/Business`) and the brand reference from `$BRAND_REF`
+> (default `$BUSINESS_ROOT/Customers/Tomislav/docs`). Set either env var to relocate
+> on another machine. No absolute `/Users/...` paths.
+
 ---
 
 ## Step 1 — Determine document type
@@ -48,8 +53,8 @@ When in doubt, ask the user.
 Load the visual system:
 
 ```
-/Users/ai/Documents/Business/Customers/Tomislav/docs/fonts.css
-/Users/ai/Documents/Business/Customers/Tomislav/docs/proposal.html
+$BRAND_REF/fonts.css
+$BRAND_REF/proposal.html
 ```
 
 Use the same CSS variables, grid, and typography. Invoices and contracts use a
@@ -86,17 +91,20 @@ Save to: `Customers/<ClientName>/docs/<type>-<MA-number>-<YYYY-MM-DD>.html`
 
 ## Step 4 — Generate PDF
 
-Copy fonts.css from reference if not already present:
+Copy fonts.css from the brand reference if not already present:
 
 ```bash
-cp /Users/ai/Documents/Business/Customers/Tomislav/docs/fonts.css \
-   /Users/ai/Documents/Business/Customers/<ClientName>/docs/ 2>/dev/null || true
+BUSINESS_ROOT="${BUSINESS_ROOT:-$HOME/Documents/Business}"
+BRAND_REF="${BRAND_REF:-$BUSINESS_ROOT/Customers/Tomislav/docs}"
+DOCS="$BUSINESS_ROOT/Customers/<ClientName>/docs"
+
+cp "$BRAND_REF/fonts.css" "$DOCS/" 2>/dev/null || true
 ```
 
 Open for PDF export:
 
 ```bash
-open /Users/ai/Documents/Business/Customers/<ClientName>/docs/<filename>.html
+open "$DOCS/<filename>.html"
 ```
 
 Tell the user: "Print → Save as PDF in Chrome/Safari. File name already set."
