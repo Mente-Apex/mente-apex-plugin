@@ -122,10 +122,10 @@ def _collect_dir(base: Path, rel: str) -> dict:
     target = base / rel
     if not target.exists():
         return result
-    for p in sorted(target.rglob("*")):
-        if p.is_file() and p.suffix in (".md", ".json", ".txt"):
-            key = str(p.relative_to(base))
-            result[key] = _read(p)
+    for path in sorted(target.rglob("*")):
+        if path.is_file() and path.suffix in (".md", ".json", ".txt"):
+            key = str(path.relative_to(base))
+            result[key] = _read(path)
     return result
 
 
@@ -224,17 +224,17 @@ def _clean_settings(raw: str) -> dict:
             return obj
         if isinstance(obj, dict):
             cleaned = {}
-            for k, v in obj.items():
+            for key, value in obj.items():
                 # Drop env blocks entirely — they contain API keys
-                if k in ("env", "environment"):
+                if key in ("env", "environment"):
                     continue
                 # Drop values where the key looks secret-ish
-                if any(pat.search(k) for pat in SECRET_PATTERNS):
+                if any(pattern.search(key) for pattern in SECRET_PATTERNS):
                     continue
-                cleaned[k] = _scrub(v, depth + 1)
+                cleaned[key] = _scrub(value, depth + 1)
             return cleaned
         if isinstance(obj, list):
-            return [_scrub(i, depth + 1) for i in obj]
+            return [_scrub(item, depth + 1) for item in obj]
         return obj
 
     return _scrub(data)
@@ -273,23 +273,23 @@ def cmd_export():
 
     # Top-level files
     for fname in SNAPSHOT_FILES:
-        p = CLAUDE_DIR / fname
-        if p.exists():
+        path = CLAUDE_DIR / fname
+        if path.exists():
             if fname == "settings.json":
-                cleaned = _clean_settings(_read(p))
+                cleaned = _clean_settings(_read(path))
                 cleaned, _orphans = _reconcile_plugins(cleaned)  # in-memory only for the snapshot
                 files[fname] = json.dumps(cleaned)
             else:
-                files[fname] = _read(p)
+                files[fname] = _read(path)
 
     # Subdirectories
-    for d in SNAPSHOT_DIRS:
-        files.update(_collect_dir(CLAUDE_DIR, d))
+    for directory in SNAPSHOT_DIRS:
+        files.update(_collect_dir(CLAUDE_DIR, directory))
 
     # Strip anything that should never leave this machine
     files = {
-        k: v for k, v in files.items()
-        if not any(k.startswith(prefix) for prefix in SNAPSHOT_EXCLUDE_PREFIXES)
+        rel: content for rel, content in files.items()
+        if not any(rel.startswith(prefix) for prefix in SNAPSHOT_EXCLUDE_PREFIXES)
     }
 
     snapshot = {
@@ -388,13 +388,13 @@ def cmd_status():
     claude_md = CLAUDE_DIR / "CLAUDE.md"
     lines.append(f"CLAUDE.md  : {'✓ ' + str(len(_read(claude_md).splitlines())) + ' lines' if claude_md.exists() else '✗ missing'}")
 
-    for d in SNAPSHOT_DIRS:
-        target = CLAUDE_DIR / d
+    for directory in SNAPSHOT_DIRS:
+        target = CLAUDE_DIR / directory
         if target.exists():
-            count = sum(1 for p in target.rglob("*") if p.is_file())
-            lines.append(f"{d:<10} : {count} file(s)")
+            count = sum(1 for path in target.rglob("*") if path.is_file())
+            lines.append(f"{directory:<10} : {count} file(s)")
         else:
-            lines.append(f"{d:<10} : (empty)")
+            lines.append(f"{directory:<10} : (empty)")
 
     print("\n".join(lines))
 
@@ -510,17 +510,17 @@ def cmd_consolidate(repo_path: str):
     print(json.dumps({"consolidated": str(consolidated_path), "machines": len(snapshots)}))
 
 
-def _deep_merge_json(a: str, b: str) -> tuple:
+def _deep_merge_json(version_a: str, version_b: str) -> tuple:
     """
     Deep-merge two JSON strings (e.g. settings.json).
-    B's scalar values win on conflict; lists are unioned; dicts recurse.
+    version_b's scalar values win on conflict; lists are unioned; dicts recurse.
     Returns (merged_json_string, strategy_name).
     """
     def _merge(base, override):
         if isinstance(base, dict) and isinstance(override, dict):
             result = dict(base)
-            for k, v in override.items():
-                result[k] = _merge(base.get(k), v)
+            for key, value in override.items():
+                result[key] = _merge(base.get(key), value)
             return result
         if isinstance(base, list) and isinstance(override, list):
             # Union: keep all unique items (order: base first, then new from override)
@@ -544,13 +544,13 @@ def _deep_merge_json(a: str, b: str) -> tuple:
         return override if override is not None else base
 
     try:
-        obj_a = json.loads(a) if a else {}
-        obj_b = json.loads(b) if b else {}
+        obj_a = json.loads(version_a) if version_a else {}
+        obj_b = json.loads(version_b) if version_b else {}
         merged = _merge(obj_a, obj_b)
         return json.dumps(merged, indent=2, ensure_ascii=False), "json-deep-merge"
     except json.JSONDecodeError:
         # If either side is corrupt JSON, fall back to keeping A
-        return a, "json-fallback-kept-a"
+        return version_a, "json-fallback-kept-a"
 
 
 class _LlmMergeBudget:
@@ -571,7 +571,7 @@ class _LlmMergeBudget:
         return True
 
 
-def _smart_merge_text(a: str, b: str, context: str = "", budget: "_LlmMergeBudget | None" = None) -> tuple:
+def _smart_merge_text(version_a: str, version_b: str, context: str = "", budget: "_LlmMergeBudget | None" = None) -> tuple:
     """
     Merge two text blobs. Returns (merged_text, strategy_name).
 
@@ -590,8 +590,8 @@ def _smart_merge_text(a: str, b: str, context: str = "", budget: "_LlmMergeBudge
             "- Preserve all unique content from both versions\n"
             "- Keep the same general structure and tone\n"
             "- Output ONLY the merged content, no explanation or commentary\n\n"
-            f"=== VERSION A ===\n{a}\n\n"
-            f"=== VERSION B ===\n{b}"
+            f"=== VERSION A ===\n{version_a}\n\n"
+            f"=== VERSION B ===\n{version_b}"
         )
         try:
             result = subprocess.run(
@@ -604,7 +604,7 @@ def _smart_merge_text(a: str, b: str, context: str = "", budget: "_LlmMergeBudge
             pass
 
     # Default / fallback: section-aware union
-    return _section_union(a, b), "section-union"
+    return _section_union(version_a, version_b), "section-union"
 
 
 def _line_key(line: str):
@@ -620,7 +620,7 @@ def _line_key(line: str):
     return match.group(1).strip() if match else None
 
 
-def _section_union(a: str, b: str) -> str:
+def _section_union(version_a: str, version_b: str) -> str:
     """
     Section-aware merge: split both texts on markdown headings.
 
@@ -648,8 +648,8 @@ def _section_union(a: str, b: str) -> str:
         sections[current_heading] = "".join(current_lines)
         return sections
 
-    secs_a = _parse_sections(a)
-    secs_b = _parse_sections(b)
+    secs_a = _parse_sections(version_a)
+    secs_b = _parse_sections(version_b)
 
     result_parts = []
 
@@ -967,8 +967,8 @@ def cmd_promote():
 
     # Collect all memory content
     memory_files = {}
-    for p in sorted(memory_dir.rglob("*.md")):
-        memory_files[str(p.relative_to(CLAUDE_DIR))] = _read(p)
+    for path in sorted(memory_dir.rglob("*.md")):
+        memory_files[str(path.relative_to(CLAUDE_DIR))] = _read(path)
 
     if not memory_files:
         print(json.dumps({"suggestions": []}))
@@ -983,7 +983,7 @@ def cmd_promote():
         return
 
     all_memory = "\n\n---\n\n".join(
-        f"[{k}]\n{v}" for k, v in memory_files.items()
+        f"[{rel}]\n{content}" for rel, content in memory_files.items()
     )
     existing_claude_md = _read(CLAUDE_DIR / "CLAUDE.md")
 
