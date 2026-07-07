@@ -36,7 +36,15 @@ detect what the user wants and jump to the right section.
 Show a clear picture of the network and local config-sync state.
 
 ```bash
-ENGINE="${CLAUDE_PLUGIN_ROOT}/scripts/config_sync.py"
+ENGINE="${CLAUDE_PLUGIN_ROOT:-}/scripts/config_sync.py"
+if [ ! -f "$ENGINE" ]; then
+  # CLAUDE_PLUGIN_ROOT is unset outside plugin context (e.g. a standalone-copied
+  # skill) — fall back to the installed plugin cache.
+  for candidate in "$HOME/.claude/plugins/cache/"*/mente-apex/*/scripts/config_sync.py; do
+    [ -f "$candidate" ] && ENGINE="$candidate" && break
+  done
+fi
+[ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
 REPO="$HOME/.claude/config-sync-repo"
 
 # Local inventory
@@ -125,7 +133,15 @@ every session, a pattern gets written once into CLAUDE.md or a rules file and is
 always in context from then on.
 
 ```bash
-ENGINE="${CLAUDE_PLUGIN_ROOT}/scripts/config_sync.py"
+ENGINE="${CLAUDE_PLUGIN_ROOT:-}/scripts/config_sync.py"
+if [ ! -f "$ENGINE" ]; then
+  # CLAUDE_PLUGIN_ROOT is unset outside plugin context (e.g. a standalone-copied
+  # skill) — fall back to the installed plugin cache.
+  for candidate in "$HOME/.claude/plugins/cache/"*/mente-apex/*/scripts/config_sync.py; do
+    [ -f "$candidate" ] && ENGINE="$candidate" && break
+  done
+fi
+[ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
 echo "Analysing memory for promotion candidates..."
 python3 "$ENGINE" promote
 ```
@@ -225,7 +241,15 @@ EOF
 ```
 
 ```bash
-ENGINE="${CLAUDE_PLUGIN_ROOT}/scripts/config_sync.py"
+ENGINE="${CLAUDE_PLUGIN_ROOT:-}/scripts/config_sync.py"
+if [ ! -f "$ENGINE" ]; then
+  # CLAUDE_PLUGIN_ROOT is unset outside plugin context (e.g. a standalone-copied
+  # skill) — fall back to the installed plugin cache.
+  for candidate in "$HOME/.claude/plugins/cache/"*/mente-apex/*/scripts/config_sync.py; do
+    [ -f "$candidate" ] && ENGINE="$candidate" && break
+  done
+fi
+[ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
 REPO="$HOME/.claude/config-sync-repo"
 CLAUDE_DIR="$HOME/.claude"
 

@@ -27,7 +27,15 @@ Conflict resolution happens inline — no separate command needed.
 ## Step 0 — Verify setup
 
 ```bash
-ENGINE="${CLAUDE_PLUGIN_ROOT}/scripts/config_sync.py"
+ENGINE="${CLAUDE_PLUGIN_ROOT:-}/scripts/config_sync.py"
+if [ ! -f "$ENGINE" ]; then
+  # CLAUDE_PLUGIN_ROOT is unset outside plugin context (e.g. a standalone-copied
+  # skill) — fall back to the installed plugin cache.
+  for candidate in "$HOME/.claude/plugins/cache/"*/mente-apex/*/scripts/config_sync.py; do
+    [ -f "$candidate" ] && ENGINE="$candidate" && break
+  done
+fi
+[ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
 CONFIG="$HOME/.claude/config-sync-config.json"
 REPO="$HOME/.claude/config-sync-repo"
 
