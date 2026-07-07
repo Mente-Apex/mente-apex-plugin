@@ -165,3 +165,51 @@ class ContentBundlePropagator:
         }
         bundle_dir.mkdir(parents=True, exist_ok=True)
         (bundle_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    def _local_entry_path(self, context, kind, name, is_dir):
+        return context.claude_dir / BUNDLE_KINDS[kind] / name
+
+    def apply(self, context: SyncContext) -> ApplyResult:
+        import config_sync
+        result = ApplyResult(self.name)
+        for kind, subdir in BUNDLE_KINDS.items():
+            bundles_root = context.repo_dir / "bundles" / subdir
+            if not bundles_root.exists():
+                continue
+            for bundle_dir in sorted(bundles_root.iterdir()):
+                if not bundle_dir.is_dir():
+                    continue
+                manifest = _read_manifest(bundle_dir)
+                name = manifest.get("name", bundle_dir.name)
+                repo_hash = manifest.get("content_hash")
+                destination = self._local_entry_path(context, kind, name, manifest.get("is_dir", True))
+                if not config_sync._is_within(destination, context.claude_dir):
+                    result.skipped.append(f"{kind}/{name} (escapes ~/.claude)")
+                    continue
+                if not destination.exists():
+                    self._install(bundle_dir, destination, manifest)
+                    result.applied.append(f"{kind}/{name}")
+                    continue
+                local_hash = _content_hash(_payload_files(destination))
+                if local_hash == repo_hash:
+                    result.skipped.append(f"{kind}/{name}")
+                    continue
+                result.conflicts.append(BundleConflict(
+                    kind=kind, name=name, local_hash=local_hash, repo_hash=repo_hash or "",
+                    local_exported_at="", repo_exported_at=manifest.get("exported_at", ""),
+                ))
+        return result
+
+    def _install(self, bundle_dir, destination, manifest):
+        import shutil
+        payload = _payload_files(bundle_dir)
+        if manifest.get("is_dir", True):
+            if destination.exists():
+                shutil.rmtree(destination)
+            for relative_path, content in payload.items():
+                target = destination / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(next(iter(payload.values())))
