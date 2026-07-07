@@ -35,6 +35,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional, Protocol
 
 # ---------------------------------------------------------------------------
 # Paths — always derived from $HOME, never hardcoded
@@ -376,8 +377,41 @@ def _inventory_file_count(target, export_filter):
     )
 
 
-def cmd_status():
-    """Print a human-readable inventory of the local config-sync state."""
+class RemoteResolver(Protocol):
+    """Abstraction over 'what is this repo's remote URL'. cmd_status depends on
+    this port, never on git directly, so the subprocess boundary can be faked in
+    tests and swapped for a different VCS without touching status-formatting."""
+
+    def resolve(self, repo_path: Path) -> Optional[str]:
+        ...
+
+
+class GitRemoteResolver:
+    """Resolves a repo's origin URL via `git remote get-url origin` — the actual
+    source of truth, replacing a `remote` config key that setup never wrote and
+    that made status print `unknown` for every user (#48). Returns None when the
+    repo is absent or has no origin, so callers render 'not configured'."""
+
+    def resolve(self, repo_path: Path) -> Optional[str]:
+        if not repo_path.exists():
+            return None
+        completed = subprocess.run(
+            ["git", "-C", str(repo_path), "remote", "get-url", "origin"],
+            capture_output=True, text=True,
+        )
+        if completed.returncode != 0:
+            return None
+        url = completed.stdout.strip()
+        return url or None
+
+
+def cmd_status(remote_resolver: Optional[RemoteResolver] = None):
+    """Print a human-readable inventory of the local config-sync state.
+
+    `remote_resolver` is injected (default: git-backed) so the remote lookup is
+    substitutable — the CLI passes nothing and gets GitRemoteResolver."""
+    if remote_resolver is None:
+        remote_resolver = GitRemoteResolver()
     lines = []
     lines.append(f"Machine : {_machine_id()}")
     lines.append(f"Host    : {platform.node()}")
@@ -390,7 +424,8 @@ def cmd_status():
 
     if config_exists:
         cfg = json.loads(_read(CONFIG_FILE))
-        lines.append(f"Remote           : {cfg.get('remote', 'unknown')}")
+        remote_url = remote_resolver.resolve(CONFIG_REPO)
+        lines.append(f"Remote           : {remote_url if remote_url else 'not configured'}")
         lines.append(f"Last sync        : {cfg.get('last_sync', 'never')}")
 
     lines.append("")
