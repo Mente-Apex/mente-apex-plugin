@@ -78,10 +78,10 @@ found = False
 for type_dir in sorted(shared.iterdir()):
     if not type_dir.is_dir():
         continue
-    for f in sorted(type_dir.rglob("*")):
-        if f.is_file():
+    for path in sorted(type_dir.rglob("*")):
+        if path.is_file():
             found = True
-            rel = f.relative_to(shared)
+            rel = path.relative_to(shared)
             git_info = subprocess.run(
                 ["git", "log", "--format=%an|%ad", "--date=short", "-1", "--", f"shared/{rel}"],
                 cwd=repo, capture_output=True, text=True
