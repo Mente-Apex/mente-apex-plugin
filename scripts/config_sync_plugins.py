@@ -114,9 +114,11 @@ class ClaudePluginHost:
 class MarketplacePropagator:
     """Exporter for marketplace-sourced plugins (desired-state manifest).
 
-    Classification: a plugin is marketplace-sourced iff the `@marketplace`
-    segment of its key is registered in known_marketplaces.json. Only those are
-    recorded; the rest are silently deferred to the (unbuilt) local channel.
+    Classification: a plugin is marketplace-sourced iff its `@marketplace` is a
+    shareable git/GitHub remote in known_marketplaces.json. Only those are
+    recorded in the manifest; a plugin with no known marketplace, or a local /
+    non-shareable source, is reported as a warning (see ExportResult.warnings)
+    rather than propagated — it can't reach the owner's other machines.
     Not an Applier — plugin apply is the consent-gated plan/execute pair below.
     """
 
