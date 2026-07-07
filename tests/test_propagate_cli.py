@@ -49,3 +49,21 @@ def test_propagate_export_writes_plugin_manifest(claude_home, tmp_path, capsys):
 
     manifest = config_sync.json.loads((repo / "plugins" / "cli1.json").read_text())
     assert "superpowers@official" in manifest["plugins"]
+
+
+def test_propagate_export_json_includes_warnings_key(claude_home, tmp_path, capsys):
+    plugins_dir = claude_home / "plugins"
+    plugins_dir.mkdir(parents=True)
+    (plugins_dir / "installed_plugins.json").write_text(config_sync.json.dumps({
+        "version": 2, "plugins": {"local-thing@mylocal": [{"version": "0.1"}]}}))
+    (plugins_dir / "known_marketplaces.json").write_text(config_sync.json.dumps({
+        "mylocal": {"source": {"source": "directory", "path": "/x"}}}))
+    (claude_home / "config-sync-machine-id").write_text("cli-warn")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    config_sync.cmd_propagate_export(str(repo))
+    payload = config_sync.json.loads(capsys.readouterr().out)
+
+    assert "warnings" in payload["marketplace"]
+    assert any("local-thing@mylocal" in warning for warning in payload["marketplace"]["warnings"])

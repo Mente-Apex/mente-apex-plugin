@@ -43,6 +43,7 @@ class ExportResult:
     propagator: str
     written: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
 
 
 @dataclass
