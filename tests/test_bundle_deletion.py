@@ -138,3 +138,57 @@ def test_apply_proposes_deletion_for_locally_present_tombstoned_skill(tmp_path):
     assert [(deletion.kind, deletion.name, deletion.machine_id) for deletion in result.deletions] \
         == [("skill", "gof", "machine-b")]
     assert (context.claude_dir / "skills" / "gof").exists()  # apply removed nothing
+
+
+def test_resolve_deletion_remove_deletes_local_bundle(tmp_path):
+    context = _context(tmp_path)
+    _write_skill(context.claude_dir, "gof", {"SKILL.md": "# gof"})
+    propagators.resolve_deletion(context, "skill", "gof", "remove")
+    assert not (context.claude_dir / "skills" / "gof").exists()
+
+
+def test_resolve_deletion_keep_leaves_local_bundle(tmp_path):
+    context = _context(tmp_path)
+    _write_skill(context.claude_dir, "gof", {"SKILL.md": "# gof"})
+    propagators.resolve_deletion(context, "skill", "gof", "keep")
+    assert (context.claude_dir / "skills" / "gof").exists()
+
+
+def test_resolve_deletion_rejects_unknown_decision(tmp_path):
+    import pytest
+    context = _context(tmp_path)
+    with pytest.raises(ValueError):
+        propagators.resolve_deletion(context, "skill", "gof", "maybe")
+
+
+def test_two_machine_round_trip(tmp_path):
+    # Shared repo; machine A deletes a skill, machine B applies + consents to remove.
+    repo_dir = tmp_path / "repo"
+    machine_a = tmp_path / "a"
+    machine_b = tmp_path / "b"
+    for home, machine_id in [(machine_a, "machine-a"), (machine_b, "machine-b")]:
+        home.mkdir(parents=True)
+        (home / "config-sync-machine-id").write_text(machine_id)
+
+    context_a = propagators.SyncContext(claude_dir=machine_a, repo_dir=repo_dir)
+    context_b = propagators.SyncContext(claude_dir=machine_b, repo_dir=repo_dir)
+    bundle_propagator = propagators.ContentBundlePropagator()
+
+    # A creates gof and exports; B applies (installs gof).
+    _write_skill(machine_a, "gof", {"SKILL.md": "# gof"})
+    bundle_propagator.export(context_a)
+    bundle_propagator.apply(context_b)
+    assert (machine_b / "skills" / "gof").exists()
+
+    # A deletes gof and re-exports -> tombstone + prune.
+    import shutil
+    shutil.rmtree(machine_a / "skills" / "gof")
+    export_result = bundle_propagator.export(context_a)
+    assert "skill/gof" in export_result.tombstoned
+
+    # B applies -> proposes the deletion (does not remove); consent removes it.
+    apply_result = bundle_propagator.apply(context_b)
+    assert [deletion.name for deletion in apply_result.deletions] == ["gof"]
+    assert (machine_b / "skills" / "gof").exists()  # still there until consent
+    propagators.resolve_deletion(context_b, "skill", "gof", "remove")
+    assert not (machine_b / "skills" / "gof").exists()  # gone after consent

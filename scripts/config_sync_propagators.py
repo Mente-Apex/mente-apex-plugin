@@ -92,6 +92,31 @@ def resolve_bundle(context: SyncContext, kind: str, name: str, winner: str) -> N
     ContentBundlePropagator().resolve_conflict(context, kind, name, winner)
 
 
+def resolve_deletion(context: SyncContext, kind: str, name: str, decision: str) -> None:
+    """Perform a prompted bundle-deletion resolution.
+
+    decision="remove" -> delete the local skill/agent (the network retired it). The
+      repo tombstone stays so other machines also see the deletion.
+    decision="keep"   -> leave it. Because the machine still has it, the next export
+      re-adds the bundle and supersedes the tombstone (disagreement resolves as
+      most-recent-action-wins).
+    """
+    if decision == "keep":
+        return
+    if decision != "remove":
+        raise ValueError(f"decision must be 'remove' or 'keep', got {decision!r}")
+    if kind not in BUNDLE_KINDS:
+        raise ValueError(f"unknown bundle kind: {kind!r}")
+    import shutil
+    # Deferred import: config_sync <-> config_sync_propagators is a two-way dep (SOLID M2).
+    import config_sync
+    destination = context.claude_dir / BUNDLE_KINDS[kind] / name
+    if not config_sync._is_within(destination, context.claude_dir):
+        raise ValueError(f"refusing to remove a path escaping ~/.claude: {destination}")
+    if destination.exists():
+        shutil.rmtree(destination)
+
+
 # ---------------------------------------------------------------------------
 # Bundle export filter — which files of a skill/agent source belong in a bundle
 # ---------------------------------------------------------------------------
