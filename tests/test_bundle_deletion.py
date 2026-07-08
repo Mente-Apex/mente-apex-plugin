@@ -108,3 +108,33 @@ def test_first_export_tombstones_nothing(tmp_path):
     _write_skill(context.claude_dir, "keep", {"SKILL.md": "# keep"})
     result = propagators.ContentBundlePropagator().export(context)
     assert result.tombstoned == []
+
+
+def test_apply_does_not_resurrect_a_tombstoned_bundle(tmp_path):
+    context = _context(tmp_path)
+    # A repo bundle exists but a newer tombstone retires it; skill is absent locally.
+    bundle_dir = context.repo_dir / "bundles" / "skills" / "gof"
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "SKILL.md").write_text("# gof")
+    (bundle_dir / propagators.MANIFEST_NAME).write_text(
+        '{"name":"gof","kind":"skill","is_dir":true,"content_hash":"x","exported_at":"2000-01-01T00:00:00+00:00"}')
+    propagators.BundleDeletionLedger().tombstone(
+        context.repo_dir, "skill", "gof", "machine-b", "2026-07-08T00:00:00+00:00")
+
+    result = propagators.ContentBundlePropagator().apply(context)
+
+    assert not (context.claude_dir / "skills" / "gof").exists()  # not resurrected
+    assert "skill/gof" not in result.applied
+
+
+def test_apply_proposes_deletion_for_locally_present_tombstoned_skill(tmp_path):
+    context = _context(tmp_path)
+    _write_skill(context.claude_dir, "gof", {"SKILL.md": "# gof"})  # still present locally
+    propagators.BundleDeletionLedger().tombstone(
+        context.repo_dir, "skill", "gof", "machine-b", "2026-07-08T00:00:00+00:00")
+
+    result = propagators.ContentBundlePropagator().apply(context)
+
+    assert [(deletion.kind, deletion.name, deletion.machine_id) for deletion in result.deletions] \
+        == [("skill", "gof", "machine-b")]
+    assert (context.claude_dir / "skills" / "gof").exists()  # apply removed nothing

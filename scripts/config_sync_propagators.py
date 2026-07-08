@@ -53,6 +53,7 @@ class ApplyResult:
     applied: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
     conflicts: list = field(default_factory=list)
+    deletions: list = field(default_factory=list)
 
 
 @runtime_checkable
@@ -395,6 +396,9 @@ class ContentBundlePropagator:
                     result.skipped.append(f"{kind}/{name} (escapes ~/.claude)")
                     continue
                 if not destination.exists():
+                    if self._ledger.is_deleted(context.repo_dir, kind, name, manifest.get("exported_at", "")):
+                        result.skipped.append(f"{kind}/{name} (tombstoned)")
+                        continue
                     self._install(bundle_dir, destination, manifest)
                     result.applied.append(f"{kind}/{name}")
                     continue
@@ -406,6 +410,20 @@ class ContentBundlePropagator:
                     kind=kind, name=name, local_hash=local_hash, repo_hash=repo_hash or "",
                     local_exported_at="", repo_exported_at=manifest.get("exported_at", ""),
                 ))
+
+        # Propose local removals for bundles the network has retired but this
+        # machine still has. Nothing is removed here — resolve-deletion does that
+        # after consent.
+        for tombstone in self._ledger.tombstones(context.repo_dir):
+            destination = self._local_entry_path(context, tombstone.kind, tombstone.name, True)
+            if not destination.exists():
+                continue
+            repo_bundle = context.repo_dir / "bundles" / BUNDLE_KINDS[tombstone.kind] / tombstone.name
+            bundle_exported_at = _read_manifest(repo_bundle).get("exported_at", "")
+            if self._ledger.is_deleted(context.repo_dir, tombstone.kind, tombstone.name, bundle_exported_at):
+                result.deletions.append(BundleDeletion(
+                    kind=tombstone.kind, name=tombstone.name,
+                    machine_id=tombstone.machine_id, deleted_at=tombstone.deleted_at))
         return result
 
     def _install(self, bundle_dir, destination, manifest):
