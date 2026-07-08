@@ -173,3 +173,16 @@ def test_patterns_md_defines_shared_rubrics():
     text = PATTERNS_MD.read_text()
     for required_block in ("## Grade rubric", "## Tier rubric", "## Risk rubric"):
         assert required_block in text, f"patterns.md missing '{required_block}'"
+
+
+GOF_EVALS = REPO_ROOT / "evals" / "gof-evals.json"
+EVAL_CASE_KEYS = {"id", "skill", "prompt", "expected_output", "assertions"}
+
+
+def test_gof_evals_valid_schema():
+    data = json.loads(GOF_EVALS.read_text())
+    assert data["skill_name"] == "gof"
+    assert isinstance(data["evals"], list) and data["evals"], "no eval cases"
+    for eval_case in data["evals"]:
+        assert EVAL_CASE_KEYS <= eval_case.keys(), f"case {eval_case.get('id')} missing keys"
+        assert isinstance(eval_case["assertions"], list) and eval_case["assertions"]
