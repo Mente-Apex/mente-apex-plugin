@@ -44,6 +44,7 @@ class ExportResult:
     written: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
+    tombstoned: list = field(default_factory=list)
 
 
 @dataclass
@@ -301,11 +302,12 @@ class ContentBundlePropagator:
 
     name = "content-bundle"
 
-    def __init__(self, export_filter: "BundleExportFilter | None" = None):
-        # DIP: the exclusion policy is an injected collaborator. Default to the
-        # production filter, but the constructor is the seam — tests and future
-        # callers substitute their own without touching the copy/hash logic.
+    def __init__(self, export_filter: "BundleExportFilter | None" = None, ledger=None):
+        # DIP: both the exclusion policy and the deletion ledger are injected
+        # collaborators. Defaults are the production implementations; the
+        # constructor is the seam tests substitute through.
         self._export_filter = export_filter if export_filter is not None else DefaultBundleExportFilter()
+        self._ledger = ledger if ledger is not None else BundleDeletionLedger()
 
     def _sources(self, context: SyncContext):
         for kind, subdir in BUNDLE_KINDS.items():
@@ -319,8 +321,26 @@ class ContentBundlePropagator:
 
     def export(self, context: SyncContext) -> ExportResult:
         result = ExportResult(self.name)
+        machine_id = _machine_id(context)
+        current = {f"{kind}/{entry.name}" for kind, entry in self._sources(context)}
+        previously_exported = self._ledger.previously_exported(context.repo_dir, machine_id)
+        deleted_at = datetime.now(timezone.utc).isoformat()
+
+        # Deletions: bundles this machine used to have and no longer does.
+        import shutil
+        for deleted_key in sorted(previously_exported - current):
+            deleted_kind, deleted_name = deleted_key.split("/", 1)
+            self._ledger.tombstone(context.repo_dir, deleted_kind, deleted_name, machine_id, deleted_at)
+            stale_bundle = context.repo_dir / "bundles" / BUNDLE_KINDS[deleted_kind] / deleted_name
+            if stale_bundle.exists():
+                shutil.rmtree(stale_bundle)
+            result.tombstoned.append(deleted_key)
+
         for kind, entry in self._sources(context):
             name = entry.name
+            # A locally-present bundle supersedes any tombstone for it (deliberate re-add).
+            if self._ledger.tombstone_for(context.repo_dir, kind, name) is not None:
+                self._ledger.clear_tombstone(context.repo_dir, kind, name)
             payload = _payload_files(entry, self._export_filter)
             local_hash = _content_hash(payload)
             bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
@@ -329,6 +349,8 @@ class ContentBundlePropagator:
                 continue
             self._write_bundle(bundle_dir, payload, kind, name, entry.is_dir(), local_hash, context)
             result.written.append(f"{kind}/{name}")
+
+        self._ledger.record_export(context.repo_dir, machine_id, current)
         return result
 
     def _write_bundle(self, bundle_dir, payload, kind, name, is_dir, content_hash, context):
