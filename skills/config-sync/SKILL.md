@@ -96,6 +96,10 @@ for warning in data.get('marketplace', {}).get('warnings', []):
 > If any `⚠` lines appeared, tell the user those plugins won't sync to their other
 > machines and suggest publishing each to a GitHub marketplace. This is advisory
 > only — **do not** stop the sync; continue to the next step.
+>
+> If `propagate-export` reported any `content-bundle.tombstoned` entries, tell the
+> user which skills/agents were retired and will be proposed for removal on other
+> machines.
 
 ```bash
 cd "$REPO"
@@ -137,12 +141,13 @@ files get combined intelligently.
 python3 "$ENGINE" consolidate "$REPO"
 ```
 
-> **Deletions don't propagate.** The merge is **union-only** — there are no deletion
-> tombstones. `import` only writes/updates files and never deletes; `merge` unions keys,
-> JSON lists, and markdown sections. So a memory or rule you delete on one machine is
-> *resurrected* from another machine's snapshot and from `consolidated/snapshot.json` on
-> the next sync. To remove something everywhere: delete it on **every** machine **and**
-> from `consolidated/snapshot.json` + each `machines/*.json`, then re-push.
+> **Bundle deletions propagate; config deletions don't.** Skill/agent **bundles**
+> now carry deletion tombstones: delete a skill on one machine and, on the next
+> sync, other machines are *prompted* to remove it (Step 4). **Snapshot config**
+> (CLAUDE.md, `memory/`, `rules/`) is still **union-only** — a memory or rule you
+> delete on one machine is *resurrected* from another machine's snapshot. To remove
+> config content everywhere: delete it on **every** machine **and** from
+> `consolidated/snapshot.json` + each `machines/*.json`, then re-push.
 
 ## Step 4 — Backup, then apply through the propagator seam
 
@@ -170,6 +175,17 @@ keep your local version, or take the network's?"), then apply their choice:
 ```bash
 # winner is "local" (keep this machine's) or "repo" (take the network's)
 python3 "$ENGINE" resolve-bundle "$REPO" "<kind>" "<name>" "<winner>"
+```
+
+**Resolve bundle deletions (if any).** For each entry in `content-bundle.deletions` —
+a skill/agent the network retired that this machine still has — ask the user with
+**AskUserQuestion** ("Skill/agent `<name>` was deleted on `<machine_id>` at
+`<deleted_at>` — remove it here, or keep it?"), then apply their choice:
+
+```bash
+# decision is "remove" (delete this machine's copy) or "keep" (retain it; the next
+# export re-adds it for everyone)
+python3 "$ENGINE" resolve-deletion "$REPO" "<kind>" "<name>" "<decision>"
 ```
 
 ## Step 4b — Converge marketplace plugins (plan → consent → apply)
@@ -257,6 +273,7 @@ Show the user a clean summary:
   Pushed   : <N> local change(s), <N> plugin(s) exported
   Pulled   : <N> remote commit(s)
   Merged   : <list of files that changed>
+  Retired  : <N> skill/agent bundle(s) tombstoned or removed (or "none")
   Plugins  : <N> plugin(s) installed/updated via consent (or "none")
   MCP servers: <N> new server(s) added (or "none new")
   Network  : <N> machine(s) in sync
