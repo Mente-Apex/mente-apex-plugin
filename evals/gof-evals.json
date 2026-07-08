@@ -1,0 +1,56 @@
+{
+  "skill_name": "gof",
+  "evals": [
+    {
+      "id": 1,
+      "skill": "gof",
+      "prompt": "/gof — review src/config/settings.py. It defines:\n\nclass Config:\n    _instance = None\n    def __new__(cls):\n        if cls._instance is None:\n            cls._instance = super().__new__(cls)\n        return cls._instance\n\nWhat design patterns are in this code and how good are they?",
+      "expected_output": "Runs Phase 0 inventory + test baseline, dispatches analyzer (detect+grade) then reviewer. Detects the Singleton in Config and grades it honestly — a non-thread-safe __new__ singleton with no lazy init or reset lands around 'C — Structural issues', not an A. Writes gof-reports/GOF-ANALYSIS-<date>.md plus the HTML preview, and surfaces the Singleton↔DIP tension from the overlap map rather than blindly endorsing the pattern.",
+      "assertions": [
+        "Creates gof-reports/ and git-excludes it via .git/info/exclude",
+        "Detects the Singleton in Config and grades it with the full label (e.g. 'C — Structural issues'), not just a bare letter",
+        "The grade reflects the thread-safety gap (unguarded __new__ race) — it is NOT graded 'A — Clean implementation'",
+        "Surfaces the Singleton⇄DIP tension per docs/solid-gof-overlap.md and reconciles it with the human rather than auto-recommending the pattern",
+        "Writes the final report via references/report-template.md (IDs/Risk/Status present) and a self-contained HTML preview per references/html-report.md",
+        "Does not apply any change without the human decision gate"
+      ]
+    },
+    {
+      "id": 2,
+      "skill": "gof",
+      "prompt": "/gof — review src/payments/processor.py. process_payment(method, amount) has an if/elif chain: `if method == \"credit_card\": ... elif method == \"paypal\": ... elif method == \"bank_transfer\": ...`, each branch running a fully self-contained, interchangeable charging algorithm for that method.",
+      "expected_output": "The analyzer's opportunity pass, per references/patterns.md's Strategy 'Suggest when' trigger (large conditional selecting between algorithms), files a Recommendation to extract each branch into an interchangeable strategy (e.g. a PaymentStrategy per method) so process_payment delegates instead of branching; the reviewer cross-references docs/solid-gof-overlap.md and cites the Strategy row's SOLID principle in the write-up.",
+      "assertions": [
+        "A Recommendation entry proposes replacing the if/elif dispatch with interchangeable Strategy objects (one per payment method), not a rewrite of unrelated code",
+        "The recommendation's cross-reference names OCP — the overlap map's Strategy row ('OCP, DIP … the canonical overlap') — not just 'Strategy' with no principle link",
+        "The recommendation is filed under the report's Recommendations section (apply-eligible) with an ID, Risk, and Status field per report-template.md, not folded into the Detected-patterns inventory",
+        "The suggestion is justified by patterns.md's Strategy 'Suggest when' clause (large conditional choosing between multiple algorithms), not asserted without a rubric citation"
+      ]
+    },
+    {
+      "id": 3,
+      "skill": "gof",
+      "prompt": "/gof — should ReportOptions use a Builder? class ReportOptions: def __init__(self, title, date, include_summary=True): ... — only those 3 constructor parameters, nothing else.",
+      "expected_output": "The analyzer's opportunity pass checks ReportOptions against references/patterns.md's Builder 'Suggest when' (5+ constructor params) and 'Don't suggest when' (≤4 params, plain dataclass) clauses, finds 3 params, and returns N/A for this site — no Builder recommendation is filed, and the report records this as a considered-but-not-applicable outcome rather than staying silent about it.",
+      "assertions": [
+        "No Builder recommendation is filed for ReportOptions anywhere in the Recommendations section",
+        "The stated reason explicitly invokes patterns.md's Builder 'Don't suggest when' clause (≤4 constructor params) — a keyword constructor reads better than a fluent builder here",
+        "ReportOptions is recorded as 'no opportunity' (N/A) in the Not applicable table rather than omitted outright, per SKILL.md treating N/A as a valid, trust-building outcome",
+        "No alternative restructuring (e.g. forcing a dataclass rewrite) is proposed either — restraint means filing nothing, since 3 params need no construction pattern at all"
+      ]
+    },
+    {
+      "id": 4,
+      "skill": "gof",
+      "prompt": "/gof — apply C1 (extract a Strategy for PaymentProcessor.process_payment) now that I've approved it at the decision gate.",
+      "expected_output": "Per docs/refactor-workflow.md Phase 4, the implementer/TDD-coordinator role (docs/refactor-agents/implementer.md) translates C1 into a TDD refactor-job call (targets, change, test_command + baseline_status, coverage) and dispatches it to skills/tdd/references/refactor-jobs.md's engine; it never edits process_payment's file directly. As a pure refactor (no new_behavior carve-out), the job pins the untested code with characterization tests where needed, applies the smallest faithful change, then verifies the suite stays green — it does not run a red-green cycle for new behavior. It returns a structured outcome; the coordinator writes C1's Status to 'applied' and appends the Apply log line in the report, with the full suite green after, matching or exceeding the Phase 0 baseline.",
+      "assertions": [
+        "The implementer dispatches a TDD refactor job with the calling contract's fields (targets/change/test_command+baseline_status/coverage) rather than calling Edit/Write on processor.py itself",
+        "No production code is modified outside of that dispatched refactor job — the coordinator's own hard rule ('You do NOT edit code directly; TDD is the engine') is respected",
+        "After the job returns, the test suite is verified green (equal to or better than the Phase 0 baseline) before C1 is marked applied",
+        "C1's Status line and the report's Apply log are updated in place (timestamp, ID, suite result, diffstat) rather than only reported in chat",
+        "Apply-phase work happens on a gof/<slug> working branch created per docs/git-convention.md before any file changes"
+      ]
+    }
+  ]
+}
