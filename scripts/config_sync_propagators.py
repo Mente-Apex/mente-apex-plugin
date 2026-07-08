@@ -189,6 +189,108 @@ def _read_manifest(bundle_dir: Path) -> dict:
         return {}
 
 
+INDEX_DIRNAME = ".index"
+TOMBSTONES_DIRNAME = ".tombstones"
+
+
+@dataclass(frozen=True)
+class Tombstone:
+    kind: str
+    name: str
+    deleted_at: str
+    machine_id: str
+
+
+@dataclass(frozen=True)
+class BundleDeletion:
+    kind: str
+    name: str
+    machine_id: str
+    deleted_at: str
+
+
+class BundleDeletionLedger:
+    """Deletion bookkeeping for skill/agent bundles, persisted under the repo.
+
+    Two records, both git-tracked and per-file so they converge without merge
+    conflicts (the pattern machines/<id>.json already uses):
+      - a per-machine export index (what a machine had at its last export), which
+        makes deletion *detection* possible;
+      - per-bundle tombstones ({kind, name, deleted_at, machine_id}).
+    Stateless w.r.t. the repo: repo_dir flows in per call, so one instance serves
+    any repo and is trivially faked in tests. One reason to change: the on-disk
+    layout of these records.
+    """
+
+    def _index_path(self, repo_dir, machine_id):
+        return repo_dir / "bundles" / INDEX_DIRNAME / f"{machine_id}.json"
+
+    def _tombstone_path(self, repo_dir, kind, name):
+        if "/" in name or "/" in kind:
+            raise ValueError(f"bundle kind/name must not contain '/': {kind}/{name}")
+        return repo_dir / "bundles" / TOMBSTONES_DIRNAME / BUNDLE_KINDS[kind] / f"{name}.json"
+
+    def previously_exported(self, repo_dir, machine_id):
+        index_path = self._index_path(repo_dir, machine_id)
+        if not index_path.exists():
+            return set()
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return set()
+        return set(data.get("bundles", []))
+
+    def record_export(self, repo_dir, machine_id, current):
+        index_path = self._index_path(repo_dir, machine_id)
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "machine_id": machine_id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "bundles": sorted(current),
+        }
+        index_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def tombstone(self, repo_dir, kind, name, machine_id, when):
+        tombstone_path = self._tombstone_path(repo_dir, kind, name)
+        tombstone_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {"kind": kind, "name": name, "deleted_at": when, "machine_id": machine_id}
+        tombstone_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+    def clear_tombstone(self, repo_dir, kind, name):
+        tombstone_path = self._tombstone_path(repo_dir, kind, name)
+        if tombstone_path.exists():
+            tombstone_path.unlink()
+
+    def tombstone_for(self, repo_dir, kind, name):
+        tombstone_path = self._tombstone_path(repo_dir, kind, name)
+        if not tombstone_path.exists():
+            return None
+        data = json.loads(tombstone_path.read_text(encoding="utf-8"))
+        return Tombstone(kind=data["kind"], name=data["name"],
+                         deleted_at=data["deleted_at"], machine_id=data["machine_id"])
+
+    def tombstones(self, repo_dir):
+        root = repo_dir / "bundles" / TOMBSTONES_DIRNAME
+        collected = []
+        if not root.exists():
+            return collected
+        for kind, subdir in BUNDLE_KINDS.items():
+            subdir_path = root / subdir
+            if not subdir_path.exists():
+                continue
+            for tombstone_file in sorted(subdir_path.glob("*.json")):
+                data = json.loads(tombstone_file.read_text(encoding="utf-8"))
+                collected.append(Tombstone(kind=data["kind"], name=data["name"],
+                                           deleted_at=data["deleted_at"], machine_id=data["machine_id"]))
+        return collected
+
+    def is_deleted(self, repo_dir, kind, name, bundle_exported_at):
+        tombstone = self.tombstone_for(repo_dir, kind, name)
+        if tombstone is None:
+            return False
+        return tombstone.deleted_at > (bundle_exported_at or "")
+
+
 class ContentBundlePropagator:
     """Propagates ~/.claude/skills and ~/.claude/agents as atomic, hash-gated bundles.
 
