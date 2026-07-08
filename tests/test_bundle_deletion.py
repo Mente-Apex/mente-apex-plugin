@@ -198,6 +198,27 @@ def test_agent_file_round_trip(tmp_path):
     assert not (machine_b / "agents" / "reviewer.md").exists()
 
 
+def test_apply_suppresses_conflict_when_newer_tombstone_exists(tmp_path):
+    context = _context(tmp_path)
+    # A repo bundle exported in the past, whose local copy differs (would be a conflict)...
+    bundle_dir = context.repo_dir / "bundles" / "skills" / "gof"
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "SKILL.md").write_text("# gof repo version")
+    (bundle_dir / propagators.MANIFEST_NAME).write_text(
+        '{"name":"gof","kind":"skill","is_dir":true,"content_hash":"repohash",'
+        '"exported_at":"2000-01-01T00:00:00+00:00"}')
+    _write_skill(context.claude_dir, "gof", {"SKILL.md": "# gof local DIFFERENT"})
+    # ...but a newer tombstone retires it.
+    propagators.BundleDeletionLedger().tombstone(
+        context.repo_dir, "skill", "gof", "machine-b", "2026-07-08T00:00:00+00:00")
+
+    result = propagators.ContentBundlePropagator().apply(context)
+
+    assert result.conflicts == []                                  # conflict suppressed
+    assert "skill/gof (tombstoned)" in result.skipped
+    assert [deletion.name for deletion in result.deletions] == ["gof"]  # proposed as a deletion instead
+
+
 def test_two_machine_round_trip(tmp_path):
     # Shared repo; machine A deletes a skill, machine B applies + consents to remove.
     repo_dir = tmp_path / "repo"
