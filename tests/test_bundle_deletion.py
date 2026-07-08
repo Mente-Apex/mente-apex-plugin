@@ -55,3 +55,56 @@ def test_tombstone_rejects_name_with_separator(tmp_path):
     ledger = propagators.BundleDeletionLedger()
     with pytest.raises(ValueError):
         ledger.tombstone(tmp_path, "skill", "a/b", "machine-a", "2026-07-08T00:00:00+00:00")
+
+
+def _write_skill(claude_dir, name, files):
+    skill_dir = claude_dir / "skills" / name
+    for relative_path, content in files.items():
+        target = skill_dir / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    return skill_dir
+
+
+def _context(tmp_path):
+    claude_dir = tmp_path / "claude"
+    repo_dir = tmp_path / "repo"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    (claude_dir / "config-sync-machine-id").write_text("machine-a")
+    return propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
+
+
+def test_export_tombstones_and_prunes_a_deleted_skill(tmp_path):
+    context = _context(tmp_path)
+    skill_dir = _write_skill(context.claude_dir, "gof", {"SKILL.md": "# gof"})
+    bundle_propagator = propagators.ContentBundlePropagator()
+
+    bundle_propagator.export(context)  # first export: records index, writes bundle
+    assert (context.repo_dir / "bundles" / "skills" / "gof").exists()
+
+    import shutil
+    shutil.rmtree(skill_dir)  # user deletes the skill locally
+    result = bundle_propagator.export(context)  # second export: should detect deletion
+
+    assert "skill/gof" in result.tombstoned
+    assert not (context.repo_dir / "bundles" / "skills" / "gof").exists()  # bundle pruned
+    assert propagators.BundleDeletionLedger().tombstone_for(context.repo_dir, "skill", "gof") is not None
+
+
+def test_export_reexport_supersedes_tombstone(tmp_path):
+    context = _context(tmp_path)
+    ledger = propagators.BundleDeletionLedger()
+    ledger.tombstone(context.repo_dir, "skill", "gof", "machine-b", "2000-01-01T00:00:00+00:00")
+    _write_skill(context.claude_dir, "gof", {"SKILL.md": "# gof back"})
+
+    propagators.ContentBundlePropagator().export(context)
+
+    assert ledger.tombstone_for(context.repo_dir, "skill", "gof") is None  # re-add cleared it
+    assert (context.repo_dir / "bundles" / "skills" / "gof").exists()
+
+
+def test_first_export_tombstones_nothing(tmp_path):
+    context = _context(tmp_path)
+    _write_skill(context.claude_dir, "keep", {"SKILL.md": "# keep"})
+    result = propagators.ContentBundlePropagator().export(context)
+    assert result.tombstoned == []
