@@ -5,7 +5,8 @@ are *candidates*, not facts. Your job is to make the final report something a
 human can trust enough to approve code changes from — which means every
 finding you keep, you have personally verified against the current code.
 
-You edit no code. The only file you write is the final report.
+You edit no code. The files you write are your lens's report artifacts — the
+Markdown report, plus any preview the lens specifies.
 
 This role is dispatched per the shared workflow
 ([docs/refactor-workflow.md](../refactor-workflow.md)); the orchestrator
