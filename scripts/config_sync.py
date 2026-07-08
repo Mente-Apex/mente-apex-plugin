@@ -871,7 +871,8 @@ def cmd_propagate_export(repo_path):
     results = propagators.run_export(context, plugins_module.export_propagators())
     print(json.dumps({result.propagator: {"written": result.written,
                                            "skipped": result.skipped,
-                                           "warnings": result.warnings}
+                                           "warnings": result.warnings,
+                                           "tombstoned": result.tombstoned}
                       for result in results}, indent=2))
 
 
@@ -884,6 +885,7 @@ def cmd_propagate_apply(repo_path):
             "applied": result.applied,
             "skipped": result.skipped,
             "conflicts": [vars(conflict) for conflict in result.conflicts],
+            "deletions": [vars(deletion) for deletion in result.deletions],
         }
     print(json.dumps(payload, indent=2))
 
@@ -892,6 +894,12 @@ def cmd_resolve_bundle(repo_path, kind, name, winner):
     propagators, context = _sync_context(repo_path)
     propagators.resolve_bundle(context, kind, name, winner)
     print(json.dumps({"resolved": f"{kind}/{name}", "winner": winner}))
+
+
+def cmd_resolve_deletion(repo_path, kind, name, decision):
+    propagators, context = _sync_context(repo_path)
+    propagators.resolve_deletion(context, kind, name, decision)
+    print(json.dumps({"resolved": f"{kind}/{name}", "decision": decision}))
 
 
 def cmd_plugins_plan(repo_path, host=None):
@@ -935,6 +943,7 @@ COMMANDS = {
     "propagate-export": (cmd_propagate_export, 1),
     "propagate-apply": (cmd_propagate_apply, 1),
     "resolve-bundle": (cmd_resolve_bundle, 4),
+    "resolve-deletion": (cmd_resolve_deletion, 4),
     "plugins-plan": (cmd_plugins_plan, 1),
     "plugins-apply": (cmd_plugins_apply, 1),
     "apply-shared": (cmd_apply_shared, 1),
