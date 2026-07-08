@@ -6,11 +6,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import config_sync_propagators as propagators  # noqa: E402
 
 
-def _iso(text):
-    # Small helper so tests read clearly; any ISO-8601 UTC string works.
-    return text
-
-
 def test_previously_exported_is_empty_without_index(tmp_path):
     ledger = propagators.BundleDeletionLedger()
     assert ledger.previously_exported(tmp_path, "machine-a") == set()
@@ -64,6 +59,14 @@ def _write_skill(claude_dir, name, files):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
     return skill_dir
+
+
+def _write_agent_file(claude_dir, name, text):
+    agents_dir = claude_dir / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    agent_path = agents_dir / name
+    agent_path.write_text(text)
+    return agent_path
 
 
 def _context(tmp_path):
@@ -159,6 +162,40 @@ def test_resolve_deletion_rejects_unknown_decision(tmp_path):
     context = _context(tmp_path)
     with pytest.raises(ValueError):
         propagators.resolve_deletion(context, "skill", "gof", "maybe")
+
+
+def test_resolve_deletion_remove_deletes_a_file_agent(tmp_path):
+    context = _context(tmp_path)
+    _write_agent_file(context.claude_dir, "reviewer.md", "# reviewer")
+    propagators.resolve_deletion(context, "agent", "reviewer.md", "remove")
+    assert not (context.claude_dir / "agents" / "reviewer.md").exists()
+
+
+def test_agent_file_round_trip(tmp_path):
+    repo_dir = tmp_path / "repo"
+    machine_a = tmp_path / "a"
+    machine_b = tmp_path / "b"
+    for home, machine_id in [(machine_a, "machine-a"), (machine_b, "machine-b")]:
+        home.mkdir(parents=True)
+        (home / "config-sync-machine-id").write_text(machine_id)
+    context_a = propagators.SyncContext(claude_dir=machine_a, repo_dir=repo_dir)
+    context_b = propagators.SyncContext(claude_dir=machine_b, repo_dir=repo_dir)
+    bundle_propagator = propagators.ContentBundlePropagator()
+
+    _write_agent_file(machine_a, "reviewer.md", "# reviewer")
+    bundle_propagator.export(context_a)
+    bundle_propagator.apply(context_b)
+    assert (machine_b / "agents" / "reviewer.md").is_file()  # installed as a file
+
+    (machine_a / "agents" / "reviewer.md").unlink()  # delete the agent locally
+    export_result = bundle_propagator.export(context_a)
+    assert "agent/reviewer.md" in export_result.tombstoned
+
+    apply_result = bundle_propagator.apply(context_b)
+    assert [deletion.name for deletion in apply_result.deletions] == ["reviewer.md"]
+    assert (machine_b / "agents" / "reviewer.md").exists()  # not removed until consent
+    propagators.resolve_deletion(context_b, "agent", "reviewer.md", "remove")
+    assert not (machine_b / "agents" / "reviewer.md").exists()
 
 
 def test_two_machine_round_trip(tmp_path):

@@ -113,8 +113,10 @@ def resolve_deletion(context: SyncContext, kind: str, name: str, decision: str) 
     destination = context.claude_dir / BUNDLE_KINDS[kind] / name
     if not config_sync._is_within(destination, context.claude_dir):
         raise ValueError(f"refusing to remove a path escaping ~/.claude: {destination}")
-    if destination.exists():
+    if destination.is_dir():
         shutil.rmtree(destination)
+    elif destination.exists():
+        destination.unlink()
 
 
 # ---------------------------------------------------------------------------
@@ -364,8 +366,11 @@ class ContentBundlePropagator:
 
         for kind, entry in self._sources(context):
             name = entry.name
-            # A locally-present bundle supersedes any tombstone for it (deliberate re-add).
-            if self._ledger.tombstone_for(context.repo_dir, kind, name) is not None:
+            # A locally-present bundle supersedes any tombstone for it (deliberate re-add),
+            # but only if the tombstone predates THIS export — a tombstone written just
+            # above (this export's own deletion pass) must not be immediately cleared.
+            existing_tombstone = self._ledger.tombstone_for(context.repo_dir, kind, name)
+            if existing_tombstone is not None and existing_tombstone.deleted_at < deleted_at:
                 self._ledger.clear_tombstone(context.repo_dir, kind, name)
             payload = _payload_files(entry, self._export_filter)
             local_hash = _content_hash(payload)
@@ -430,6 +435,9 @@ class ContentBundlePropagator:
                 local_hash = _content_hash(_payload_files(destination, self._export_filter))
                 if local_hash == repo_hash:
                     result.skipped.append(f"{kind}/{name}")
+                    continue
+                if self._ledger.is_deleted(context.repo_dir, kind, name, manifest.get("exported_at", "")):
+                    result.skipped.append(f"{kind}/{name} (tombstoned)")
                     continue
                 result.conflicts.append(BundleConflict(
                     kind=kind, name=name, local_hash=local_hash, repo_hash=repo_hash or "",
