@@ -304,10 +304,14 @@ git push origin main 2>&1 && \
 
 ## A note on deletions
 
-Config sync is **union-only** — it has no deletion tombstones. Promoting and sharing
-*add* content that propagates; **deleting** does not. A memory, rule, or shared
-artifact you remove on one machine is resurrected from another machine's snapshot
-(and from `consolidated/snapshot.json`) on the next sync. To remove something
+**Bundle deletions propagate; config deletions don't.** Skill/agent **bundles**
+now carry deletion tombstones: delete a skill on one machine and, on the next
+`/config-sync`, other machines are *prompted* to remove it (via `resolve-deletion`).
+**Config** — CLAUDE.md, `memory/`, `rules/`, and anything copied into `shared/` via
+**Share** above — is still **union-only**: promoting and sharing *add* content that
+propagates, but **deleting** does not. A memory, rule, or shared artifact you remove
+on one machine is resurrected from another machine's snapshot (and from
+`consolidated/snapshot.json`) on the next sync. To remove config content
 everywhere: delete it on **every** machine **and** from `consolidated/snapshot.json`
 + each `machines/*.json`, then re-push.
 

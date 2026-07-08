@@ -367,8 +367,12 @@ class ContentBundlePropagator:
         for kind, entry in self._sources(context):
             name = entry.name
             # A locally-present bundle supersedes any tombstone for it (deliberate re-add),
-            # but only if the tombstone predates THIS export — a tombstone written just
-            # above (this export's own deletion pass) must not be immediately cleared.
+            # but only if the tombstone predates THIS export's timestamp. A tombstone
+            # dated at or after `deleted_at` is a FUTURE-dated tombstone from this
+            # machine's point of view — e.g. another machine with a clock ahead of this
+            # one, or a deletion that genuinely happened later than this sync — and must
+            # be preserved rather than clobbered just because this run still finds the
+            # bundle present locally.
             existing_tombstone = self._ledger.tombstone_for(context.repo_dir, kind, name)
             if existing_tombstone is not None and existing_tombstone.deleted_at < deleted_at:
                 self._ledger.clear_tombstone(context.repo_dir, kind, name)
