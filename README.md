@@ -77,9 +77,7 @@ a private Git remote you control):
 | OAuth tokens / API keys | ✗ Never |
 | .claude.json | ✗ Never |
 
-**Note:** the merge is union-only — deletions don't propagate. To remove something
-across the network you must delete it on every machine and from the consolidated
-snapshot. See `/config-sync` for details.
+**Note:** Skill/agent **deletions** now propagate — a retired skill on one machine is proposed for removal on the others (consent-gated); snapshot config remains union-only. To remove something across the network you must delete it on every machine and from the consolidated snapshot. See `/config-sync` for details.
 
 ## Requirements
 
