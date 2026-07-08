@@ -67,6 +67,13 @@ the finding. The overlap map's one ⚠ entry — **Singleton vs. DIP** — is a
 genuine tension between the two lenses, not a bug to resolve automatically:
 surface it to the human at the decision gate and let them choose.
 
+## Evolving this skill
+
+The rubric lives in `references/patterns.md`, not this file. When the
+human's gate decisions repeatedly disagree with the report — grades they'd
+score differently, tiers or risks they consistently override — fold that
+pattern back into `patterns.md` and bump this file's `metadata.version`.
+
 ## File map
 
 - [references/patterns.md](references/patterns.md) — the 23-pattern rubric:

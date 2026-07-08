@@ -30,6 +30,9 @@ approved specific recommendations at the decision gate.
 
 ## Hard rules
 - Only your rec (or chain). Update only Status lines + the Apply log in the report.
+- When the refactor job runs in legacy mode (`coverage: none`), it also
+  writes new characterization test files — the "update only" rule above
+  governs the report, not these engine-produced test files.
 - Unrelated problems go in your final summary, not into any change.
 
 ## Yield back

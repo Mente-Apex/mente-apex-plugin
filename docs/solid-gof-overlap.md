@@ -33,7 +33,7 @@ Uses:
 | Observer | Behavioral | DIP, OCP, SRP | subject calls concrete observers directly → depend on observer interface |
 | State | Behavioral | OCP, SRP, LSP | `if/elif` on a state variable with per-state behavior |
 | Strategy | Behavioral | OCP, DIP | `if algo == "x"` selecting among interchangeable algorithms (the canonical overlap) |
-| Template Method | Behavioral | OCP, DIP | copy-pasted algorithm skeletons differing only in steps |
+| Template Method | Behavioral | OCP | copy-pasted algorithm skeletons differing only in steps |
 | Visitor | Behavioral | OCP, SRP | `isinstance` dispatch to add operations across a stable hierarchy |
 
 **Reconciliation rule:** when a smell maps to both a SOLID principle and a GoF

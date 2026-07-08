@@ -76,3 +76,7 @@ Rec IDs: `C1, C2, …` (Critical), `M1, …` (Major), `N1, …` (Minor).
 Status values: `pending` → `applied` | `failed (reverted)` | `skipped (not
 approved)`. The implementer edits the Status line of each rec it touches and
 appends to the Apply log; it changes nothing else in the report.
+
+A rec's `Overlap:` field renders a ⚠ tension inline, e.g.: `**Overlap:** ⚠
+SOLID DIP tension — a module-level singleton is itself a DIP smell; surface
+the trade-off to the human rather than auto-recommending`.

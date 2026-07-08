@@ -14,13 +14,16 @@ Input (from a lens's implementer-coordinator):
 - `change` — the exact behavior-preserving restructuring (a rec's Proposed change)
 - `test_command` + `baseline_status` — green, or the tolerated pre-existing failures
 - `coverage` — `covered` if the suite exercises the targets, else `none`
-- `new_behavior` — optional: any genuinely-new behavior the change introduces
+- `new_behavior` — defaults to none: a behavior-preserving refactor has none;
+  set it only when `change` explicitly introduces new behavior
 
 Execution:
 1. Safety net. `coverage == none` → run legacy mode: write characterization
-   pins asserting what the code does today, to green. `covered` → use the
-   existing suite. If current behavior looks wrong, flag it — never silently
-   "fix" it; the oddity may be load-bearing.
+   pins asserting what the code does today, to green. Pins assert the code's
+   **exact** current values, never loose bounds — a structural change that
+   reorders operations is exactly what a loose pin would miss. `covered` →
+   use the existing suite. If current behavior looks wrong, flag it — never
+   silently "fix" it; the oddity may be load-bearing.
 2. Apply the smallest faithful version of `change`. Behavior-preserving; house
    style; descriptive names; no new dependencies.
 3. New-behavior carve-out. Anything in `new_behavior` runs as a normal feature
@@ -44,3 +47,14 @@ coverage=covered, baseline_status=green, new_behavior=none.
 → existing suite is the net → apply the extraction → suite green → outcome
 `applied`, tests_written=[] (behavior unchanged), files_touched=[pricing.py,
 strategies.py].
+
+A GoF rec "extract a Strategy for the three `if kind ==` branches in
+`legacy_billing.py`; the module has no test coverage" arrives as:
+targets=[legacy_billing.py], change=<that text>, coverage=none,
+baseline_status=green, new_behavior=none.
+→ `coverage == none` triggers legacy mode: write characterization pins that
+pin each branch's exact current output to green FIRST, before touching any
+production code → apply the extraction → run the full suite (pins + existing
+tests) → green → outcome `applied`, tests_written=[test_legacy_billing.py]
+(the characterization pins), files_touched=[legacy_billing.py,
+billing_strategies.py, test_legacy_billing.py].
