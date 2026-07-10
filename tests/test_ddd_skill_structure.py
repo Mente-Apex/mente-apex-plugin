@@ -142,3 +142,11 @@ def test_analyze_agents_exist_and_state_their_contracts():
     assert "docs/domain" in reviewer                      # reverse-engineered proposal
     assert "discard" in reviewer.lower()                  # keep/discard gate
     assert "edit no code" in reviewer.lower() or "no code" in reviewer.lower()
+
+
+def test_plugin_manifests_advertise_ddd():
+    plugin_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
+    marketplace_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    assert "ddd" in plugin_manifest["description"].lower() or "domain-driven" in plugin_manifest["description"].lower()
+    marketplace_blob = json.dumps(marketplace_manifest).lower()
+    assert "ddd" in marketplace_blob or "domain-driven" in marketplace_blob
