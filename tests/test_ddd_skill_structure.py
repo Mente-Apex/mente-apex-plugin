@@ -150,3 +150,20 @@ def test_plugin_manifests_advertise_ddd():
     assert "ddd" in plugin_manifest["description"].lower() or "domain-driven" in plugin_manifest["description"].lower()
     marketplace_blob = json.dumps(marketplace_manifest).lower()
     assert "ddd" in marketplace_blob or "domain-driven" in marketplace_blob
+
+
+def test_ddd_evals_cover_modes_and_gates():
+    evals_path = REPO_ROOT / "evals" / "ddd-evals.json"
+    assert evals_path.is_file(), "evals/ddd-evals.json missing"
+    document = json.loads(evals_path.read_text())
+    assert document["skill_name"] == "ddd"
+    cases = document["evals"]
+    assert len(cases) >= 4, "want at least 4 eval cases"
+    for case in cases:
+        for field in ["id", "prompt", "expected_output", "assertions"]:
+            assert field in case, f"eval case {case.get('id')} missing {field}"
+        assert isinstance(case["assertions"], list) and case["assertions"]
+    blob = json.dumps(document).lower()
+    assert "modeling gate" in blob or "modelling gate" in blob
+    assert "report-only" in blob or "no code" in blob        # analyze mode
+    assert "programmatic" in blob                            # tdd handoff
