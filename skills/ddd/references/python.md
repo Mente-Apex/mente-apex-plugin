@@ -127,15 +127,19 @@ helpers — the exception, not the default.
 class SqlAlchemyOrderRepository:            # matches the OrderRepository Protocol
     def __init__(self, session):
         self._session = session             # injected; never constructed here
+        self.seen: set[Order] = set()       # aggregates touched this transaction
 
     def get(self, order_id: OrderId) -> Order:
         row = self._session.get(OrderRow, order_id.value)
         if row is None:
             raise OrderNotFound(order_id)
-        return _to_domain(row)              # returns a whole aggregate
+        order = _to_domain(row)             # returns a whole aggregate
+        self.seen.add(order)
+        return order
 
     def add(self, order: Order) -> None:
         self._session.add(_to_row(order))
+        self.seen.add(order)
 ```
 The port lives with the domain/application; this adapter is injected at the
 composition root. It returns a fully-constituted `Order`, never a row.
@@ -167,7 +171,15 @@ class SqlAlchemyUnitOfWork:
 
     def commit(self):
         self._session.commit()
+
+    def collect_new_events(self):
+        for order in self.orders.seen:          # aggregates touched this UoW
+            yield from order.collect_events()
 ```
+`collect_new_events` drains the events recorded on every aggregate the
+repositories handed out or accepted this transaction — the application service
+publishes them *after* `commit`, never mid-transaction (see the event lifecycle
+in `ddd-core.md`).
 
 ## Application service — orchestrates, holds no business rules
 
@@ -182,7 +194,7 @@ class PlaceOrderService:
             order = Order.place(OrderId.new(), command.lines)   # factory
             unit_of_work.orders.add(order)
             unit_of_work.commit()
-            for domain_event in order.collect_events():
+            for domain_event in unit_of_work.collect_new_events():
                 self._event_bus.publish(domain_event)           # after commit
         return order.id
 ```
