@@ -81,3 +81,22 @@ def test_ddd_core_covers_the_tactical_spine():
     ]
     missing = [concept for concept in required_concepts if concept.lower() not in text.lower()]
     assert not missing, f"ddd-core.md missing: {missing}"
+
+
+def test_strategic_has_full_context_mapping_catalogue():
+    text = read_skill_file("references/strategic.md")
+    catalogue = [
+        "Partnership",
+        "Shared Kernel",
+        "Customer/Supplier",
+        "Conformist",
+        "Anti-Corruption Layer",
+        "Open Host Service",
+        "Published Language",
+        "Separate Ways",
+        "Big Ball of Mud",
+    ]
+    missing = [pattern for pattern in catalogue if pattern.lower() not in text.lower()]
+    assert not missing, f"strategic.md context-map catalogue missing: {missing}"
+    for anchor in ["event storming", "core", "supporting", "generic"]:
+        assert anchor.lower() in text.lower(), f"strategic.md missing: {anchor}"
