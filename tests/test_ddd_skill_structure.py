@@ -122,3 +122,10 @@ def test_python_reference_gives_the_protocol_vs_abc_decision():
     assert re.search(r"class\s+AggregateRoot\(ABC\)", text), \
         "need an AggregateRoot ABC example to contrast with Protocol ports"
     assert "runtime_checkable" in text, "must warn about @runtime_checkable's limits"
+
+
+def test_report_template_has_the_parsed_structure():
+    text = read_skill_file("references/report-template.md")
+    for marker in ["[C1]", "[M1]", "[N1]", "Tier", "Impact", "Status", "pending"]:
+        assert marker in text, f"report-template.md missing: {marker}"
+    assert "Target architecture sketch" in text
