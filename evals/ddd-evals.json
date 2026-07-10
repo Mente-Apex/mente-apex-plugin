@@ -1,0 +1,60 @@
+{
+  "skill_name": "ddd",
+  "evals": [
+    {
+      "id": 1,
+      "skill": "ddd",
+      "prompt": "I'm starting a new invoicing service from scratch. Help me design it properly with domain-driven design.",
+      "expected_output": "Enters design mode, models the domain adaptively (inference-first for a known domain), persists docs/domain, then STOPS at the modeling gate for sign-off on ubiquitous language + bounded contexts + aggregates before any code.",
+      "assertions": [
+        "Reads references/ddd-core.md before modelling",
+        "If product requirements are fuzzy, recommends brainstorming first",
+        "Opens a ddd/<slug> working branch before writing code",
+        "Writes docs/domain/GLOSSARY.md and model.md",
+        "Presents a hard MODELING GATE covering ubiquitous language, bounded contexts, and aggregates (with the invariant each guards) before writing any test or production code",
+        "Does not write production code until the gate is approved"
+      ]
+    },
+    {
+      "id": 2,
+      "skill": "ddd",
+      "prompt": "The model looks right — go ahead and build it.",
+      "expected_output": "Treats the pre-authorization as passing the modeling gate, then drives tdd in programmatic mode to build innermost-out: domain core, then application services, then adapters behind ports, web last, checking dependency direction after each layer.",
+      "assertions": [
+        "Does not re-ask the modeling gate (pre-authorized)",
+        "Delegates construction to the tdd skill in programmatic mode with acceptance criteria per layer",
+        "Builds domain core first (entities, value objects, aggregates), with no mocks in domain tests",
+        "Defines ports before writing any adapter; application services depend on ports",
+        "Builds adapters (repository/unit of work) behind ports, then the web layer last and only if needed",
+        "After each layer asserts dependencies point inward and no concretion is constructed in the domain",
+        "Recommends /solid and /gof as advisory, without auto-running them"
+      ]
+    },
+    {
+      "id": 3,
+      "skill": "ddd",
+      "prompt": "Here's our legacy Django order module — can you analyze it through a DDD lens?",
+      "expected_output": "Enters analyze mode: analyzer->reviewer two-stage pass producing a tiered ddd-reports/DDD-REFACTOR-<date>.md plus a reverse-engineered docs/domain proposal, gated keep-or-discard. Report-only — no code changes.",
+      "assertions": [
+        "Creates gitignored ddd-reports/ and records the test command as context only",
+        "Runs a read-only analyzer that writes findings-draft.md with DDD smells (anemic model, logic in controllers/ORM, missing ports)",
+        "Runs an independent reviewer that verifies each finding and writes the tiered report using the report template",
+        "Reverse-engineers the implicit ubiquitous language, bounded contexts, and aggregates into a proposed docs/domain",
+        "Presents a keep-or-discard model review gate; discards delete the proposal",
+        "Makes no code changes (report-only)"
+      ]
+    },
+    {
+      "id": 4,
+      "skill": "ddd",
+      "prompt": "Should we use event sourcing and CQRS for this domain?",
+      "expected_output": "Names CQRS and event sourcing as opt-in / out-of-scope-by-default, states their cost, and only adopts them on explicit opt-in — never silently.",
+      "assertions": [
+        "Explains CQRS and event sourcing are not required for DDD and are opt-in only",
+        "States the added complexity/cost before recommending either",
+        "Does not bake them into the default single-context build",
+        "Proceeds with the state-based repository + unit-of-work default unless the user explicitly opts in"
+      ]
+    }
+  ]
+}

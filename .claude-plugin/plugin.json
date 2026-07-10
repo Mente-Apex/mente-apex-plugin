@@ -1,7 +1,7 @@
 {
   "name": "mente-apex",
   "version": "0.11.0",
-  "description": "Mente Apex private utilities \u2014 client onboarding, branded proposals and invoices, a one-step ship (branch/commit/push/PR) workflow, a clean-code review/writing standard, a SOLID analysis & guided-refactor workflow, a GoF design-pattern analysis & guided-refactor workflow (creational/structural/behavioral), a TDD (red-green-refactor) implementation workflow with feature and legacy-code modes, plus Claude config sync across machines via Git.",
+  "description": "Mente Apex private utilities \u2014 client onboarding, branded proposals and invoices, a one-step ship (branch/commit/push/PR) workflow, a clean-code review/writing standard, a SOLID analysis & guided-refactor workflow, a GoF design-pattern analysis & guided-refactor workflow (creational/structural/behavioral), a TDD (red-green-refactor) implementation workflow with feature and legacy-code modes, plus Claude config sync across machines via Git, plus a Domain-Driven Design modelling/build/analysis workflow (/ddd).",
   "author": {
     "name": "Boris Vujicic"
   },
