@@ -58,3 +58,26 @@ def test_skill_md_covers_both_modes_and_both_gates():
     ]
     missing = [marker for marker in required_markers if marker not in body]
     assert not missing, f"SKILL.md missing required content: {missing}"
+
+
+def test_ddd_core_covers_the_tactical_spine():
+    text = read_skill_file("references/ddd-core.md")
+    required_concepts = [
+        "Value object",
+        "Entities",
+        "Aggregate",
+        "reference other aggregates by identity",  # the four-rules signature
+        "one aggregate per transaction",
+        "eventual",
+        "Factories",
+        "domain event",
+        "integration event",
+        "Domain service",
+        "Application service",
+        "Repository",
+        "Unit of work",
+        "inward",            # dependency direction
+        "Do NOT",            # a when-not-to block exists
+    ]
+    missing = [concept for concept in required_concepts if concept.lower() not in text.lower()]
+    assert not missing, f"ddd-core.md missing: {missing}"
