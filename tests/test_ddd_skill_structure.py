@@ -100,3 +100,25 @@ def test_strategic_has_full_context_mapping_catalogue():
     assert not missing, f"strategic.md context-map catalogue missing: {missing}"
     for anchor in ["event storming", "core", "supporting", "generic"]:
         assert anchor.lower() in text.lower(), f"strategic.md missing: {anchor}"
+
+
+def test_python_reference_shows_the_core_idioms():
+    text = read_skill_file("references/python.md")
+    assert "@dataclass(frozen=True)" in text, "need a frozen-dataclass value object"
+    assert "Protocol" in text, "need typing.Protocol ports"
+    assert "unit of work" in text.lower(), "need a unit-of-work idiom"
+    assert re.search(r"class\s+\w*Repository", text), "need a repository class idiom"
+    assert re.search(r"class\s+\w*UnitOfWork", text), "need a unit-of-work class idiom"
+
+
+def test_python_reference_gives_the_protocol_vs_abc_decision():
+    text = read_skill_file("references/python.md")
+    lowered = text.lower()
+    # the explicit rule: ports -> Protocol, domain base classes -> ABC
+    assert "ports → protocol" in lowered or "ports —> protocol" in lowered \
+        or ("port" in lowered and "protocol" in lowered and "base class" in lowered), \
+        "need the ports-vs-base-classes rule of thumb"
+    assert "abc" in lowered, "need the ABC side of the decision"
+    assert re.search(r"class\s+AggregateRoot\(ABC\)", text), \
+        "need an AggregateRoot ABC example to contrast with Protocol ports"
+    assert "runtime_checkable" in text, "must warn about @runtime_checkable's limits"
