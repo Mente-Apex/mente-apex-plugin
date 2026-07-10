@@ -45,15 +45,39 @@ single-context app never drowns in ceremony. The orchestrator loads only what
 the domain warrants.
 
 - `references/ddd-core.md` (agnostic) — the tactical spine + layering + DIP
-  rules: entities vs value objects; aggregates as **consistency boundaries** +
-  aggregate roots; domain events; domain services; ports; **repository** (one
-  per aggregate root); **unit of work** (transactional consistency across a
-  change); the four-layer dependency rule (domain → application → adapters →
-  web, dependencies point **inward only**).
+  rules:
+  - **Entities vs value objects** — identity-bearing vs value-equal, immutable,
+    self-validating. Entity identity persists through state change.
+  - **Aggregates as consistency boundaries + aggregate roots**, plus the four
+    aggregate design rules: keep aggregates **small**; **reference other
+    aggregates by identity (ID), never by object reference**; **modify one
+    aggregate per transaction**; **consistency across aggregates is eventual**,
+    reached via domain events.
+  - **Factories** as a first-class *domain* pattern — encapsulate creation of a
+    complex aggregate so it is never born invalid. (Not merely a `/gof`
+    advisory; it is core tactical DDD.)
+  - **Domain events — full lifecycle**, not just the concept: *raised* (recorded
+    on the aggregate), *dispatched* (after the unit of work commits), *handled*.
+    This is the mechanism for the cross-aggregate eventual consistency above.
+  - **Domain event vs integration event** — domain events stay *inside* a
+    bounded context; integration events are the published, versioned contract
+    *between* contexts (ties to the ACL / context map in `strategic.md`).
+  - **Domain services vs application services — crisp distinction** (conflating
+    them *causes* the anemic-domain and fat-service smells the analyze mode
+    hunts): a **domain service** holds genuine business logic that belongs to no
+    single entity/VO (e.g. a transfer across two accounts); an **application
+    service** orchestrates a use case, is the transaction/security boundary, and
+    holds **no business rules**.
+  - **Ports**; **repository** (one per aggregate root, returns fully-constituted
+    aggregates); **unit of work** (transactional consistency across a change).
+  - The four-layer dependency rule (domain → application → adapters → web,
+    dependencies point **inward only**).
 - `references/strategic.md` (agnostic, loaded only when a >1-context smell
-  appears) — event-storming facilitation script; context mapping
-  (upstream/downstream, conformist, anti-corruption layer); subdomain
-  classification (core / supporting / generic); anti-corruption layers.
+  appears) — event-storming facilitation script; subdomain classification
+  (core / supporting / generic); and the **full context-mapping catalog**:
+  Partnership, Shared Kernel, Customer/Supplier, Conformist, Anti-Corruption
+  Layer, Open Host Service, Published Language, Separate Ways (and Big Ball of
+  Mud as the anti-pattern), each with its upstream/downstream direction.
 - `references/python.md` — concrete idioms: frozen `@dataclass` value objects;
   `typing.Protocol` for ports (structural, keeps the domain import-clean);
   ABC-vs-Protocol guidance; SQLAlchemy repository + unit-of-work
@@ -229,3 +253,23 @@ skills/ddd/
 - Non-Python concrete idiom adapters — agnostic core covers them; a TypeScript
   adapter can be added later if wanted.
 - End-to-end / full-stack test generation — remains `tdd`'s call per layer.
+
+### Named but out of scope — opt-in only (tracked as GitHub issues)
+
+These orbit DDD and are frequently mistaken for "required DDD". The skill
+**names** them so the user chooses them deliberately, but does not bake them in
+(they would bloat the common single-context path):
+
+- **CQRS** — separate read/write models and query-side projections. (#60)
+- **Event Sourcing** — a separate discipline; state as an event log. (#61)
+- **Sagas / Process Managers** — long-running cross-aggregate/cross-context
+  workflows coordinated by events. (#62)
+
+### Deferred enhancements (tracked as GitHub issues)
+
+Valuable but not v1-critical; each is a follow-up issue: **Specification
+pattern** (#55), **modules named in the ubiquitous language** / package layout
+(#56), **Supple Design set** — intention-revealing interfaces, side-effect-free
+functions, assertions (#57), **entity identity strategy** (#58), **repository
+semantics** — collection- vs persistence-oriented; returns whole aggregates
+(#59).
