@@ -129,3 +129,16 @@ def test_report_template_has_the_parsed_structure():
     for marker in ["[C1]", "[M1]", "[N1]", "Tier", "Impact", "Status", "pending"]:
         assert marker in text, f"report-template.md missing: {marker}"
     assert "Target architecture sketch" in text
+
+
+def test_analyze_agents_exist_and_state_their_contracts():
+    analyzer = read_skill_file("agents/analyzer.md")
+    reviewer = read_skill_file("agents/reviewer.md")
+    assert "read-only" in analyzer.lower()
+    assert "findings-draft.md" in analyzer
+    for signature in ["anemic", "controller", "missing port", "aggregate"]:
+        assert signature.lower() in analyzer.lower(), f"analyzer missing signature: {signature}"
+    assert "report-template.md" in reviewer
+    assert "docs/domain" in reviewer                      # reverse-engineered proposal
+    assert "discard" in reviewer.lower()                  # keep/discard gate
+    assert "edit no code" in reviewer.lower() or "no code" in reviewer.lower()
