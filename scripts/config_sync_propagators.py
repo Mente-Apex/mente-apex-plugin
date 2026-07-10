@@ -44,6 +44,7 @@ class ExportResult:
     written: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
+    tombstoned: list = field(default_factory=list)
 
 
 @dataclass
@@ -52,6 +53,7 @@ class ApplyResult:
     applied: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
     conflicts: list = field(default_factory=list)
+    deletions: list = field(default_factory=list)
 
 
 @runtime_checkable
@@ -88,6 +90,33 @@ def resolve_bundle(context: SyncContext, kind: str, name: str, winner: str) -> N
     whose install/export internals it needs (SOLID N3).
     """
     ContentBundlePropagator().resolve_conflict(context, kind, name, winner)
+
+
+def resolve_deletion(context: SyncContext, kind: str, name: str, decision: str) -> None:
+    """Perform a prompted bundle-deletion resolution.
+
+    decision="remove" -> delete the local skill/agent (the network retired it). The
+      repo tombstone stays so other machines also see the deletion.
+    decision="keep"   -> leave it. Because the machine still has it, the next export
+      re-adds the bundle and supersedes the tombstone (disagreement resolves as
+      most-recent-action-wins).
+    """
+    if decision == "keep":
+        return
+    if decision != "remove":
+        raise ValueError(f"decision must be 'remove' or 'keep', got {decision!r}")
+    if kind not in BUNDLE_KINDS:
+        raise ValueError(f"unknown bundle kind: {kind!r}")
+    import shutil
+    # Deferred import: config_sync <-> config_sync_propagators is a two-way dep (SOLID M2).
+    import config_sync
+    destination = context.claude_dir / BUNDLE_KINDS[kind] / name
+    if not config_sync._is_within(destination, context.claude_dir):
+        raise ValueError(f"refusing to remove a path escaping ~/.claude: {destination}")
+    if destination.is_dir():
+        shutil.rmtree(destination)
+    elif destination.exists():
+        destination.unlink()
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +218,108 @@ def _read_manifest(bundle_dir: Path) -> dict:
         return {}
 
 
+INDEX_DIRNAME = ".index"
+TOMBSTONES_DIRNAME = ".tombstones"
+
+
+@dataclass(frozen=True)
+class Tombstone:
+    kind: str
+    name: str
+    deleted_at: str
+    machine_id: str
+
+
+@dataclass(frozen=True)
+class BundleDeletion:
+    kind: str
+    name: str
+    machine_id: str
+    deleted_at: str
+
+
+class BundleDeletionLedger:
+    """Deletion bookkeeping for skill/agent bundles, persisted under the repo.
+
+    Two records, both git-tracked and per-file so they converge without merge
+    conflicts (the pattern machines/<id>.json already uses):
+      - a per-machine export index (what a machine had at its last export), which
+        makes deletion *detection* possible;
+      - per-bundle tombstones ({kind, name, deleted_at, machine_id}).
+    Stateless w.r.t. the repo: repo_dir flows in per call, so one instance serves
+    any repo and is trivially faked in tests. One reason to change: the on-disk
+    layout of these records.
+    """
+
+    def _index_path(self, repo_dir, machine_id):
+        return repo_dir / "bundles" / INDEX_DIRNAME / f"{machine_id}.json"
+
+    def _tombstone_path(self, repo_dir, kind, name):
+        if "/" in name or "/" in kind:
+            raise ValueError(f"bundle kind/name must not contain '/': {kind}/{name}")
+        return repo_dir / "bundles" / TOMBSTONES_DIRNAME / BUNDLE_KINDS[kind] / f"{name}.json"
+
+    def previously_exported(self, repo_dir, machine_id):
+        index_path = self._index_path(repo_dir, machine_id)
+        if not index_path.exists():
+            return set()
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return set()
+        return set(data.get("bundles", []))
+
+    def record_export(self, repo_dir, machine_id, current):
+        index_path = self._index_path(repo_dir, machine_id)
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "machine_id": machine_id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "bundles": sorted(current),
+        }
+        index_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def tombstone(self, repo_dir, kind, name, machine_id, when):
+        tombstone_path = self._tombstone_path(repo_dir, kind, name)
+        tombstone_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {"kind": kind, "name": name, "deleted_at": when, "machine_id": machine_id}
+        tombstone_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+    def clear_tombstone(self, repo_dir, kind, name):
+        tombstone_path = self._tombstone_path(repo_dir, kind, name)
+        if tombstone_path.exists():
+            tombstone_path.unlink()
+
+    def tombstone_for(self, repo_dir, kind, name):
+        tombstone_path = self._tombstone_path(repo_dir, kind, name)
+        if not tombstone_path.exists():
+            return None
+        data = json.loads(tombstone_path.read_text(encoding="utf-8"))
+        return Tombstone(kind=data["kind"], name=data["name"],
+                         deleted_at=data["deleted_at"], machine_id=data["machine_id"])
+
+    def tombstones(self, repo_dir):
+        root = repo_dir / "bundles" / TOMBSTONES_DIRNAME
+        collected = []
+        if not root.exists():
+            return collected
+        for kind, subdir in BUNDLE_KINDS.items():
+            subdir_path = root / subdir
+            if not subdir_path.exists():
+                continue
+            for tombstone_file in sorted(subdir_path.glob("*.json")):
+                data = json.loads(tombstone_file.read_text(encoding="utf-8"))
+                collected.append(Tombstone(kind=data["kind"], name=data["name"],
+                                           deleted_at=data["deleted_at"], machine_id=data["machine_id"]))
+        return collected
+
+    def is_deleted(self, repo_dir, kind, name, bundle_exported_at):
+        tombstone = self.tombstone_for(repo_dir, kind, name)
+        if tombstone is None:
+            return False
+        return tombstone.deleted_at > (bundle_exported_at or "")
+
+
 class ContentBundlePropagator:
     """Propagates ~/.claude/skills and ~/.claude/agents as atomic, hash-gated bundles.
 
@@ -199,11 +330,12 @@ class ContentBundlePropagator:
 
     name = "content-bundle"
 
-    def __init__(self, export_filter: "BundleExportFilter | None" = None):
-        # DIP: the exclusion policy is an injected collaborator. Default to the
-        # production filter, but the constructor is the seam — tests and future
-        # callers substitute their own without touching the copy/hash logic.
+    def __init__(self, export_filter: "BundleExportFilter | None" = None, ledger=None):
+        # DIP: both the exclusion policy and the deletion ledger are injected
+        # collaborators. Defaults are the production implementations; the
+        # constructor is the seam tests substitute through.
         self._export_filter = export_filter if export_filter is not None else DefaultBundleExportFilter()
+        self._ledger = ledger if ledger is not None else BundleDeletionLedger()
 
     def _sources(self, context: SyncContext):
         for kind, subdir in BUNDLE_KINDS.items():
@@ -217,8 +349,33 @@ class ContentBundlePropagator:
 
     def export(self, context: SyncContext) -> ExportResult:
         result = ExportResult(self.name)
+        machine_id = _machine_id(context)
+        current = {f"{kind}/{entry.name}" for kind, entry in self._sources(context)}
+        previously_exported = self._ledger.previously_exported(context.repo_dir, machine_id)
+        deleted_at = datetime.now(timezone.utc).isoformat()
+
+        # Deletions: bundles this machine used to have and no longer does.
+        import shutil
+        for deleted_key in sorted(previously_exported - current):
+            deleted_kind, deleted_name = deleted_key.split("/", 1)
+            self._ledger.tombstone(context.repo_dir, deleted_kind, deleted_name, machine_id, deleted_at)
+            stale_bundle = context.repo_dir / "bundles" / BUNDLE_KINDS[deleted_kind] / deleted_name
+            if stale_bundle.exists():
+                shutil.rmtree(stale_bundle)
+            result.tombstoned.append(deleted_key)
+
         for kind, entry in self._sources(context):
             name = entry.name
+            # A locally-present bundle supersedes any tombstone for it (deliberate re-add),
+            # but only if the tombstone predates THIS export's timestamp. A tombstone
+            # dated at or after `deleted_at` is a FUTURE-dated tombstone from this
+            # machine's point of view — e.g. another machine with a clock ahead of this
+            # one, or a deletion that genuinely happened later than this sync — and must
+            # be preserved rather than clobbered just because this run still finds the
+            # bundle present locally.
+            existing_tombstone = self._ledger.tombstone_for(context.repo_dir, kind, name)
+            if existing_tombstone is not None and existing_tombstone.deleted_at < deleted_at:
+                self._ledger.clear_tombstone(context.repo_dir, kind, name)
             payload = _payload_files(entry, self._export_filter)
             local_hash = _content_hash(payload)
             bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
@@ -227,6 +384,8 @@ class ContentBundlePropagator:
                 continue
             self._write_bundle(bundle_dir, payload, kind, name, entry.is_dir(), local_hash, context)
             result.written.append(f"{kind}/{name}")
+
+        self._ledger.record_export(context.repo_dir, machine_id, current)
         return result
 
     def _write_bundle(self, bundle_dir, payload, kind, name, is_dir, content_hash, context):
@@ -271,6 +430,9 @@ class ContentBundlePropagator:
                     result.skipped.append(f"{kind}/{name} (escapes ~/.claude)")
                     continue
                 if not destination.exists():
+                    if self._ledger.is_deleted(context.repo_dir, kind, name, manifest.get("exported_at", "")):
+                        result.skipped.append(f"{kind}/{name} (tombstoned)")
+                        continue
                     self._install(bundle_dir, destination, manifest)
                     result.applied.append(f"{kind}/{name}")
                     continue
@@ -278,10 +440,27 @@ class ContentBundlePropagator:
                 if local_hash == repo_hash:
                     result.skipped.append(f"{kind}/{name}")
                     continue
+                if self._ledger.is_deleted(context.repo_dir, kind, name, manifest.get("exported_at", "")):
+                    result.skipped.append(f"{kind}/{name} (tombstoned)")
+                    continue
                 result.conflicts.append(BundleConflict(
                     kind=kind, name=name, local_hash=local_hash, repo_hash=repo_hash or "",
                     local_exported_at="", repo_exported_at=manifest.get("exported_at", ""),
                 ))
+
+        # Propose local removals for bundles the network has retired but this
+        # machine still has. Nothing is removed here — resolve-deletion does that
+        # after consent.
+        for tombstone in self._ledger.tombstones(context.repo_dir):
+            destination = self._local_entry_path(context, tombstone.kind, tombstone.name, True)
+            if not destination.exists():
+                continue
+            repo_bundle = context.repo_dir / "bundles" / BUNDLE_KINDS[tombstone.kind] / tombstone.name
+            bundle_exported_at = _read_manifest(repo_bundle).get("exported_at", "")
+            if self._ledger.is_deleted(context.repo_dir, tombstone.kind, tombstone.name, bundle_exported_at):
+                result.deletions.append(BundleDeletion(
+                    kind=tombstone.kind, name=tombstone.name,
+                    machine_id=tombstone.machine_id, deleted_at=tombstone.deleted_at))
         return result
 
     def _install(self, bundle_dir, destination, manifest):

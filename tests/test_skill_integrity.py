@@ -1,0 +1,188 @@
+"""Static structural guards for the plugin's skills, shared docs, and manifests.
+
+No engine import: these are pure file checks. They protect the refactor
+ecosystem's shared-docs architecture (a skill pointing at
+docs/refactor-workflow.md must not dangle) and keep the three version mirrors
+in lockstep. Narrative docs under docs/superpowers/ (plans, specs) are out of
+scope — they carry intentional forward-references and fenced example links.
+"""
+import json
+import re
+import tomllib
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SKILLS_DIR = REPO_ROOT / "skills"
+DOCS_DIR = REPO_ROOT / "docs"
+PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
+MARKETPLACE_JSON = REPO_ROOT / ".claude-plugin" / "marketplace.json"
+PYPROJECT = REPO_ROOT / "pyproject.toml"
+
+REQUIRED_FRONTMATTER_KEYS = ("name", "description")
+
+GOF_PATTERNS = [
+    "Abstract Factory", "Builder", "Factory Method", "Prototype", "Singleton",
+    "Adapter", "Bridge", "Composite", "Decorator", "Facade", "Flyweight", "Proxy",
+    "Chain of Responsibility", "Command", "Interpreter", "Iterator", "Mediator",
+    "Memento", "Observer", "State", "Strategy", "Template Method", "Visitor",
+]
+
+# The cross-references this guard protects: the refactor ecosystem's skills and
+# shared docs. Files created by later tasks simply don't match yet.
+INTEGRITY_SCAN_GLOBS = (
+    "skills/gof/**/*.md",
+    "skills/solid/**/*.md",
+    "skills/tdd/**/*.md",
+    "docs/refactor-workflow.md",
+    "docs/refactor-agents/*.md",
+    "docs/solid-gof-overlap.md",
+    "docs/git-convention.md",
+)
+
+MARKDOWN_LINK = re.compile(r"\]\(([^)]+)\)")
+
+
+def _parse_frontmatter(markdown_text):
+    """Return the raw YAML frontmatter between the first two '---' fences, or None."""
+    if not markdown_text.startswith("---"):
+        return None
+    fence_end = markdown_text.find("\n---", 3)
+    if fence_end == -1:
+        return None
+    return markdown_text[3:fence_end]
+
+
+def _integrity_scan_files():
+    """Existing Markdown files whose links this guard resolves (dedup, sorted)."""
+    matched = set()
+    for glob_pattern in INTEGRITY_SCAN_GLOBS:
+        for markdown_file in REPO_ROOT.glob(glob_pattern):
+            if markdown_file.is_file():
+                matched.add(markdown_file)
+    return sorted(matched)
+
+
+def _strip_fenced_code_blocks(markdown_text):
+    """Drop ``` fenced blocks so example links inside them aren't treated as live pointers."""
+    kept_lines = []
+    inside_fence = False
+    for line in markdown_text.splitlines():
+        if line.lstrip().startswith("```"):
+            inside_fence = not inside_fence
+            continue
+        if not inside_fence:
+            kept_lines.append(line)
+    return "\n".join(kept_lines)
+
+
+def _relative_link_targets(markdown_text):
+    """Yield each relative markdown-link target (fenced blocks stripped, anchors removed, URLs skipped)."""
+    for raw_target in MARKDOWN_LINK.findall(_strip_fenced_code_blocks(markdown_text)):
+        target = raw_target.split("#", 1)[0].strip()
+        if not target or target.startswith(("http://", "https://", "mailto:")):
+            continue
+        yield target
+
+
+def test_every_skill_has_required_frontmatter():
+    offenders = []
+    for skill_file in sorted(SKILLS_DIR.rglob("SKILL.md")):
+        frontmatter = _parse_frontmatter(skill_file.read_text())
+        if frontmatter is None:
+            offenders.append(f"{skill_file.relative_to(REPO_ROOT)}: no frontmatter")
+            continue
+        for required_key in REQUIRED_FRONTMATTER_KEYS:
+            if not re.search(rf"^{required_key}:", frontmatter, re.MULTILINE):
+                offenders.append(f"{skill_file.relative_to(REPO_ROOT)}: missing '{required_key}'")
+    assert not offenders, "Frontmatter problems:\n" + "\n".join(offenders)
+
+
+def test_relative_markdown_links_resolve():
+    offenders = []
+    for markdown_file in _integrity_scan_files():
+        for target in _relative_link_targets(markdown_file.read_text()):
+            resolved = (markdown_file.parent / target).resolve()
+            if not resolved.exists():
+                offenders.append(f"{markdown_file.relative_to(REPO_ROOT)} -> {target}")
+    assert not offenders, "Dangling relative markdown links:\n" + "\n".join(offenders)
+
+
+def test_version_mirrors_match():
+    plugin_version = json.loads(PLUGIN_JSON.read_text())["version"]
+    pyproject_version = tomllib.loads(PYPROJECT.read_text())["project"]["version"]
+    marketplace_version = json.loads(MARKETPLACE_JSON.read_text())["plugins"][0]["version"]
+    assert plugin_version == pyproject_version == marketplace_version, (
+        f"version drift — plugin.json={plugin_version} "
+        f"pyproject={pyproject_version} marketplace={marketplace_version}"
+    )
+
+
+OVERLAP_MAP = DOCS_DIR / "solid-gof-overlap.md"
+
+
+def test_overlap_map_covers_all_23_patterns():
+    text = OVERLAP_MAP.read_text()
+    missing = [pattern for pattern in GOF_PATTERNS if pattern not in text]
+    assert not missing, f"overlap map missing patterns: {missing}"
+
+
+PATTERNS_MD = SKILLS_DIR / "gof" / "references" / "patterns.md"
+REQUIRED_PATTERN_SUBSECTIONS = (
+    "**Intent**", "**Detect by**", "**Grade A**",
+    "**Grade C/D issues**", "**Suggest when**", "**Don't suggest when**",
+)
+
+
+def _pattern_blocks(text):
+    """Map each '### <pattern>' heading to the text of its block (up to the next heading)."""
+    blocks = {}
+    current_name = None
+    current_lines = []
+    for line in text.splitlines():
+        heading = re.match(r"^###\s+(.*\S)\s*$", line)
+        if heading:
+            if current_name is not None:
+                blocks[current_name] = "\n".join(current_lines)
+            current_name = heading.group(1)
+            current_lines = []
+        elif re.match(r"^##\s", line):  # a category header closes the current block
+            if current_name is not None:
+                blocks[current_name] = "\n".join(current_lines)
+                current_name = None
+                current_lines = []
+        elif current_name is not None:
+            current_lines.append(line)
+    if current_name is not None:
+        blocks[current_name] = "\n".join(current_lines)
+    return blocks
+
+
+def test_patterns_md_has_all_23_with_required_subsections():
+    blocks = _pattern_blocks(PATTERNS_MD.read_text())
+    missing_patterns = [pattern for pattern in GOF_PATTERNS if pattern not in blocks]
+    assert not missing_patterns, f"patterns.md missing: {missing_patterns}"
+    incomplete = []
+    for pattern in GOF_PATTERNS:
+        for subsection in REQUIRED_PATTERN_SUBSECTIONS:
+            if subsection not in blocks[pattern]:
+                incomplete.append(f"{pattern}: missing {subsection}")
+    assert not incomplete, "patterns.md incomplete:\n" + "\n".join(incomplete)
+
+
+def test_patterns_md_defines_shared_rubrics():
+    text = PATTERNS_MD.read_text()
+    for required_block in ("## Grade rubric", "## Tier rubric", "## Risk rubric"):
+        assert required_block in text, f"patterns.md missing '{required_block}'"
+
+
+GOF_EVALS = REPO_ROOT / "evals" / "gof-evals.json"
+EVAL_CASE_KEYS = {"id", "skill", "prompt", "expected_output", "assertions"}
+
+
+def test_gof_evals_valid_schema():
+    data = json.loads(GOF_EVALS.read_text())
+    assert data["skill_name"] == "gof"
+    assert isinstance(data["evals"], list) and data["evals"], "no eval cases"
+    for eval_case in data["evals"]:
+        assert EVAL_CASE_KEYS <= eval_case.keys(), f"case {eval_case.get('id')} missing keys"
+        assert isinstance(eval_case["assertions"], list) and eval_case["assertions"]

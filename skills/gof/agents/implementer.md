@@ -1,4 +1,4 @@
-# SOLID implementer (TDD-coordinator)
+# GoF implementer (TDD-coordinator)
 
 Read [../../../docs/refactor-agents/implementer.md](../../../docs/refactor-agents/implementer.md).
 Your report template is [../references/report-template.md](../references/report-template.md).

@@ -67,3 +67,38 @@ def test_propagate_export_json_includes_warnings_key(claude_home, tmp_path, caps
 
     assert "warnings" in payload["marketplace"]
     assert any("local-thing@mylocal" in warning for warning in payload["marketplace"]["warnings"])
+
+
+def test_resolve_deletion_is_registered_with_four_args():
+    handler, arg_count = config_sync.COMMANDS["resolve-deletion"]
+    assert arg_count == 4
+    assert handler.__name__ == "cmd_resolve_deletion"
+
+
+def test_cmd_resolve_deletion_removes_local_bundle(claude_home, tmp_path, capsys):
+    (claude_home / "skills" / "gof").mkdir(parents=True)
+    (claude_home / "skills" / "gof" / "SKILL.md").write_text("# gof")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    config_sync.cmd_resolve_deletion(str(repo), "skill", "gof", "remove")
+
+    assert not (claude_home / "skills" / "gof").exists()
+    assert '"resolved": "skill/gof"' in capsys.readouterr().out
+
+
+def test_cmd_propagate_apply_reports_deletions(claude_home, tmp_path, capsys):
+    import config_sync_propagators as propagators
+    (claude_home / "skills" / "gof").mkdir(parents=True)
+    (claude_home / "skills" / "gof" / "SKILL.md").write_text("# gof")
+    (claude_home / "config-sync-machine-id").write_text("machine-a")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    propagators.BundleDeletionLedger().tombstone(
+        repo, "skill", "gof", "machine-b", "2026-07-08T00:00:00+00:00")
+
+    config_sync.cmd_propagate_apply(str(repo))
+
+    import json as json_module
+    payload = json_module.loads(capsys.readouterr().out)
+    assert payload["content-bundle"]["deletions"][0]["name"] == "gof"
