@@ -8,7 +8,7 @@
     {
       "name": "mente-apex",
       "source": "./",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "description": "Client onboarding (HubSpot + folder), branded proposals, invoice/contract generator, a one-step ship (/ship: branch, commit, push, open PR), a clean-code review/writing standard (/clean-code), a SOLID analysis & guided-refactor workflow (/solid), a GoF design-pattern analysis & guided-refactor workflow (/gof), and Claude config sync (config-sync-setup / config-sync / config-sync-manage) across machines via Git, plus a Domain-Driven Design modelling/build/analysis workflow (/ddd)."
     }
   ]
