@@ -105,3 +105,9 @@ def test_deep_gear_agents_state_their_contracts():
     assert "clean-code-standard.md" in reviewer
     assert "verify" in reviewer.lower() and "prune" in reviewer.lower()
     assert "no code" in reviewer.lower() or "edit no code" in reviewer.lower()
+
+
+def test_report_template_has_the_expected_structure():
+    text = read_skill_file("references/report-template.md")
+    for marker in ["[G1]", "Principle", "Severity", "High", "Medium", "Low", "Hand-offs"]:
+        assert marker in text, f"report-template.md missing: {marker}"
