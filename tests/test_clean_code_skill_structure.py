@@ -1,0 +1,76 @@
+"""Structural guard for the clean-code substrate.
+
+clean-code is authored prose (a shared standard + a thin review skill), not
+runtime code, so its "tests" assert each file exists and carries the
+sections/links the ecosystem depends on. Dependency-free on purpose: PyYAML is
+not installed, so frontmatter is parsed with string ops only (same discipline as
+test_ddd_skill_structure.py).
+"""
+import json
+import re
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CLEAN_CODE_SKILL_DIR = REPO_ROOT / "skills" / "clean-code"
+CLEAN_CODE_STANDARD = REPO_ROOT / "docs" / "clean-code-standard.md"
+
+
+def read_repo_file(relative_path):
+    """Read a repo-relative file, failing the test if it is absent."""
+    target = REPO_ROOT / relative_path
+    assert target.is_file(), f"expected file missing: {target}"
+    return target.read_text(encoding="utf-8")
+
+
+def read_skill_file(relative_path):
+    """Read a file under skills/clean-code/, failing the test if absent."""
+    target = CLEAN_CODE_SKILL_DIR / relative_path
+    assert target.is_file(), f"expected skill file missing: {target}"
+    return target.read_text(encoding="utf-8")
+
+
+def parse_frontmatter(text):
+    """Parse leading --- frontmatter into {key: value, '_body': rest}. No PyYAML."""
+    match = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
+    assert match, "file does not start with a --- frontmatter block"
+    raw_frontmatter, body = match.group(1), match.group(2)
+    fields = {"_body": body}
+    for line in raw_frontmatter.splitlines():
+        key_value = re.match(r"^([A-Za-z0-9_-]+):\s?(.*)$", line)
+        if key_value:
+            fields[key_value.group(1)] = key_value.group(2)
+    return fields
+
+
+def test_standard_has_the_fifteen_principles_and_three_new_chapters():
+    text = CLEAN_CODE_STANDARD.read_text(encoding="utf-8")
+    lowered = text.lower()
+    # the 15 ported leverage-ranked principle anchors
+    ported_anchors = [
+        "meaningful names",
+        "single responsibility",
+        "functions do one thing",
+        "don't repeat yourself",
+        "high cohesion",
+        "command-query separation",
+        "one level of abstraction",
+        "flag argument",
+        "never return null",
+        "comments are a last resort",
+        "law of demeter",
+        "encapsulate conditionals",
+        "clean tests",
+        "consistent formatting",
+        "boy scout rule",
+    ]
+    missing_ported = [anchor for anchor in ported_anchors if anchor not in lowered]
+    assert not missing_ported, f"standard missing ported principles: {missing_ported}"
+    # the three NEW chapters
+    for new_chapter in ["Boundaries", "Simple Design", "Smells & Heuristics"]:
+        assert new_chapter in text, f"standard missing new chapter: {new_chapter}"
+    for new_marker in ["learning test", "runs all tests", "expresses intent"]:
+        assert new_marker in lowered, f"standard missing new content: {new_marker}"
+    # the meta-rule + severity rubric survive the move
+    assert "meta-rule" in lowered
+    for severity in ["High", "Medium", "Low"]:
+        assert severity in text, f"standard missing severity level: {severity}"
