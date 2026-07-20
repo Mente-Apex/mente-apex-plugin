@@ -10,7 +10,7 @@ applicable sections; it is a gitignored artifact written after the MD.
 
 ## File
 
-`gof-reports/GOF-ANALYSIS-<YYYY-MM-DD>.html`, written in a single Write
+`docs/reports/gof/GOF-ANALYSIS-<YYYY-MM-DD>.html`, written in a single Write
 tool call after the Markdown file exists. Fully self-contained — no CDN
 scripts, external stylesheets, fonts, or remote images. All CSS lives inline
 in a `<style>` block in `<head>`. No JavaScript is required; a small

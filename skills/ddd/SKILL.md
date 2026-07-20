@@ -133,20 +133,20 @@ Mirrors `solid`'s pipeline minus the apply phase. **This mode never edits code.*
 ### Phase 0 — Inventory & baseline
 Scope the target tree (skip vendored/generated dirs). Detect and record the test
 command; note whether the suite is green (context for later refactors — this mode
-runs none). Create `ddd-reports/` in the target project and add it to
+runs none). Create `docs/reports/ddd/` in the target project and add it to
 `.gitignore` if the repo doesn't already ignore it.
 
 ### Phase 1 — Analyzer
 Spawn the analyzer (Agent tool, `general-purpose`), telling it to read
 `agents/analyzer.md` + `references/ddd-core.md` (and `strategic.md` if multiple
-contexts appear). It writes `ddd-reports/findings-draft.md`. Read-only.
+contexts appear). It writes `docs/reports/ddd/findings-draft.md`. Read-only.
 
 ### Phase 2 — Reviewer
 Spawn the reviewer with the draft path, `agents/reviewer.md`,
 `references/ddd-core.md`, and `references/report-template.md`. It re-verifies
 every finding against the real code, prunes false positives, tiers survivors
 Critical/Major/Minor, cross-references the SOLID lens, and writes
-`ddd-reports/DDD-REFACTOR-<YYYY-MM-DD>.md` using the template **exactly**. It also
+`docs/reports/ddd/DDD-REFACTOR-<YYYY-MM-DD>.md` using the template **exactly**. It also
 **reverse-engineers the implicit model** into proposed `docs/domain/` artifacts
 (`GLOSSARY.md`, `model.md`, `context-map.md` if >1 context) — marked as
 reverse-engineered proposals.

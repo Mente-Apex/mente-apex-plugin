@@ -1,6 +1,6 @@
 # DDD analyze report template
 
-The reviewer writes `ddd-reports/DDD-REFACTOR-<YYYY-MM-DD>.md` in exactly this
+The reviewer writes `docs/reports/ddd/DDD-REFACTOR-<YYYY-MM-DD>.md` in exactly this
 shape. Structure is load-bearing — the orchestrator reads tiers to build the
 summary. Field names verbatim. IDs: `C1,C2,…` (Critical), `M1,…` (Major),
 `N1,…` (Minor); permanent once assigned.
