@@ -79,3 +79,38 @@ def test_discover_ignores_missing_and_malformed(tmp_path):
         config_sync_roots.Root("BAD", str(repo_bad)),
     ])
     assert config_sync_hooks.discover_declarations(registry) == []
+
+
+def _declaration(command="python3 ${MEM}/hooks/protect_brain.py"):
+    hook_id = config_sync_hooks.hook_id_of("MEM", "PreToolUse", "Write|Edit", command)
+    return config_sync_hooks.DeclaredHook(hook_id, "PreToolUse", "Write|Edit", command, 10)
+
+
+def test_plan_registers_missing_hook():
+    declaration = _declaration()
+    plan = config_sync_hooks.plan_hook_wiring([declaration], {"hooks": {}})
+    assert len(plan.actions) == 1
+    action = plan.actions[0]
+    assert action.verb == "register"
+    assert action.hook_id == declaration.hook_id
+    assert action.detail["command"] == declaration.command
+    assert action.detail["event"] == "PreToolUse"
+
+
+def test_plan_is_empty_when_already_registered():
+    declaration = _declaration()
+    marked = declaration.command + " " + config_sync_hooks.marker_for(declaration.hook_id)
+    settings = {"hooks": {"PreToolUse": [
+        {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": marked}]}]}}
+    plan = config_sync_hooks.plan_hook_wiring([declaration], settings)
+    assert plan.actions == []
+
+
+def test_plan_ignores_unmarked_hand_added_hook_for_same_script():
+    declaration = _declaration()
+    # Same script path, but NO marker -> config-sync must not consider it its own.
+    settings = {"hooks": {"PreToolUse": [
+        {"matcher": "Write|Edit",
+         "hooks": [{"type": "command", "command": declaration.command}]}]}}
+    plan = config_sync_hooks.plan_hook_wiring([declaration], settings)
+    assert len(plan.actions) == 1   # still proposes its own marked registration
