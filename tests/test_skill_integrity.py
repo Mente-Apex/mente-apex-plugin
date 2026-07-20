@@ -27,9 +27,15 @@ GOF_PATTERNS = [
     "Memento", "Observer", "State", "Strategy", "Template Method", "Visitor",
 ]
 
-# The cross-references this guard protects: the refactor ecosystem's skills and
-# shared docs. Files created by later tasks simply don't match yet.
+# The cross-references this guard protects: every refactor lens's skill files
+# and the shared docs they point at. All four lenses (clean-architecture,
+# clean-code, ddd, gof, solid) plus tdd are scanned so a wrong ../ depth in any
+# of them is caught mechanically. Files created by later tasks simply don't
+# match yet.
 INTEGRITY_SCAN_GLOBS = (
+    "skills/clean-architecture/**/*.md",
+    "skills/clean-code/**/*.md",
+    "skills/ddd/**/*.md",
     "skills/gof/**/*.md",
     "skills/solid/**/*.md",
     "skills/tdd/**/*.md",
@@ -40,6 +46,11 @@ INTEGRITY_SCAN_GLOBS = (
 )
 
 MARKDOWN_LINK = re.compile(r"\]\(([^)]+)\)")
+# Backtick-quoted relative doc paths (e.g. `../../../docs/lens-overlap.md`) are
+# live cross-references too — a rubric that cites the hub in inline code dangles
+# just as badly as a []() link. Only paths starting ./ or ../ and ending .md
+# qualify, so prose code spans and fenced example tokens never false-positive.
+CODE_RELATIVE_MD_LINK = re.compile(r"`(\.{1,2}/[^`]+?\.md)`")
 
 
 def _parse_frontmatter(markdown_text):
@@ -76,12 +87,16 @@ def _strip_fenced_code_blocks(markdown_text):
 
 
 def _relative_link_targets(markdown_text):
-    """Yield each relative markdown-link target (fenced blocks stripped, anchors removed, URLs skipped)."""
-    for raw_target in MARKDOWN_LINK.findall(_strip_fenced_code_blocks(markdown_text)):
+    """Yield each relative link target — []() links and backtick-quoted relative
+    .md paths alike (fenced blocks stripped, anchors removed, URLs skipped)."""
+    body = _strip_fenced_code_blocks(markdown_text)
+    for raw_target in MARKDOWN_LINK.findall(body):
         target = raw_target.split("#", 1)[0].strip()
         if not target or target.startswith(("http://", "https://", "mailto:")):
             continue
         yield target
+    for code_target in CODE_RELATIVE_MD_LINK.findall(body):
+        yield code_target.split("#", 1)[0].strip()
 
 
 def test_every_skill_has_required_frontmatter():
@@ -105,6 +120,20 @@ def test_relative_markdown_links_resolve():
             if not resolved.exists():
                 offenders.append(f"{markdown_file.relative_to(REPO_ROOT)} -> {target}")
     assert not offenders, "Dangling relative markdown links:\n" + "\n".join(offenders)
+
+
+def test_relative_link_targets_include_inline_code_paths():
+    """The resolver treats backtick-quoted relative .md paths as live links too
+    (the wrong-../-depth class caught in review), without flagging ordinary code
+    spans."""
+    sample = (
+        "See [workflow](../docs/refactor-workflow.md) and cross-reference "
+        "`../../../docs/lens-overlap.md`; ignore `some_var` and `pkg.method`."
+    )
+    found = set(_relative_link_targets(sample))
+    assert "../docs/refactor-workflow.md" in found        # []() link
+    assert "../../../docs/lens-overlap.md" in found        # backtick relative .md path
+    assert "some_var" not in found and "pkg.method" not in found  # non-path code spans ignored
 
 
 def test_version_mirrors_match():
