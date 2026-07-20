@@ -90,3 +90,13 @@ def test_principles_cover_the_tiered_rubric():
     assert not missing, f"principles.md missing: {missing}"
     for tier in ["Headline", "Secondary", "Appendix", "Critical", "Major", "Minor"]:
         assert tier in text, f"principles.md missing tier label: {tier}"
+
+
+def test_python_reference_covers_tooling_and_degrade():
+    text = read_skill_file("references/python.md")
+    lowered = text.lower()
+    for tool in ["grimp", "import-linter", "importlinter.ini", "dependency-cruiser"]:
+        assert tool in lowered, f"python.md missing tool: {tool}"
+    assert "fan-in" in lowered and "fan-out" in lowered, "must show how to compute Instability"
+    assert "degrade" in lowered or "fallback" in lowered, "must give the no-tool degrade path"
+    assert "runtime_checkable" not in text  # sanity: this is CA, not the ddd port ref
