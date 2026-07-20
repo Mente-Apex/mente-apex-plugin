@@ -53,7 +53,7 @@ def test_skill_md_covers_both_modes_and_both_gates():
         "MODELING GATE",     # design-mode hard gate
         "MODEL REVIEW GATE",  # analyze-mode keep/discard gate
         "docs/domain",       # durable model artifacts
-        "ddd-reports",       # analyze report dir
+        "docs/reports/ddd",  # analyze report dir
         "programmatic",      # tdd handoff contract
     ]
     missing = [marker for marker in required_markers if marker not in body]

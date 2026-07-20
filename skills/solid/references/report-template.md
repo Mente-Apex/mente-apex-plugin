@@ -1,6 +1,6 @@
 # Report template
 
-The reviewer writes `solid-reports/SOLID-REFACTOR-<YYYY-MM-DD>.md` in exactly
+The reviewer writes `docs/reports/solid/SOLID-REFACTOR-<YYYY-MM-DD>.md` in exactly
 this shape. The structure is load-bearing: the orchestrator parses tiers and
 Risk fields to build the approval question, and the implementer updates Status
 and the Apply log in place. Keep the field names verbatim.

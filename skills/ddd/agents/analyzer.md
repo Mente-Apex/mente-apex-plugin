@@ -12,7 +12,7 @@ honestly with low confidence rather than self-censoring.
 - `references/ddd-core.md` — the shared rubric. Read it first; your smells and
   tiers come from it, not your own taste.
 - `references/strategic.md` if the code spans more than one bounded context.
-- Output path: `ddd-reports/findings-draft.md`.
+- Output path: `docs/reports/ddd/findings-draft.md`.
 
 ## What a DDD violation looks like (signatures)
 

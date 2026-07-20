@@ -25,7 +25,7 @@ change at a time with the test suite as a tripwire.
 
 **This skill follows [docs/refactor-workflow.md](../../docs/refactor-workflow.md).**
 Its lens is `references/patterns.md` (rubric) + `references/report-template.md`.
-Reports go to `gof-reports/`. The HTML preview follows `references/html-report.md`.
+Reports go to `docs/reports/gof/`. The HTML preview follows `references/html-report.md`.
 Python idioms + test detection: `references/python.md`.
 
 ## Invocation
@@ -62,7 +62,7 @@ report exists, the reviewer writes the HTML preview per
 The reviewer cross-references [docs/solid-gof-overlap.md](../../docs/solid-gof-overlap.md)
 for every recommendation: findings that overlap the SOLID lens's territory
 are noted with the shared principle/pattern, and where a SOLID report
-already exists in `solid-reports/`, its rec ID is cited instead of duplicating
+already exists in `docs/reports/solid/`, its rec ID is cited instead of duplicating
 the finding. The overlap map's one ⚠ entry — **Singleton vs. DIP** — is a
 genuine tension between the two lenses, not a bug to resolve automatically:
 surface it to the human at the decision gate and let them choose.

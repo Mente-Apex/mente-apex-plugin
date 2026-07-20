@@ -56,16 +56,18 @@ Before any agent runs, establish ground truth yourself:
    - Baseline red → tell the user which tests already fail; the apply phase may
      still run but only those pre-existing failures are tolerated afterward.
    - No suite at all → note it; the decision gate (Phase 3) handles it.
-3. **Report dir**: create `<lens>-reports/` in the target project and
-   git-exclude it via `.git/info/exclude` if it's a git repo and not already
-   ignored.
+3. **Report dir**: create `docs/reports/<lens>/` in the target project (e.g.
+   `docs/reports/solid/`) and git-exclude it — add `docs/reports/` to
+   `.git/info/exclude` if the repo is a git repo and doesn't already ignore it.
+   Reports are ephemeral working artifacts by default; the user may choose to
+   commit a final report as a living doc at the end.
 
 ## Phase 1 — Analyzer
 
 Spawn the analyzer with: the target path, the scope notes from Phase 0, and
 instructions to read `docs/refactor-agents/analyzer.md` plus the lens's
 rubric (`references/<rubric>.md`) — and the matching language reference where
-one exists. It produces `<lens>-reports/findings-draft.md` — evidence-backed
+one exists. It produces `docs/reports/<lens>/findings-draft.md` — evidence-backed
 candidate findings, not yet trusted.
 
 ## Phase 2 — Reviewer
@@ -76,7 +78,7 @@ re-tiers what does, hunts for cross-file violations the analyzer's
 file-by-file pass tends to miss, and **cross-references the other lens** —
 check [docs/solid-gof-overlap.md](solid-gof-overlap.md) for findings that overlap or conflict with
 the sibling lens's territory so the two reports don't contradict each other —
-before writing the final report to `<lens>-reports/<LENS>-REFACTOR-<YYYY-MM-DD>.md`
+before writing the final report to `docs/reports/<lens>/<LENS>-REFACTOR-<YYYY-MM-DD>.md`
 using the lens's `references/report-template.md` **exactly**: the apply
 phase depends on its structure (IDs, Risk and Status fields).
 

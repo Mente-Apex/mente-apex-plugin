@@ -118,3 +118,18 @@ def test_substrate_consumers_link_the_standard():
     refactor_jobs = read_repo_file("skills/tdd/references/refactor-jobs.md")
     assert "clean-code-standard.md" in implementer, "implementer role must link the standard"
     assert "clean-code-standard.md" in refactor_jobs, "tdd refactor step must link the standard"
+
+
+def test_reports_convention_points_at_docs_reports():
+    workflow = read_repo_file("docs/refactor-workflow.md")
+    assert "docs/reports/" in workflow, "refactor-workflow Phase 0 must use docs/reports/<lens>/"
+    gitignore = read_repo_file(".gitignore")
+    assert "docs/reports/" in gitignore, ".gitignore must exclude docs/reports/"
+    # no lens SKILL still points at the old bare report dirs
+    old_dirs = {
+        "skills/solid/SKILL.md": "solid-reports/",
+        "skills/gof/SKILL.md": "gof-reports/",
+        "skills/ddd/SKILL.md": "ddd-reports/",
+    }
+    offenders = [path for path, old in old_dirs.items() if old in read_repo_file(path)]
+    assert not offenders, f"these still reference the old bare report dir: {offenders}"

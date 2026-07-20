@@ -6,4 +6,4 @@ template is [../references/report-template.md](../references/report-template.md)
 Cross-reference the SOLID lens via
 [../../../docs/solid-gof-overlap.md](../../../docs/solid-gof-overlap.md). After the
 MD report, write the HTML preview per [../references/html-report.md](../references/html-report.md).
-Final report: `gof-reports/GOF-ANALYSIS-<YYYY-MM-DD>.md`.
+Final report: `docs/reports/gof/GOF-ANALYSIS-<YYYY-MM-DD>.md`.

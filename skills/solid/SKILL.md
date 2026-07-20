@@ -30,7 +30,7 @@ The human is always the editor; the skill never redesigns on its own.
 **This skill follows [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md).**
 Its lens is `references/principles.md` (rubric) + `references/report-template.md`,
 with `references/python.md` / `references/typescript.md` for language
-specifics. Reports go to `solid-reports/`.
+specifics. Reports go to `docs/reports/solid/`.
 
 ## Invocation
 
@@ -57,7 +57,7 @@ The reviewer cross-references
 [../../docs/solid-gof-overlap.md](../../docs/solid-gof-overlap.md) for every
 recommendation: findings that overlap the GoF lens's territory are noted with
 the shared principle/pattern, and where a GoF report already exists in
-`gof-reports/`, its rec ID is cited instead of duplicating the finding. The
+`docs/reports/gof/`, its rec ID is cited instead of duplicating the finding. The
 overlap map's one ⚠ entry — **Singleton vs. DIP** — is a genuine tension
 between the two lenses, not a bug to resolve automatically: surface it to the
 human at the decision gate and let them choose.

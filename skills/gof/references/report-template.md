@@ -1,6 +1,6 @@
 # GoF report template
 
-The reviewer writes `gof-reports/GOF-ANALYSIS-<YYYY-MM-DD>.md` in exactly this
+The reviewer writes `docs/reports/gof/GOF-ANALYSIS-<YYYY-MM-DD>.md` in exactly this
 shape. IDs (`C*/M*/N*`), `Risk`, and `Status` are load-bearing (parsed by the
 apply phase). IDs are permanent once assigned — later cycles append, never
 renumber.
