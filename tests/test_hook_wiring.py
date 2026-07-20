@@ -1,3 +1,5 @@
+import json
+
 import config_sync_hooks
 import config_sync_roots
 
@@ -33,3 +35,47 @@ def test_hook_id_is_stable_12_hex_and_marker_round_trips():
         {"hooks": {"PreToolUse": [{"matcher": "Write|Edit",
                                    "hooks": [{"type": "command", "command": marked}]}]}}
     ) == {hook_id}
+
+
+def _write_declaration(root_dir, block):
+    hooks_dir = root_dir / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    (hooks_dir / "hooks.json").write_text(json.dumps(block))
+
+
+def test_discover_reads_declaration_and_resolves_token(tmp_path):
+    repo = tmp_path / "mem"
+    _write_declaration(repo, {"hooks": {"PreToolUse": [
+        {"matcher": "Write|Edit", "hooks": [
+            {"type": "command",
+             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/protect_brain.py",
+             "timeout": 10}]}]}})
+    registry = config_sync_roots.RootRegistry([
+        config_sync_roots.Root("HOME", str(tmp_path)),
+        config_sync_roots.Root("MEM", str(repo)),
+    ])
+
+    declarations = config_sync_hooks.discover_declarations(registry)
+
+    assert len(declarations) == 1
+    declaration = declarations[0]
+    assert declaration.event == "PreToolUse"
+    assert declaration.matcher == "Write|Edit"
+    assert declaration.command == "python3 ${MEM}/hooks/protect_brain.py"
+    assert declaration.timeout == 10
+    assert declaration.hook_id == config_sync_hooks.hook_id_of(
+        "MEM", "PreToolUse", "Write|Edit", declaration.command)
+
+
+def test_discover_ignores_missing_and_malformed(tmp_path):
+    repo_missing = tmp_path / "nohooks"
+    repo_missing.mkdir()
+    repo_bad = tmp_path / "bad"
+    (repo_bad / "hooks").mkdir(parents=True)
+    (repo_bad / "hooks" / "hooks.json").write_text("{ not json")
+    registry = config_sync_roots.RootRegistry([
+        config_sync_roots.Root("HOME", str(tmp_path)),
+        config_sync_roots.Root("NOHOOKS", str(repo_missing)),
+        config_sync_roots.Root("BAD", str(repo_bad)),
+    ])
+    assert config_sync_hooks.discover_declarations(registry) == []
