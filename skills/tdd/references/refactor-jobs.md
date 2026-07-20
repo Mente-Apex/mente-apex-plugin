@@ -26,6 +26,10 @@ Execution:
    silently "fix" it; the oddity may be load-bearing.
 2. Apply the smallest faithful version of `change`. Behavior-preserving; house
    style; descriptive names; no new dependencies.
+   When cleaning up in the refactor step, clean **to the standard**:
+   [../../../docs/clean-code-standard.md](../../../docs/clean-code-standard.md)
+   (names, small functions, no hidden side effects, good *why*-comments). This is
+   what makes every lens's applied refactor come out clean by construction.
 3. New-behavior carve-out. Anything in `new_behavior` runs as a normal feature
    red-green cycle (a failing test that demands it, then minimum code).
 4. Verify. Run the full `test_command`. Green (== baseline) → success. Red →
