@@ -139,3 +139,14 @@ def test_ca_evals_cover_tiers_tooling_and_carve():
     assert "opt-in" in blob or "--cohesion" in blob or "--metrics" in blob
     assert "import-linter" in blob
     assert "ddd" in blob                      # the carve
+
+
+def test_manifests_advertise_ca_and_versions_are_bumped():
+    plugin_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
+    marketplace_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    assert "clean-architecture" in plugin_manifest["description"].lower()
+    assert "clean-architecture" in plugin_manifest["keywords"]
+    marketplace_blob = json.dumps(marketplace_manifest).lower()
+    assert "clean-architecture" in marketplace_blob
+    assert plugin_manifest["version"] == "0.13.0"
+    assert marketplace_manifest["plugins"][0]["version"] == "0.13.0"
