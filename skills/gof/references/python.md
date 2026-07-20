@@ -19,7 +19,7 @@ with a `_instance` class attribute is the textbook form but needs an
 explicit `threading.Lock()` around the check to be safe under concurrent
 first access — grade C/D if that guard is missing. A metaclass-based
 Singleton is rarely worth the indirection unless several classes need the
-same behavior. Note the DIP tension recorded in the `solid-gof-overlap`
+same behavior. Note the DIP tension recorded in the `lens-overlap`
 map: SOLID prefers constructor injection over any singleton, so weigh both
 lenses before suggesting one.
 

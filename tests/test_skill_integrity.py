@@ -35,7 +35,7 @@ INTEGRITY_SCAN_GLOBS = (
     "skills/tdd/**/*.md",
     "docs/refactor-workflow.md",
     "docs/refactor-agents/*.md",
-    "docs/solid-gof-overlap.md",
+    "docs/lens-overlap.md",
     "docs/git-convention.md",
 )
 
@@ -117,7 +117,7 @@ def test_version_mirrors_match():
     )
 
 
-OVERLAP_MAP = DOCS_DIR / "solid-gof-overlap.md"
+OVERLAP_MAP = DOCS_DIR / "lens-overlap.md"
 
 
 def test_overlap_map_covers_all_23_patterns():
