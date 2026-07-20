@@ -74,3 +74,22 @@ def test_standard_has_the_fifteen_principles_and_three_new_chapters():
     assert "meta-rule" in lowered
     for severity in ["High", "Medium", "Low"]:
         assert severity in text, f"standard missing severity level: {severity}"
+
+
+def test_skill_md_is_thin_and_links_the_standard():
+    fields = parse_frontmatter(read_skill_file("SKILL.md"))
+    assert fields.get("name") == "clean-code"
+    assert fields.get("user-invocable") == "true"
+    frontmatter_text = read_skill_file("SKILL.md").split("---")[1]
+    assert re.search(r'version:\s*"0\.2\.0"', frontmatter_text), "metadata.version must be 0.2.0"
+    body = fields["_body"]
+    lowered = body.lower()
+    # links the single source of truth rather than restating it
+    assert "docs/clean-code-standard.md" in body, "SKILL.md must link the canonical standard"
+    # the two gears
+    assert "quick" in lowered and "deep" in lowered, "SKILL.md must describe the two review gears"
+    # defers structural findings up-ladder (non-overlap contract)
+    for sibling in ["solid", "gof"]:
+        assert sibling in lowered, f"SKILL.md must defer up-ladder to {sibling}"
+    # the substrate framing
+    assert "substrate" in lowered or "written by construction" in lowered or "by construction" in lowered
