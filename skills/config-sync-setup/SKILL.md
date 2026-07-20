@@ -83,6 +83,13 @@ Before asking for the remote, inform the user exactly what will be synced:
 > with an env var `CONFIG_SYNC_ROOT_<NAME>=<absolute path>` (machine-local, never synced);
 > its hook paths then travel as `${<NAME>}` and resolve correctly on each machine.
 
+> **Provisioning hooks.** A repo that ships hooks can declare them in a
+> `hooks/hooks.json` (the same format Claude Code plugins use). On this machine,
+> run `/config-sync` and accept the *wire-hooks* step to register any declared
+> hooks that aren't in `settings.json` yet — no hand-editing. Declare where each
+> such repo lives with `CONFIG_SYNC_ROOT_<NAME>` so its `${CLAUDE_PLUGIN_ROOT}`
+> hook paths resolve on every machine.
+
 Then ask the user for their Git remote URL (e.g. `git@github.com:you/claude-config.git`).
 
 Security check: a URL can't reliably reveal whether the repo is private, so **always**

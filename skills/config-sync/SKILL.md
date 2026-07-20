@@ -224,6 +224,23 @@ SHARED_RESULT=$(python3 "$ENGINE" apply-shared "$REPO")
 printf '%s\n' "$SHARED_RESULT"
 ```
 
+## Step 4c — Wire declared hooks
+
+After the plugin convergence step, provision any repo-shipped hooks this machine
+is missing:
+
+1. Run `python3 scripts/config_sync.py hooks-plan`. It scans the declared roots
+   (`CONFIG_SYNC_ROOT_*`) for `hooks/hooks.json` files and lists the hook
+   registrations missing from `~/.claude/settings.json`.
+2. If `actions` is empty, say so and move on.
+3. Otherwise show the user each hook it would register (event, matcher, command)
+   and ask once for confirmation — this is the single consent gate.
+4. On yes, run `python3 scripts/config_sync.py hooks-apply`. It writes each
+   registration in portable `${TOKEN}` form, tagged `# config-sync:<id>` so it is
+   never confused with a hand-added hook. Re-running is a safe no-op.
+
+Never run `hooks-apply` without the user's confirmation.
+
 ## Step 5 — Commit the updated consolidated snapshot and push
 
 ```bash
