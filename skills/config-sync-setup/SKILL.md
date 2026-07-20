@@ -75,6 +75,14 @@ Before asking for the remote, inform the user exactly what will be synced:
 >
 > The `memory/` files may contain information from your conversations. Review `~/.claude/memory/` if you have concerns before proceeding.
 
+> **Hook paths are made portable automatically.** Machine-absolute paths inside
+> `settings.json` hook `command` strings are rewritten to `${HOME}`-relative sentinels
+> on export and expanded back to this machine's real paths on import, so a synced hook
+> works even when `$HOME` differs. If a repo lives at a *different* sub-`$HOME` location
+> on another machine (e.g. `~/Projects/…` here vs `~/dev/…` there), declare it per-machine
+> with an env var `CONFIG_SYNC_ROOT_<NAME>=<absolute path>` (machine-local, never synced);
+> its hook paths then travel as `${<NAME>}` and resolve correctly on each machine.
+
 Then ask the user for their Git remote URL (e.g. `git@github.com:you/claude-config.git`).
 
 Security check: a URL can't reliably reveal whether the repo is private, so **always**

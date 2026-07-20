@@ -50,6 +50,10 @@ from config_sync_merge import (
     _section_union,
 )
 
+# Portable hook-command paths (issue #65): rewrites machine-absolute paths in
+# settings.json hook commands to ${TOKEN} sentinels on export and back on import.
+import config_sync_roots
+
 if TYPE_CHECKING:
     # Runtime-free import (TYPE_CHECKING is False at import time) so cmd_status can
     # name BundleExportFilter in an annotation without forming the config_sync <->
@@ -122,6 +126,12 @@ def _safe_dest(rel: str):
     """
     candidate = CLAUDE_DIR / rel
     return candidate if _is_within(candidate, CLAUDE_DIR) else None
+
+
+def _root_registry() -> "config_sync_roots.RootRegistry":
+    """This machine's root registry: HOME plus CONFIG_SYNC_ROOT_* declarations.
+    Built from the live globals so tests that monkeypatch HOME are honoured."""
+    return config_sync_roots.default_registry(HOME, os.environ)
 
 
 def _machine_id() -> str:
@@ -299,6 +309,7 @@ def cmd_export():
             if fname == "settings.json":
                 cleaned = _clean_settings(_read(path))
                 cleaned, _orphans = _reconcile_plugins(cleaned)  # in-memory only for the snapshot
+                cleaned = _root_registry().portabilize_settings(cleaned)  # portable hook paths
                 files[fname] = json.dumps(cleaned)
             else:
                 files[fname] = _read(path)
@@ -361,6 +372,7 @@ def _apply_snapshot_file(dest: Path, relative_path: str, content: str) -> str:
     """
     if relative_path == "settings.json":
         incoming = json.loads(content) if content.strip() else {}
+        incoming = _root_registry().localize_settings(incoming)  # portable -> local hook paths
         local_raw = _read(dest)
         existing_local = json.loads(local_raw) if local_raw.strip() else {}
         merged = json.dumps(
