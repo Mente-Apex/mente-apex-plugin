@@ -63,6 +63,19 @@ class DeclaredHook:
     timeout: Optional[int]
 
 
+@dataclass
+class HookAction:
+    verb: str                       # always "register" (union-only)
+    hook_id: str
+    detail: dict = field(default_factory=dict)
+
+
+@dataclass
+class HookPlan:
+    actions: list = field(default_factory=list)
+    skipped: list = field(default_factory=list)
+
+
 def discover_declarations(registry) -> List[DeclaredHook]:
     """Read each named root's hooks/hooks.json and flatten it into DeclaredHooks
     with resolved tokens and stable ids. Missing/malformed files are skipped."""
@@ -93,3 +106,21 @@ def discover_declarations(registry) -> List[DeclaredHook]:
                         timeout=hook.get("timeout"),
                     ))
     return declarations
+
+
+def plan_hook_wiring(declarations: List[DeclaredHook], settings: dict) -> HookPlan:
+    """Pure planner: emit a register action for every declared hook whose id is
+    not already marked in settings. Never unregisters; unmarked hooks are ignored."""
+    already_registered = registered_hook_ids(settings)
+    plan = HookPlan()
+    for declaration in declarations:
+        if declaration.hook_id in already_registered:
+            plan.skipped.append(f"{declaration.hook_id}: already registered")
+            continue
+        plan.actions.append(HookAction("register", declaration.hook_id, {
+            "event": declaration.event,
+            "matcher": declaration.matcher,
+            "command": declaration.command,
+            "timeout": declaration.timeout,
+        }))
+    return plan
