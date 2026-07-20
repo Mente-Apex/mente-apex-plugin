@@ -107,3 +107,17 @@ def test_report_template_has_structure_contract_and_appendix():
     for marker in ["[C1]", "[M1]", "[N1]", "Tier", "Status", "pending",
                    "import-linter contract", "Analysis mode", "Structural health"]:
         assert marker in text, f"report-template.md missing: {marker}"
+
+
+def test_agents_state_their_contracts():
+    analyzer = read_skill_file("agents/analyzer.md")
+    reviewer = read_skill_file("agents/reviewer.md")
+    implementer = read_skill_file("agents/implementer.md")
+    assert "read-only" in analyzer.lower()
+    assert "findings-draft.md" in analyzer
+    assert "principles.md" in analyzer and "python.md" in analyzer
+    assert "report-template.md" in reviewer
+    assert "lens-overlap.md" in reviewer                     # cross-reference the hub
+    assert "importlinter" in reviewer.lower()                # drafts the contract
+    assert "mechanical" in implementer.lower() and "refactor-jobs.md" in implementer
+    assert "advisory" in implementer.lower() or "opt-in" in implementer.lower()
