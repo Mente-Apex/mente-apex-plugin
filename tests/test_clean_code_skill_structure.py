@@ -93,3 +93,15 @@ def test_skill_md_is_thin_and_links_the_standard():
         assert sibling in lowered, f"SKILL.md must defer up-ladder to {sibling}"
     # the substrate framing
     assert "substrate" in lowered or "written by construction" in lowered or "by construction" in lowered
+
+
+def test_deep_gear_agents_state_their_contracts():
+    analyzer = read_skill_file("agents/analyzer.md")
+    reviewer = read_skill_file("agents/reviewer.md")
+    assert "read-only" in analyzer.lower()
+    assert "findings-draft.md" in analyzer
+    assert "clean-code-standard.md" in analyzer, "analyzer must judge against the standard"
+    assert "report-template.md" in reviewer
+    assert "clean-code-standard.md" in reviewer
+    assert "verify" in reviewer.lower() and "prune" in reviewer.lower()
+    assert "no code" in reviewer.lower() or "edit no code" in reviewer.lower()
