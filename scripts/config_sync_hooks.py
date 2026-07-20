@@ -164,3 +164,21 @@ def execute_hook_plan(plan: HookPlan, host: SettingsHost) -> HookResult:
         result.outcomes.append(HookOutcome(action.hook_id, ok=True))
     host.write_settings(settings)
     return result
+
+
+class ClaudeSettingsHost:
+    """Real SettingsHost over ~/.claude/settings.json. Injected into the CLI
+    wrappers; faked in tests."""
+
+    def __init__(self, claude_dir: Path):
+        self._settings_path = claude_dir / "settings.json"
+
+    def read_settings(self) -> dict:
+        try:
+            return json.loads(self._settings_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def write_settings(self, settings: dict) -> None:
+        self._settings_path.write_text(
+            json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")

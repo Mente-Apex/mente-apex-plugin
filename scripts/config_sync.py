@@ -54,6 +54,10 @@ from config_sync_merge import (
 # settings.json hook commands to ${TOKEN} sentinels on export and back on import.
 import config_sync_roots
 
+# Pure hook-provisioning core (issue #68): discovers hooks/hooks.json
+# declarations under the named roots and diffs/wires them into settings.json.
+import config_sync_hooks
+
 if TYPE_CHECKING:
     # Runtime-free import (TYPE_CHECKING is False at import time) so cmd_status can
     # name BundleExportFilter in an annotation without forming the config_sync <->
@@ -940,6 +944,33 @@ def cmd_plugins_apply(repo_path, host=None):
     }, indent=2))
 
 
+def cmd_hooks_plan():
+    """Query: what declared hooks are missing from local settings.json."""
+    registry = _root_registry()
+    declarations = config_sync_hooks.discover_declarations(registry)
+    host = config_sync_hooks.ClaudeSettingsHost(CLAUDE_DIR)
+    plan = config_sync_hooks.plan_hook_wiring(declarations, host.read_settings())
+    print(json.dumps({
+        "actions": [{"verb": action.verb, "hook_id": action.hook_id, "detail": action.detail}
+                    for action in plan.actions],
+        "skipped": plan.skipped,
+    }, indent=2))
+
+
+def cmd_hooks_apply():
+    """Gated mutation: register the missing declared hooks (marker-tagged)."""
+    registry = _root_registry()
+    declarations = config_sync_hooks.discover_declarations(registry)
+    host = config_sync_hooks.ClaudeSettingsHost(CLAUDE_DIR)
+    plan = config_sync_hooks.plan_hook_wiring(declarations, host.read_settings())
+    result = config_sync_hooks.execute_hook_plan(plan, host)
+    print(json.dumps({
+        "outcomes": [{"hook_id": outcome.hook_id, "ok": outcome.ok, "message": outcome.message}
+                     for outcome in result.outcomes],
+        "skipped": result.skipped,
+    }, indent=2))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -958,6 +989,8 @@ COMMANDS = {
     "resolve-deletion": (cmd_resolve_deletion, 4),
     "plugins-plan": (cmd_plugins_plan, 1),
     "plugins-apply": (cmd_plugins_apply, 1),
+    "hooks-plan": (cmd_hooks_plan, 0),
+    "hooks-apply": (cmd_hooks_apply, 0),
     "apply-shared": (cmd_apply_shared, 1),
     "log-sync": (cmd_log_sync, None),   # variadic: repo [action] [summary]
     "scan": (cmd_scan, None),   # variadic: optional --gate flag
