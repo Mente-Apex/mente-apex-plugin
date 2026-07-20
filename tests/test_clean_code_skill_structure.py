@@ -133,3 +133,20 @@ def test_reports_convention_points_at_docs_reports():
     }
     offenders = [path for path, old in old_dirs.items() if old in read_repo_file(path)]
     assert not offenders, f"these still reference the old bare report dir: {offenders}"
+
+
+def test_clean_code_evals_cover_substrate_and_both_gears():
+    evals_path = REPO_ROOT / "evals" / "clean-code-evals.json"
+    assert evals_path.is_file(), "evals/clean-code-evals.json missing"
+    document = json.loads(evals_path.read_text())
+    assert document["skill_name"] == "clean-code"
+    cases = document["evals"]
+    assert len(cases) >= 4, "want at least 4 eval cases"
+    for case in cases:
+        for field in ["id", "skill", "prompt", "expected_output", "assertions"]:
+            assert field in case, f"eval case {case.get('id')} missing {field}"
+        assert isinstance(case["assertions"], list) and case["assertions"]
+    blob = json.dumps(document).lower()
+    assert "quick" in blob and "deep" in blob            # both gears
+    assert "clean-code-standard" in blob                 # single source of truth
+    assert "defer" in blob or "hand off" in blob or "up-ladder" in blob  # non-overlap
