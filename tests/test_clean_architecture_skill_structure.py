@@ -121,3 +121,21 @@ def test_agents_state_their_contracts():
     assert "importlinter" in reviewer.lower()                # drafts the contract
     assert "mechanical" in implementer.lower() and "refactor-jobs.md" in implementer
     assert "advisory" in implementer.lower() or "opt-in" in implementer.lower()
+
+
+def test_ca_evals_cover_tiers_tooling_and_carve():
+    evals_path = REPO_ROOT / "evals" / "clean-architecture-evals.json"
+    assert evals_path.is_file(), "evals/clean-architecture-evals.json missing"
+    document = json.loads(evals_path.read_text())
+    assert document["skill_name"] == "clean-architecture"
+    cases = document["evals"]
+    assert len(cases) >= 4
+    for case in cases:
+        for field in ["id", "skill", "prompt", "expected_output", "assertions"]:
+            assert field in case, f"eval case {case.get('id')} missing {field}"
+        assert isinstance(case["assertions"], list) and case["assertions"]
+    blob = json.dumps(document).lower()
+    assert "dependency rule" in blob
+    assert "opt-in" in blob or "--cohesion" in blob or "--metrics" in blob
+    assert "import-linter" in blob
+    assert "ddd" in blob                      # the carve
