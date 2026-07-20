@@ -1,7 +1,8 @@
-# SOLID ↔ GoF overlap map
+# Lens overlap map (hub)
 
-Both reviewers read this. The two lenses see the same code from different angles;
-this map keeps them cross-referencing instead of issuing conflicting recs.
+Every refactor lens's reviewer reads this. The lenses see the same code from
+different altitudes; this hub keeps them cross-referencing instead of issuing
+conflicting recs. One hub rather than pairwise maps, so adding a lens is additive.
 
 Uses:
 1. **Cross-reference** — every finding names its overlapping principle/pattern.
@@ -41,3 +42,20 @@ pattern (e.g. a duplicated type-switch = OCP + Strategy), it is **one** change, 
 two. Whichever lens is running files the rec; the other lens references that rec ID.
 For ⚠ entries (Singleton), the lenses can disagree — surface the tension to the human
 rather than auto-recommending.
+
+## clean-architecture ↔ the others
+
+`clean-architecture` audits the component/dependency graph (an altitude above
+`solid`'s classes and orthogonal to `ddd`'s domain). Shared smells reconcile as
+one change; the running lens files it, the other references the rec ID.
+
+| clean-architecture finding | Overlaps | Reconciliation |
+|---|---|---|
+| dependency-direction violation (core imports framework/DB) | `ddd` (missing port / DIP), `solid` (DIP) | one change; `ddd` frames it as "missing port on aggregate X", CA as "boundary violation: use-case imports the web framework" — whoever runs files it |
+| cycle (ADP) | `solid` (DIP inverts an edge) | CA files the cycle; DIP is the fix mechanism, not a second rec |
+| composition-root / infra constructed in core | `gof` (Abstract Factory at the boundary), `clean-code` (separate construction from use) | CA files it; GoF/clean-code are the fix idioms |
+| Humble Object at a boundary | `gof` (the pattern) | hand off to `gof` |
+
+**Carve with `ddd` (the tightest seam):** `ddd` asks *"is the domain modelled
+well?"*; `clean-architecture` asks *"is the dependency structure sound, regardless
+of domain richness?"* A codebase can pass one and fail the other.

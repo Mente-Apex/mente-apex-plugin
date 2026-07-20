@@ -25,7 +25,7 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 > **Convention for code-modifying skills** ([docs/git-convention.md](docs/git-convention.md)):
 > a `<skill>/<slug>` working branch is opened before the first edit, and at the end the
 > skill *offers* — never auto-runs — a commit + PR (typically by handing off to `/ship`).
-> `/solid` and `/gof` apply their changes through `/tdd`'s programmatic refactor job and cross-reference each other via `docs/solid-gof-overlap.md`.
+> `/solid` and `/gof` apply their changes through `/tdd`'s programmatic refactor job and cross-reference each other via `docs/lens-overlap.md`.
 
 ### Config sync
 

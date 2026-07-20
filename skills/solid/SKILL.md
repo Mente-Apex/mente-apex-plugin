@@ -54,7 +54,7 @@ apply mechanics itself.
 ## Interop with GoF
 
 The reviewer cross-references
-[../../docs/solid-gof-overlap.md](../../docs/solid-gof-overlap.md) for every
+[../../docs/lens-overlap.md](../../docs/lens-overlap.md) for every
 recommendation: findings that overlap the GoF lens's territory are noted with
 the shared principle/pattern, and where a GoF report already exists in
 `docs/reports/gof/`, its rec ID is cited instead of duplicating the finding. The
@@ -118,5 +118,5 @@ rubric edit beats re-litigating the same judgment call every run.
   [../../docs/refactor-agents/reviewer.md](../../docs/refactor-agents/reviewer.md),
   [../../docs/refactor-agents/implementer.md](../../docs/refactor-agents/implementer.md) —
   the shared, lens-agnostic role instructions.
-- [../../docs/solid-gof-overlap.md](../../docs/solid-gof-overlap.md) — the
+- [../../docs/lens-overlap.md](../../docs/lens-overlap.md) — the
   SOLID↔GoF overlap map used at review time.

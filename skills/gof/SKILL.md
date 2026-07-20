@@ -59,7 +59,7 @@ report exists, the reviewer writes the HTML preview per
 
 ## Interop with SOLID
 
-The reviewer cross-references [docs/solid-gof-overlap.md](../../docs/solid-gof-overlap.md)
+The reviewer cross-references [docs/lens-overlap.md](../../docs/lens-overlap.md)
 for every recommendation: findings that overlap the SOLID lens's territory
 are noted with the shared principle/pattern, and where a SOLID report
 already exists in `docs/reports/solid/`, its rec ID is cited instead of duplicating
@@ -94,5 +94,5 @@ pattern back into `patterns.md` and bump this file's `metadata.version`.
   [../../docs/refactor-agents/reviewer.md](../../docs/refactor-agents/reviewer.md),
   [../../docs/refactor-agents/implementer.md](../../docs/refactor-agents/implementer.md) —
   the shared, lens-agnostic role instructions.
-- [../../docs/solid-gof-overlap.md](../../docs/solid-gof-overlap.md) — the
+- [../../docs/lens-overlap.md](../../docs/lens-overlap.md) — the
   SOLID↔GoF overlap map used at review time.
