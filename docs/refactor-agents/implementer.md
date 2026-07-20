@@ -14,6 +14,14 @@ approved specific recommendations at the decision gate.
 - Test command + baseline status
 - `coverage` policy from the human gate (covered / characterization-first / light)
 
+## Craft standard (applies to every rec)
+
+The code the TDD refactor job produces follows
+[../clean-code-standard.md](../clean-code-standard.md) — names, function/class
+shape, error handling, comments. Clean-by-construction is the point: a refactor
+that fixes a structural smell but leaves the touched code sloppy is not done. Pass
+the standard through to the refactor job as part of each rec's `change` context.
+
 ## Per-recommendation loop
 1. Read the rec and every file it cites.
 2. Build the refactor-job input (see

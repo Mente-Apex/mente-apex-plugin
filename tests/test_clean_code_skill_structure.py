@@ -111,3 +111,10 @@ def test_report_template_has_the_expected_structure():
     text = read_skill_file("references/report-template.md")
     for marker in ["[G1]", "Principle", "Severity", "High", "Medium", "Low", "Hand-offs"]:
         assert marker in text, f"report-template.md missing: {marker}"
+
+
+def test_substrate_consumers_link_the_standard():
+    implementer = read_repo_file("docs/refactor-agents/implementer.md")
+    refactor_jobs = read_repo_file("skills/tdd/references/refactor-jobs.md")
+    assert "clean-code-standard.md" in implementer, "implementer role must link the standard"
+    assert "clean-code-standard.md" in refactor_jobs, "tdd refactor step must link the standard"
