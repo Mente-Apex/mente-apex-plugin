@@ -74,3 +74,19 @@ def test_skill_md_declares_tiers_tooling_and_carve():
     assert "degrade" in lowered or "fallback" in lowered, "must state graceful fallback"
     assert "lens-overlap.md" in body and "refactor-workflow.md" in body
     assert "ddd" in lowered, "must state the carve with ddd"
+
+
+def test_principles_cover_the_tiered_rubric():
+    text = read_skill_file("references/principles.md")
+    required = [
+        "Dependency Rule", "ADP", "SDP", "SAP",
+        "REP", "CCP", "CRP",
+        "Screaming Architecture", "composition root",
+        "Instability", "Main Sequence",
+        "approximate in Python",   # the metrics caveat
+        "When NOT",                # judgment block
+    ]
+    missing = [concept for concept in required if concept.lower() not in text.lower()]
+    assert not missing, f"principles.md missing: {missing}"
+    for tier in ["Headline", "Secondary", "Appendix", "Critical", "Major", "Minor"]:
+        assert tier in text, f"principles.md missing tier label: {tier}"
