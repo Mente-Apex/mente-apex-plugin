@@ -56,3 +56,21 @@ def test_no_stale_overlap_references_remain():
                 if "solid-gof-overlap" in candidate.read_text(encoding="utf-8"):
                     offenders.append(str(candidate.relative_to(REPO_ROOT)))
     assert not offenders, f"stale solid-gof-overlap references remain: {offenders}"
+
+
+def test_skill_md_declares_tiers_tooling_and_carve():
+    fields = parse_frontmatter(read_skill_file("SKILL.md"))
+    assert fields.get("name") == "clean-architecture"
+    assert fields.get("user-invocable") == "true"
+    frontmatter_text = read_skill_file("SKILL.md").split("---")[1]
+    assert re.search(r'version:\s*"0\.1\.0"', frontmatter_text)
+    body = read_skill_file("SKILL.md")
+    lowered = body.lower()
+    for marker in ["headline", "secondary", "appendix", "opt-in"]:
+        assert marker in lowered, f"SKILL.md missing tier marker: {marker}"
+    assert "audit" in lowered and "no build" in lowered, "must state audit-first, no build mode"
+    for tool in ["grimp", "import-linter"]:
+        assert tool in lowered, f"SKILL.md missing tooling reference: {tool}"
+    assert "degrade" in lowered or "fallback" in lowered, "must state graceful fallback"
+    assert "lens-overlap.md" in body and "refactor-workflow.md" in body
+    assert "ddd" in lowered, "must state the carve with ddd"
