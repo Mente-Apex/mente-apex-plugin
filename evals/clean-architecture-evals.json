@@ -1,0 +1,55 @@
+{
+  "skill_name": "clean-architecture",
+  "evals": [
+    {
+      "id": 1,
+      "skill": "clean-architecture",
+      "prompt": "Audit our service's architecture — I think the business logic is tangled up with Django and the database.",
+      "expected_output": "Runs the headline tier: detects a graph tool (or degrades), audits the Dependency Rule (core importing Django/ORM), import cycles, and stability direction; writes a tiered report and drafts an import-linter contract. Report-first.",
+      "assertions": [
+        "Reads references/principles.md and detects grimp/import-linter (or states it is degrading to agent-driven reading)",
+        "Runs only the headline checks by default (dependency direction, cycles, stability)",
+        "Flags core/use-case modules importing Django, the ORM, or the DB as Dependency-Rule violations with file:line evidence",
+        "Creates git-excluded docs/reports/clean-architecture/ and writes CLEAN-ARCHITECTURE-REPORT-<date>.md via the template",
+        "Drafts an import-linter contract (importlinter.ini) and offers it as a CI tripwire without committing it silently",
+        "Does not scaffold or build a layered structure (audit-first, no build mode)"
+      ]
+    },
+    {
+      "id": 2,
+      "skill": "clean-architecture",
+      "prompt": "Also check whether our packages are grouped sensibly and whether the layout shows what the app does.",
+      "expected_output": "Recognises these as the secondary tier and runs them on opt-in: component cohesion (REP/CCP/CRP, using git co-change for CCP), Screaming Architecture, and the composition root.",
+      "assertions": [
+        "Treats cohesion and Screaming Architecture as the opt-in secondary tier (via --cohesion or an explicit go-deeper)",
+        "Evaluates REP/CCP/CRP, using git co-change as evidence for CCP",
+        "Assesses whether the top-level layout reveals use cases vs the framework (Screaming Architecture)",
+        "Checks whether infrastructure is constructed in core vs wired at a single composition root"
+      ]
+    },
+    {
+      "id": 3,
+      "skill": "clean-architecture",
+      "prompt": "Can you give me the abstractness / Main-Sequence numbers for each package?",
+      "expected_output": "Runs the appendix on opt-in and reports I/A/D, but explicitly caveats that abstractness is approximate in Python and does not tell the user to refactor toward the metric.",
+      "assertions": [
+        "Treats the Main-Sequence metrics as the opt-in appendix (--metrics)",
+        "Reports Instability I from import fan-in/fan-out and the A/D metrics per component",
+        "States that abstractness A is approximate in Python (Protocols/duck typing) and presents it as structural-health context, not a finding",
+        "Does not recommend refactoring purely to move a component toward the Main Sequence"
+      ]
+    },
+    {
+      "id": 4,
+      "skill": "clean-architecture",
+      "prompt": "How is this different from just running /ddd on the same code?",
+      "expected_output": "Explains the carve: /ddd asks whether the domain is modelled well; /clean-architecture asks whether the dependency structure is sound regardless of domain richness, and shared smells are reconciled once via the lens-overlap hub rather than duplicated.",
+      "assertions": [
+        "States that /ddd evaluates domain modelling (aggregates, ubiquitous language, ports) while /clean-architecture evaluates the component/dependency structure",
+        "Notes a codebase can pass one and fail the other",
+        "Explains that a shared smell (e.g. a missing port / dependency-direction violation) is filed once and cross-referenced via docs/lens-overlap.md, not duplicated",
+        "Does not re-run domain modelling itself"
+      ]
+    }
+  ]
+}
