@@ -11,8 +11,10 @@ its own, and never touches hand-added or unmarked hooks.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional, Protocol, runtime_checkable
 
 PLUGIN_ROOT_PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
@@ -50,3 +52,44 @@ def registered_hook_ids(settings: dict) -> set:
                     if match:
                         found.add(match.group(1))
     return found
+
+
+@dataclass(frozen=True)
+class DeclaredHook:
+    hook_id: str
+    event: str
+    matcher: str
+    command: str            # tokenised (${TOKEN}/...), pre-marker
+    timeout: Optional[int]
+
+
+def discover_declarations(registry) -> List[DeclaredHook]:
+    """Read each named root's hooks/hooks.json and flatten it into DeclaredHooks
+    with resolved tokens and stable ids. Missing/malformed files are skipped."""
+    declarations: List[DeclaredHook] = []
+    for root in registry.named_roots():
+        declaration_path = Path(root.path) / "hooks" / "hooks.json"
+        try:
+            data = json.loads(declaration_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for event, matcher_groups in data.get("hooks", {}).items():
+            if not isinstance(matcher_groups, list):
+                continue
+            for matcher_group in matcher_groups:
+                matcher = matcher_group.get("matcher", "")
+                for hook in matcher_group.get("hooks", []):
+                    raw_command = hook.get("command")
+                    if not isinstance(raw_command, str):
+                        continue
+                    command = resolve_command(raw_command, root.token)
+                    declarations.append(DeclaredHook(
+                        hook_id=hook_id_of(root.token, event, matcher, command),
+                        event=event,
+                        matcher=matcher,
+                        command=command,
+                        timeout=hook.get("timeout"),
+                    ))
+    return declarations
