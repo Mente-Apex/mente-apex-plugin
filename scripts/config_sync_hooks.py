@@ -76,6 +76,26 @@ class HookPlan:
     skipped: list = field(default_factory=list)
 
 
+@runtime_checkable
+class SettingsHost(Protocol):
+    def read_settings(self) -> dict: ...
+
+    def write_settings(self, settings: dict) -> None: ...
+
+
+@dataclass
+class HookOutcome:
+    hook_id: str
+    ok: bool
+    message: str = ""
+
+
+@dataclass
+class HookResult:
+    outcomes: list = field(default_factory=list)
+    skipped: list = field(default_factory=list)
+
+
 def discover_declarations(registry) -> List[DeclaredHook]:
     """Read each named root's hooks/hooks.json and flatten it into DeclaredHooks
     with resolved tokens and stable ids. Missing/malformed files are skipped."""
@@ -124,3 +144,23 @@ def plan_hook_wiring(declarations: List[DeclaredHook], settings: dict) -> HookPl
             "timeout": declaration.timeout,
         }))
     return plan
+
+
+def execute_hook_plan(plan: HookPlan, host: SettingsHost) -> HookResult:
+    """Apply each register action as a new marker-tagged matcher group. One write
+    total, only when there is at least one action (idempotent no-op otherwise)."""
+    result = HookResult(skipped=list(plan.skipped))
+    if not plan.actions:
+        return result
+    settings = host.read_settings()
+    hooks_block = settings.setdefault("hooks", {})
+    for action in plan.actions:
+        event_groups = hooks_block.setdefault(action.detail["event"], [])
+        marked_command = action.detail["command"] + " " + marker_for(action.hook_id)
+        hook_entry = {"type": "command", "command": marked_command}
+        if action.detail.get("timeout") is not None:
+            hook_entry["timeout"] = action.detail["timeout"]
+        event_groups.append({"matcher": action.detail["matcher"], "hooks": [hook_entry]})
+        result.outcomes.append(HookOutcome(action.hook_id, ok=True))
+    host.write_settings(settings)
+    return result

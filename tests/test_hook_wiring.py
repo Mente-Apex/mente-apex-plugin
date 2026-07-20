@@ -114,3 +114,38 @@ def test_plan_ignores_unmarked_hand_added_hook_for_same_script():
          "hooks": [{"type": "command", "command": declaration.command}]}]}}
     plan = config_sync_hooks.plan_hook_wiring([declaration], settings)
     assert len(plan.actions) == 1   # still proposes its own marked registration
+
+
+class FakeSettingsHost:
+    def __init__(self, settings=None):
+        self.settings = settings if settings is not None else {}
+        self.writes = 0
+
+    def read_settings(self):
+        import copy
+        return copy.deepcopy(self.settings)
+
+    def write_settings(self, settings):
+        self.settings = settings
+        self.writes += 1
+
+
+def test_execute_writes_marked_registration_and_is_idempotent():
+    declaration = _declaration()
+    host = FakeSettingsHost({"hooks": {}})
+
+    plan = config_sync_hooks.plan_hook_wiring([declaration], host.read_settings())
+    result = config_sync_hooks.execute_hook_plan(plan, host)
+
+    assert [outcome.ok for outcome in result.outcomes] == [True]
+    groups = host.settings["hooks"]["PreToolUse"]
+    command = groups[0]["hooks"][0]["command"]
+    assert command == declaration.command + " " + config_sync_hooks.marker_for(declaration.hook_id)
+    assert groups[0]["hooks"][0]["timeout"] == 10
+    assert host.writes == 1
+
+    # Second pass: nothing to do, no extra write.
+    plan2 = config_sync_hooks.plan_hook_wiring([declaration], host.read_settings())
+    result2 = config_sync_hooks.execute_hook_plan(plan2, host)
+    assert result2.outcomes == []
+    assert host.writes == 1
