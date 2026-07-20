@@ -81,6 +81,33 @@ def test_discover_ignores_missing_and_malformed(tmp_path):
     assert config_sync_hooks.discover_declarations(registry) == []
 
 
+def test_discover_skips_non_dict_entries_inside_lists(tmp_path):
+    # A hooks.json where matcher-group / hook entries are the wrong shape must be
+    # skipped entry-by-entry (never fatal), while a valid sibling still resolves.
+    repo = tmp_path / "mixed"
+    _write_declaration(repo, {"hooks": {"PreToolUse": [
+        "oops-a-string",                              # non-dict matcher-group
+        {"matcher": "A", "hooks": [42]},              # non-dict hook entry
+        {"matcher": "B", "hooks": "not-a-list"},      # non-list hooks value
+        {"matcher": "Write|Edit", "hooks": [
+            {"type": "command",
+             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/ok.py",
+             "timeout": 5}]},
+    ]}})
+    registry = config_sync_roots.RootRegistry([
+        config_sync_roots.Root("HOME", str(tmp_path)),
+        config_sync_roots.Root("MIXED", str(repo)),
+    ])
+
+    declarations = config_sync_hooks.discover_declarations(registry)
+
+    assert len(declarations) == 1
+    declaration = declarations[0]
+    assert declaration.matcher == "Write|Edit"
+    assert declaration.command == "python3 ${MIXED}/hooks/ok.py"
+    assert declaration.timeout == 5
+
+
 def _declaration(command="python3 ${MEM}/hooks/protect_brain.py"):
     hook_id = config_sync_hooks.hook_id_of("MEM", "PreToolUse", "Write|Edit", command)
     return config_sync_hooks.DeclaredHook(hook_id, "PreToolUse", "Write|Edit", command, 10)

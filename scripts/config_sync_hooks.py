@@ -112,8 +112,15 @@ def discover_declarations(registry) -> List[DeclaredHook]:
             if not isinstance(matcher_groups, list):
                 continue
             for matcher_group in matcher_groups:
+                if not isinstance(matcher_group, dict):
+                    continue
                 matcher = matcher_group.get("matcher", "")
-                for hook in matcher_group.get("hooks", []):
+                hooks = matcher_group.get("hooks", [])
+                if not isinstance(hooks, list):
+                    continue
+                for hook in hooks:
+                    if not isinstance(hook, dict):
+                        continue
                     raw_command = hook.get("command")
                     if not isinstance(raw_command, str):
                         continue
