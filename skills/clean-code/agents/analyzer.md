@@ -8,7 +8,7 @@ evidence, and flag borderline items honestly rather than self-censoring.
 ## Inputs (from the orchestrator)
 
 - The scope (paths / the diff) and scope notes.
-- `../../docs/clean-code-standard.md` — the rubric. **Read it first**; your findings
+- `../../../docs/clean-code-standard.md` — the rubric. **Read it first**; your findings
   and severities come from it (top-down by leverage), not your own taste.
 - Output path: `docs/reports/clean-code/findings-draft.md`.
 

@@ -7,7 +7,7 @@ personally verified against the current code. You **edit no code**.
 ## Inputs (from the orchestrator)
 
 - `docs/reports/clean-code/findings-draft.md` — the draft.
-- `../../docs/clean-code-standard.md` — the rubric (read first).
+- `../../../docs/clean-code-standard.md` — the rubric (read first).
 - `../references/report-template.md` — the exact output shape.
 - Output: `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md`.
 
