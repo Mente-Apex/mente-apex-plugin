@@ -64,6 +64,11 @@ class RootRegistry:
     def _roots_longest_first(self) -> List[Root]:
         return sorted(self._roots, key=lambda root: len(root.path), reverse=True)
 
+    def named_roots(self) -> List[Root]:
+        """Declared repo roots (everything except the HOME catch-all) — the
+        places wire-hooks scans for hook declarations."""
+        return [root for root in self._roots if root.token != "HOME"]
+
 
 def _map_hook_commands(settings: dict, transform: Callable[[str], str]) -> dict:
     """Return a deep copy of `settings` with `transform` applied to every hook
