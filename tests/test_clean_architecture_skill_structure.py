@@ -100,3 +100,10 @@ def test_python_reference_covers_tooling_and_degrade():
     assert "fan-in" in lowered and "fan-out" in lowered, "must show how to compute Instability"
     assert "degrade" in lowered or "fallback" in lowered, "must give the no-tool degrade path"
     assert "runtime_checkable" not in text  # sanity: this is CA, not the ddd port ref
+
+
+def test_report_template_has_structure_contract_and_appendix():
+    text = read_skill_file("references/report-template.md")
+    for marker in ["[C1]", "[M1]", "[N1]", "Tier", "Status", "pending",
+                   "import-linter contract", "Analysis mode", "Structural health"]:
+        assert marker in text, f"report-template.md missing: {marker}"
