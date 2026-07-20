@@ -10,7 +10,7 @@ reader / change-safety impact.
 - `ddd` asks *"is the domain modelled well?"*; this asks *"is the dependency
   structure sound, regardless of domain richness?"*
 - `solid` owns the five class-level principles; this is graph topology + their
-  component-scale cousins. Cross-reference `../../docs/lens-overlap.md`; never
+  component-scale cousins. Cross-reference `../../../docs/lens-overlap.md`; never
   restate a `solid` finding.
 
 ## Headline checks (default run) — robust, tool-assisted, actionable
