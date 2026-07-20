@@ -964,6 +964,11 @@ def cmd_hooks_apply():
     host = config_sync_hooks.ClaudeSettingsHost(CLAUDE_DIR)
     plan = config_sync_hooks.plan_hook_wiring(declarations, host.read_settings())
     result = config_sync_hooks.execute_hook_plan(plan, host)
+    if result.outcomes:
+        # #65/#67 invariant: live settings.json holds localized absolute paths;
+        # only the exported snapshot carries ${TOKEN} form. The executor wrote the
+        # portable token; expand it to this machine's real paths so the hook runs.
+        host.write_settings(registry.localize_settings(host.read_settings()))
     print(json.dumps({
         "outcomes": [{"hook_id": outcome.hook_id, "ok": outcome.ok, "message": outcome.message}
                      for outcome in result.outcomes],

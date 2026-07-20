@@ -30,7 +30,7 @@ def test_hooks_plan_then_apply_is_idempotent(claude_home, tmp_path, monkeypatch,
 
     written = json.loads((claude_home / "settings.json").read_text())
     command = written["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert command.startswith("python3 ${MEM}/hooks/protect_brain.py # config-sync:")
+    assert command.startswith(f"python3 {tmp_path / 'mem'}/hooks/protect_brain.py # config-sync:")
     assert written["model"] == "opus"   # untouched
 
     # Second apply: no actions, settings unchanged.
