@@ -1,127 +1,122 @@
 ---
-name: menteapex-proposal
+name: menteapex-deliverable
 description: >
-  Generate a branded Mente Apex proposal PDF for a client engagement.
-  Follows brand-book conventions: navy cover, Cormorant + DM Sans, gold-dot system.
-  Use whenever the user says "generate a proposal", "write a proposal", "create a
-  proposal for <client>", "proposal from brief", or "/proposal".
+  Produce any client-facing Mente Apex deliverable — initial offer, proposal,
+  engagement agreement, IP licence, DPA, handover, update brief, or pre-production
+  notice — as on-brand HTML + PDF from the Legal/ Markdown source of truth, then draft
+  the client email. Picks the template, picks the language (EN / es-ES / es-419 / hr),
+  fills every placeholder, and renders. Use whenever the user says "generate a
+  proposal", "make the offer", "draft the engagement agreement", "render the DPA /
+  licence / handover / update brief", "create a deliverable for <client>", or
+  "/deliverable".
 user-invocable: true
-allowed-tools: Bash, Read, Write, Edit
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
-# Proposal Generator
+# Client Deliverable Generator
 
-Produces a branded HTML proposal derived from the brand book. The reference build
-lives in the brand-reference dir (`$BRAND_REF`, see Paths below) — start from that
-CSS skeleton, swap the content.
+Turns a `Legal/` Markdown template (the source of truth) into an on-brand HTML + PDF
+deliverable, and drafts the accompanying client email. The visual system is **not
+hand-built** — `scripts/render.py` derives it from the live brand book each run. Your
+job is to choose the right template, fill it completely, and render.
 
-> **Paths (portable).** Resolve the business folder from `$BUSINESS_ROOT`
-> (default `$HOME/Documents/Business`) and the brand reference from `$BRAND_REF`
-> (default `$BUSINESS_ROOT/Customers/Tomislav/docs` — the reference-client build).
-> Set either env var to relocate on another machine. No absolute `/Users/...` paths.
+> **Why a script renders, not you.** JOURNEY.md's standing rule: *MD is source, HTML/PDF
+> is derived, never hand-edited — change the MD, re-render.* Do not write HTML by hand.
+> Fill Markdown; let `render.py` apply the brand.
 
----
-
-## Step 1 — Gather inputs
-
-You need:
-- **Client name and company**
-- **Engagement slug** (from client registry or provided by user)
-- **Problem statement** — what pain are they trying to solve?
-- **Proposed solution** — what will Mente Apex build/deliver?
-- **Deliverables** — concrete list of what they receive
-- **Timeline** — phases and approximate weeks
-- **Investment** — fee(s), payment structure
-- **Next step** — what the client must do to proceed
-
-If a brief file exists at `Customers/<ClientName>/customer_input/`, read it first
-and extract as much of the above as possible before asking.
+> **Paths (portable).** Business folder = `$BUSINESS_ROOT` (default
+> `$HOME/Documents/Business`); brand source = `$BRAND_ROOT` (default
+> `$BUSINESS_ROOT/Brand`). Templates live in `$BUSINESS_ROOT/Legal`. No absolute
+> `/Users/...` paths.
 
 ---
 
-## Step 2 — Read the reference build
+## Step 1 — Choose the deliverable
 
-Read these files to load the visual system before writing a single line of HTML:
+Read `references/templates.md` — it lists the ten client-facing families, their exact
+filename patterns, available languages, and render **kind** (`identity` vs `letterhead`).
+Ask the user which family (use `AskUserQuestion` with the family list) unless the request
+already names it. Apply the **license-tier selector** for families 4–6.
 
-```
-$BRAND_REF/fonts.css
-$BRAND_REF/proposal.html
-```
-
-Do not deviate from the CSS variable system, grid, or typography defined there.
-The visual language is fixed — only the content changes.
+Then confirm the **language** (EN / es-ES / es-419 / hr). Load the matching variant;
+if it doesn't exist for that family, fall back to EN and say so.
 
 ---
 
-## Step 3 — Write the proposal HTML
+## Step 2 — Locate the client and gather inputs
 
-Save to: `Customers/<ClientName>/docs/proposal.html`
+Identify the client folder `Customers/<Client>/`. Before asking the user anything, read
+what's already known so you don't re-ask:
 
-Structure (in order):
+- `Customers/<Client>/customer_input/` — their brief, texts, scope notes.
+- The client registry (`~/Brain/docs/clients.md`) and `Customers/<Client>/PROJECT.md` —
+  slug, contact, email, engagement details.
 
-1. **Cover page** — full-bleed navy, Mente Apex wordmark, client name, date, tagline
-2. **Situation** — their problem, restated with clarity and empathy (2–3 paragraphs)
-3. **Our approach** — the solution methodology, structured as phases if applicable
-4. **Deliverables** — bulleted list, specific and concrete
-5. **Timeline** — visual phases table (weeks/milestones)
-6. **Investment** — clear fee table, payment milestones, what's included
-7. **Next steps** — one clear CTA
-8. **About Mente Apex** — 2–3 sentence credential statement (pull from brand book voice)
-
-Copy `fonts.css` from the brand reference (`$BRAND_REF/fonts.css`) into
-`$BUSINESS_ROOT/Customers/<ClientName>/docs/fonts.css`.
+Copy the chosen template to a working file in the client's docs dir, e.g.
+`Customers/<Client>/docs/<family>-<slug>.md`. **Work on the copy — never edit the
+template in `Legal/`.**
 
 ---
 
-## Step 4 — Generate PDF
+## Step 3 — Fill every placeholder (do not stop early)
 
-The HTML is an intermediate asset. The deliverable is the PDF.
+Templates mark fill-in slots as `[bracketed prose]` (e.g. `[Client / business]`,
+`[date]`, `[€X]`) and carry `<!-- HTML comment -->` guidance blocks that are
+**instructions to you — strip them, never render them**. Fill the copy from the inputs;
+ask the user for anything you can't source. Honour each template's guidance comment
+(tier, discount reason, consumer-vs-professional clause, etc.) as you fill.
 
-First, embed fonts so the PDF renders correctly without a network connection:
+**The completeness gate — this is non-negotiable.** A half-filled deliverable must never
+reach the client. Verify mechanically and loop until clean:
 
 ```bash
-BUSINESS_ROOT="${BUSINESS_ROOT:-$HOME/Documents/Business}"
-BRAND_REF="${BRAND_REF:-$BUSINESS_ROOT/Customers/Tomislav/docs}"
-DOCS="$BUSINESS_ROOT/Customers/<ClientName>/docs"
-
-# Copy embed_fonts.py from the brand reference if not present
-[ -f "$DOCS/embed_fonts.py" ] || cp "$BRAND_REF/embed_fonts.py" "$DOCS/"
-
-# Embed fonts into a self-contained HTML
-python3 "$DOCS/embed_fonts.py" "$DOCS/proposal.html" > "$DOCS/proposal-print.html"
+python3 "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/render.py" \
+  "Customers/<Client>/docs/<family>-<slug>.md" --check
 ```
 
-Then render to PDF via Chrome headless:
-
-```bash
-PDF_NAME="Mente-Apex-Proposal-<ClientName>-$(date +%Y-%m-%d).pdf"
-PDF_PATH="$DOCS/$PDF_NAME"
-
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --headless=new \
-  --run-all-compositor-stages-before-draw \
-  --print-to-pdf="$PDF_PATH" \
-  --print-to-pdf-no-header \
-  --no-pdf-header-footer \
-  "file://$DOCS/proposal-print.html" 2>/dev/null
-
-echo "PDF: $PDF_PATH"
-```
-
-If Chrome is not at that path, try:
-```bash
-which google-chrome-stable || which chromium || ls /Applications/ | grep -i chrome
-```
-and adjust accordingly.
-
-Verify the PDF exists and has a non-zero size:
-```bash
-ls -lh "$PDF_PATH"
-```
+`--check` exits non-zero and lists every remaining `[placeholder]`. Keep filling and
+re-running until it prints `✓ no placeholders remain`. (Markdown links `[text](url)` are
+not placeholders; guidance-comment brackets are ignored because comments are stripped
+first.)
 
 ---
 
-## Step 5 — Confirm
+## Step 4 — Render to HTML + PDF
 
-Report the full PDF path. That is the deliverable — hand it to the user directly.
-Note any sections that still need review before sending to the client.
+```bash
+python3 "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/render.py" \
+  "Customers/<Client>/docs/<family>-<slug>.md" \
+  --kind <identity|letterhead> --lang <en|es-ES|es-419|hr> \
+  --title "<document title>" --out "Customers/<Client>/docs"
+```
+
+Use the **kind** from `references/templates.md` (offers/proposals = `identity`; the rest =
+`letterhead`). The renderer reads the live `Brand/tokens/tokens.css` each run, so output
+tracks the current brand book; if it warns that tokens are stale, pass the nudge to the
+user (they may want to run `Brand/tokens/build_tokens.py` first). It embeds fonts and
+prints the PDF via headless Chrome. If Chrome isn't found it still writes the HTML and
+says so.
+
+Confirm the PDF exists and is non-zero (the renderer reports both paths).
+
+---
+
+## Step 5 — Draft the client email
+
+Read `references/email.md` for the per-family subject + tone (and the tú/usted and
+contact-canon rules). Draft a short covering note in the deliverable's language.
+
+- If the Gmail connector (`mcp__claude_ai_Gmail__*`) is available this session, create a
+  **draft** (never send) to the client's address (from the registry / `PROJECT.md`, or
+  ask), referencing the PDF.
+- Otherwise, output the finished **subject + body** for the user to paste.
+
+Never auto-send. Always hand back the PDF path.
+
+---
+
+## Step 6 — Confirm
+
+Report: family + language, the PDF path, whether the email was drafted or is paste-ready,
+and anything that still needs the user's review before it goes to the client (e.g. a
+figure you inferred, a clause you filled from assumption).
