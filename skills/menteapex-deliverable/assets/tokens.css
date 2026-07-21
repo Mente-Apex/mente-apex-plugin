@@ -1,0 +1,53 @@
+/* Mente Apex design tokens — GENERATED from tokens.json (build_tokens.py).
+   Brand book v3.5 · 2026-07-15.
+   Do not hand-edit: change brand-book.html, update tokens.json, rerun. */
+:root {
+  --abyssal-navy: #0B1E3F;
+  --deep-sea: #0D3A6E;
+  --levante: #2D7DD2;
+  --mediterranean-gold: #C9A84C;
+  --sea-foam: #E8EFF8;
+  --coastal-slate: #5A6F8F;
+  --deep-gold: #9A7B2E;
+  --levante-deep: #1E66BE;
+  --hairline: #DCE4EE;
+  --slate-light: #8BA4C2;
+  --clay: #C2614F;
+  --dataviz-series-1: #2D7DD2;
+  --dataviz-series-2: #81B1E4;
+  --dataviz-series-3: #5A6F8F;
+  --dataviz-series-4: #0D3A6E;
+  --dataviz-highlight: #C9A84C;
+  --dataviz-negative: #C2614F;
+  --imagery-duotone-shadow: #060F20;
+  --imagery-duotone-midtone: #0D3A6E;
+  --imagery-duotone-highlight: #E8EFF8;
+
+  /* type */
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-text: "Manrope", Arial, Helvetica, sans-serif;
+
+  /* elevation */
+  --shadow-rgb: 13, 10, 6;
+  --shadow-sm: 0 1px 3px rgba(var(--shadow-rgb), .40);
+  --shadow-md: 0 2px 8px rgba(var(--shadow-rgb), .34), 0 6px 18px rgba(var(--shadow-rgb), .26);
+  --shadow-lg: 0 4px 12px rgba(var(--shadow-rgb), .40), 0 14px 34px rgba(var(--shadow-rgb), .46);
+  --shadow-xl: 0 8px 24px rgba(var(--shadow-rgb), .42), 0 26px 60px rgba(var(--shadow-rgb), .55);
+  --edge-highlight: inset 0 1px 0 rgba(232, 239, 248, .055);
+
+  /* radius */
+  --radius-sm: 4px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* border */
+  --border-hairline: 1px;
+  --border-accent: 2px;
+
+  /* motion */
+  --ease: cubic-bezier(.25, .46, .45, .94);
+  --dur-fast: .2s;
+  --dur-base: .25s;
+  --dur-reveal: .65s;
+}

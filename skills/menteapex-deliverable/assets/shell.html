@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<style>
+/* Live brand fonts + tokens, inlined from the Brand source at render time. */
+{{FONTS_CSS}}
+{{TOKENS_CSS}}
+:root{
+  /* Short aliases → canonical brand tokens (declared in tokens.css). */
+  --navy: var(--abyssal-navy);
+  --gold: var(--mediterranean-gold);
+  --deep-gold: var(--deep-gold);
+  --slate: var(--coastal-slate);
+  --slate-light: var(--slate-light);
+  --foam: var(--sea-foam);
+  --line: var(--hairline);
+  --link: var(--levante-deep);
+  --display: var(--font-display);
+  --text: var(--font-text);
+
+  /* Grid — brand book "How We Look": module M = 6% of A4 short edge (210mm) = 12.6mm.
+     Page margins = M; identity moments breathe at 1.5M; gutter = M/3. */
+  --M: 12.6mm;
+  --M15: 18.9mm;
+  --gutter: 4.2mm;
+  /* Type — roles are multiples of base B; client print B ≈ 10.5pt. */
+  --B: 10.5pt;
+}
+
+@page{ size:A4; margin:var(--M); }
+@page cover{ size:A4; margin:0; }
+
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  font-family:var(--text); font-size:var(--B); line-height:1.55; color:var(--navy);
+  -webkit-print-color-adjust:exact; print-color-adjust:exact;
+}
+
+/* Measure: the brand book keeps a 45–75 character line. */
+.doc-body{ max-width:72ch; }
+
+/* Type scale — multiples of B; never intermediate sizes. Rag-right, no justify. */
+h1,h2,h3,h4{ font-family:var(--display); font-weight:500; line-height:1.12; color:var(--navy); text-align:left; }
+h1{ font-size:calc(var(--B) * 2.4); margin:0 0 3mm; }
+h2{ font-size:calc(var(--B) * 1.85); margin:7mm 0 2.4mm; }
+h3{ font-size:calc(var(--B) * 1.4); margin:5mm 0 2mm; }
+h4{ font-size:calc(var(--B) * 1.15); margin:4mm 0 1.6mm; }
+p{ margin:0 0 2.6mm; text-align:left; }
+strong{ font-weight:500; }
+em{ font-style:italic; }
+a{ color:var(--link); text-decoration:none; }
+ul,ol{ margin:0 0 3mm; padding-left:6mm; }
+li{ margin:0 0 1.2mm; }
+
+/* Hairline rules divide; boxes and heavy strokes don't. */
+hr{ border:none; border-top:1px solid var(--line); margin:5mm 0; }
+
+blockquote{ margin:4mm 0; padding-left:var(--gutter);
+  border-left:2px solid var(--gold); color:var(--slate); font-style:italic; }
+
+table{ width:100%; border-collapse:collapse; margin:4mm 0; font-size:calc(var(--B) * 0.96); }
+th{ text-align:left; font-family:var(--text); font-weight:500; color:var(--navy);
+  border-bottom:1px solid var(--gold); padding:2mm 3mm; }
+td{ border-bottom:1px solid var(--line); padding:2mm 3mm; vertical-align:top; }
+
+/* Gold appears once per composition — reserved for the masthead stop / one accent. */
+
+/* ---------- Multi-page Documents law (brand book: a deliverable is a sequence) ---------- */
+/* Atomic blocks never break; a heading keeps with the lines beneath it. */
+table, blockquote, figure, .atomic, .price, .signature{ break-inside: avoid; }
+h1,h2,h3,h4{ break-after: avoid; }
+/* A tall table breaks between rows, repeating its header. */
+thead{ display: table-header-group; }
+/* Prose may cross a page turn, but never fewer than two lines each side. */
+p, li{ orphans: 2; widows: 2; }
+
+/* ---------- Identity page (sales documents): full-bleed navy, wordmark opens ---------- */
+.masthead{
+  page:cover; break-after:page;
+  min-height:297mm; padding:var(--M15); box-sizing:border-box;
+  background:var(--navy); color:var(--foam);
+  display:flex; flex-direction:column; justify-content:space-between;
+}
+.mh-top{ display:flex; justify-content:space-between; align-items:center;
+  padding-bottom:7mm; border-bottom:1px solid color-mix(in srgb, var(--gold) 45%, transparent); }
+.mh-top .wm{ height:26px; width:auto; display:block; }
+.mh-top .wm svg{ height:26px; width:auto; }
+.mh-top .doc{ font:500 8.5pt var(--text); letter-spacing:.32em; text-transform:uppercase; color:var(--gold); }
+.masthead h1{ font-family:var(--display); font-weight:500; font-size:44pt; line-height:1.0; margin:0; color:#fff; }
+.mh-meta{ display:flex; border-top:1px solid color-mix(in srgb, var(--slate-light) 30%, transparent); padding-top:6mm; }
+.mh-meta > div{ flex:1; padding-right:8mm; }
+.mh-meta .lbl{ display:block; font:500 7.5pt var(--text); letter-spacing:.22em; text-transform:uppercase; color:var(--gold); margin:0 0 2mm; }
+.mh-meta .val{ font-size:9.5pt; color:var(--foam); line-height:1.45; }
+
+/* ---------- Footer meta closes the document (Overline role at the margin line) ---------- */
+.doc-footer{ margin-top:10mm; padding-top:4mm; border-top:1px solid var(--line);
+  font:500 7.5pt var(--text); letter-spacing:.18em; text-transform:uppercase; color:var(--slate); }
+</style>
+</head>
+<body>
+{{CONTENT}}
+</body>
+</html>
