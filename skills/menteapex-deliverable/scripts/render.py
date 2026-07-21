@@ -21,8 +21,10 @@ from pathlib import Path
 
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 # A fill-in slot is [bracketed prose] NOT immediately followed by "(" (which would
-# make it a Markdown link label, e.g. [text](url)).
-_PLACEHOLDER_RE = re.compile(r"\[[^\[\]]+\](?!\()")
+# make it a Markdown link label, e.g. [text](url)). A purely numeric bracket like [1]
+# is a footnote/reference marker, not a slot — a real slot always carries descriptive
+# prose — so the leading negative lookahead excludes it.
+_PLACEHOLDER_RE = re.compile(r"\[(?!\s*\d+\s*\])[^\[\]]+\](?!\()")
 
 
 def strip_comments(markdown: str) -> str:
@@ -345,16 +347,26 @@ def _find_chrome() -> str | None:
     return None
 
 
+def _file_url(path: Path) -> str:
+    """Absolute, percent-encoded file:// URI for Chrome.
+
+    A relative path (e.g. from `--out .`) would otherwise yield `file://out/x.html`,
+    where Chrome reads "out" as the host and prints an error page into the PDF.
+    """
+    return Path(path).resolve().as_uri()
+
+
 def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
     """Render a self-contained HTML file to PDF via headless Chrome. Returns success."""
     chrome = _find_chrome()
     if not chrome:
         print("⚠ Chrome/Chromium not found — skipping PDF; HTML written.", file=sys.stderr)
         return False
+    pdf_path = Path(pdf_path).resolve()
     subprocess.run(
         [chrome, "--headless=new", "--run-all-compositor-stages-before-draw",
          f"--print-to-pdf={pdf_path}", "--no-pdf-header-footer",
-         f"file://{html_path}"],
+         _file_url(html_path)],
         check=False, capture_output=True,
     )
     return pdf_path.exists() and pdf_path.stat().st_size > 0

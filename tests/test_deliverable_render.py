@@ -200,3 +200,47 @@ class TestCheckCli:
         doc = tmp_path / "offer.md"
         doc.write_text("**For:** Acme Ltd\nDate: 2026-07-21")
         assert render.main([str(doc), "--check"]) == 0
+
+
+class TestFootnoteMarkersAreNotPlaceholders:
+    # Some Legal/ templates carry numeric footnote markers like [1] [2]. Those are
+    # content, not fill-in slots — a real slot is always descriptive prose. The
+    # completeness gate must not flag them, or a legitimately-complete document fails.
+    def test_pure_numeric_bracket_is_a_footnote_marker_not_a_slot(self):
+        md = "See the schedule[1] and the annex[2]."
+        assert render.find_placeholders(md) == []
+
+    def test_multi_digit_footnote_marker_ignored(self):
+        assert render.find_placeholders("As noted[10] above.") == []
+
+    def test_prose_slot_alongside_footnote_marker_still_flagged(self):
+        md = "**For:** [Client / business] — see clause[3]."
+        assert render.find_placeholders(md) == ["[Client / business]"]
+
+    def test_currency_slot_with_digits_still_flagged(self):
+        # Only PURELY numeric brackets are markers; a slot like [€Y] keeps its digit.
+        assert render.find_placeholders("Price [€Y], value [€X].") == ["[€Y]", "[€X]"]
+
+    def test_check_passes_on_template_with_footnote_markers(self):
+        md = "All the prose is filled.\n\nReference[1] and note[2] remain as markers."
+        assert render.check(md) == []
+
+
+class TestFileUrl:
+    # Headless Chrome needs an absolute file:// URI. A relative --out path produced a
+    # malformed URL (`file://out/x.html` → host "out") that baked an error page into
+    # the PDF. Always resolve to an absolute, percent-encoded file URI.
+    def test_relative_path_becomes_absolute_file_uri(self):
+        url = render._file_url(Path("out/deliverable.html"))
+        assert url.startswith("file:///")
+        assert url.endswith("/out/deliverable.html")
+
+    def test_absolute_path_preserved(self, tmp_path):
+        target = tmp_path / "x.html"
+        assert render._file_url(target) == target.resolve().as_uri()
+
+    def test_spaces_are_percent_encoded(self, tmp_path):
+        target = tmp_path / "my doc.html"
+        url = render._file_url(target)
+        assert " " not in url
+        assert "my%20doc.html" in url

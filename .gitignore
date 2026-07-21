@@ -13,3 +13,6 @@ skills/*-workspace/
 
 # Lens reports (regenerable working artifacts)
 docs/reports/
+
+# Local eval set for the deliverable skill (references customer folders)
+skills/menteapex-deliverable/evals/
