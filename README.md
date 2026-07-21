@@ -9,7 +9,7 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 | Skill | Command | What it does |
 |-------|---------|-------------|
 | menteapex-onboarding | `/menteapex-onboarding` | Create HubSpot contact/company/deal + local Customers/ folder + registry entry |
-| menteapex-proposal | `/menteapex-proposal` | Generate branded proposal HTML/PDF from client brief |
+| menteapex-deliverable | `/menteapex-deliverable` | Render any client-facing deliverable (offer, proposal, agreement, licence, DPA, handover, update brief, pre-production notice) to on-brand HTML/PDF from the Legal/ Markdown source, in EN/es-ES/es-419/hr, then draft the client email |
 | menteapex-invoice | `/menteapex-invoice` | Generate branded invoice or service contract HTML/PDF |
 
 ### Dev workflow
@@ -83,7 +83,8 @@ a private Git remote you control):
 ## Requirements
 
 - `HUBSPOT_API_KEY` env var for automated HubSpot record creation (optional — falls back to manual instructions)
-- Business skills resolve paths from `$BUSINESS_ROOT` (default `$HOME/Documents/Business`)
-  and the brand reference from `$BRAND_REF` (default `$BUSINESS_ROOT/Customers/Tomislav/docs`,
-  holding fonts.css, proposal.html, embed_fonts.py). Override either to run on another machine.
+- Business skills resolve paths from `$BUSINESS_ROOT` (default `$HOME/Documents/Business`);
+  `/menteapex-deliverable` reads the live brand from `$BRAND_ROOT` (default
+  `$BUSINESS_ROOT/Brand`, holding `tokens/tokens.css`), falling back to vendored brand
+  assets beside the skill if the source is unreachable. Override either to run on another machine.
 - `git` + `python3` (standard library only — no pip installs) for the config-sync skills, plus a private Git repository to hold your config
