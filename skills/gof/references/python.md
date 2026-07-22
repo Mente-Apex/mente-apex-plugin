@@ -102,8 +102,8 @@ the idiomatic shape; reach for a parser-generator library instead of a
 hand-rolled Interpreter class hierarchy once the grammar grows past a
 handful of rules.
 
-**Iterator** — `__iter__` returning a generator (or the class itself being
-a generator function) beats a hand-written `Iterator` class with manual
+**Iterator** — `__iter__` implemented as a generator function (or returning
+one) beats a hand-written `Iterator` class with manual
 `__next__`/`StopIteration` bookkeeping in almost every case. Only write an
 explicit iterator class when the iteration needs to be paused, inspected,
 or restarted mid-stream in ways a generator can't express cleanly.

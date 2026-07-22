@@ -20,8 +20,10 @@ Check, in order:
 Greenfield defaults: `tests/` directory, `test_` prefix, `conftest.py` for shared
 fixtures, plain `assert` statements.
 
-During the cycle, run the single new test first (`pytest tests/test_x.py::test_name -x -q`),
-then the full suite.
+During the cycle, run the single new test first — prefixed with the project's
+runner so it resolves the same interpreter/plugins as the suite
+(`uv run pytest tests/test_x.py::test_name -x -q`, `poetry run pytest …`, or bare
+`pytest` only if that is how the project runs it), then the full suite.
 
 ## Fixtures are the injection seam
 
@@ -50,8 +52,14 @@ def test_raises_on_duplicate_email(user_repository):
         user_repository.add(User(name="Bob", email="alice@example.com"))
 ```
 
-Assert on the exception type, not string matching against the message, unless the
-message itself is the contract.
+Assert on the exception type, not string matching against the message. When the
+message *is* the contract, pin it with `match=` — note it is a regex `re.search`
+(partial match; escape metacharacters, e.g. `re.escape(...)`), not an equality:
+
+```python
+with pytest.raises(DuplicateEmailError, match=r"already exists"):
+    user_repository.add(User(name="Bob", email="alice@example.com"))
+```
 
 ## Parametrize for variations
 
@@ -66,8 +74,9 @@ Use parametrize when testing the *same behavior* with different inputs. Distinct
 behaviors get distinct tests — cramming them into one parametrized test hides which
 specification broke.
 
-In the one-test-at-a-time cycle, a parametrized test counts as one test: introduce it
-with one case, make it pass, then add cases one at a time — each new case is its own
+In the one-test-at-a-time cycle, a parametrized test counts as one test *function*,
+but each case is a separate test item pytest collects and reports — so introduce it
+with one case, make it pass, then add cases one at a time; each new case is its own
 RED step if it fails.
 
 ## Useful built-ins before reaching for anything else
