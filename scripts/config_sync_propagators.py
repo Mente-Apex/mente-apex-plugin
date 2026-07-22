@@ -198,6 +198,22 @@ def _payload_files(entry: Path, export_filter: "BundleExportFilter | None" = Non
     return payload
 
 
+#: kind -> required entrypoint filename a bundle payload must carry to be valid.
+#: A skill without SKILL.md (or an agent/skill dir reduced to only filtered-out
+#: scratch) is broken; exporting it would clobber the last-good bundle network-wide.
+_REQUIRED_ENTRYPOINT = {"skill": "SKILL.md"}
+
+
+def _is_exportable_payload(kind: str, payload: dict) -> bool:
+    """True when a bundle payload is safe to export: non-empty and carrying its
+    required entrypoint. Guards export against propagating an empty / broken
+    skill/agent (#73) — an empty payload must never overwrite a good bundle."""
+    if not payload:
+        return False
+    entrypoint = _REQUIRED_ENTRYPOINT.get(kind)
+    return entrypoint is None or entrypoint in payload
+
+
 def _content_hash(payload: dict) -> str:
     hasher = hashlib.sha256()
     for relative_path in sorted(payload):
@@ -377,6 +393,13 @@ class ContentBundlePropagator:
             if existing_tombstone is not None and existing_tombstone.deleted_at < deleted_at:
                 self._ledger.clear_tombstone(context.repo_dir, kind, name)
             payload = _payload_files(entry, self._export_filter)
+            if not _is_exportable_payload(kind, payload):
+                # Empty or entrypoint-less source: leave the last-good bundle intact
+                # and do NOT tombstone it — there is simply nothing valid to export.
+                result.warnings.append(
+                    f"{kind}/{name}: skipped — empty or missing entrypoint "
+                    f"({_REQUIRED_ENTRYPOINT.get(kind, 'content')}); last-good bundle preserved")
+                continue
             local_hash = _content_hash(payload)
             bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
             if _read_manifest(bundle_dir).get("content_hash") == local_hash:
