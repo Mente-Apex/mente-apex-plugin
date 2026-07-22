@@ -15,22 +15,50 @@ the **degrade path** below and state "agent-driven (no graph tool)" in the repor
 
 Compute Instability (the SDP metric) using fan-in and fan-out:
 
+A component is a sub-package, not a single module — so fan-in/fan-out must
+aggregate every module in the sub-tree, not just the `__init__`. `grimp`'s direct
+-import methods work on one module node, so gather each component's descendants and
+count only the edges that cross a component boundary:
+
 ```python
 import grimp
 
-graph = grimp.build_graph("your_top_package")          # the package under audit
-components = graph.find_children("your_top_package")     # the sub-packages = components
+top_package = "your_top_package"
+graph = grimp.build_graph(top_package)
+components = graph.find_children(top_package)        # the sub-packages = components
+
+def modules_of(component):                            # the component node + its whole sub-tree
+    return {component} | graph.find_descendants(component)
+
+def owning_component(module):                         # map any module back to its component
+    for component in components:
+        if module == component or module.startswith(component + "."):
+            return component
+    return None                                       # external / top-level module
 
 for component in sorted(components):
-    fan_out = len(graph.find_modules_directly_imported_by(component))  # efferent
-    fan_in = len(graph.find_modules_that_directly_import(component))    # afferent
+    efferent_components, afferent_components = set(), set()
+    for module in modules_of(component):
+        for imported_module in graph.find_modules_directly_imported_by(module):
+            owner = owning_component(imported_module)
+            if owner is not None and owner != component:      # skip intra-component edges
+                efferent_components.add(owner)
+        for importing_module in graph.find_modules_that_directly_import(module):
+            owner = owning_component(importing_module)
+            if owner is not None and owner != component:
+                afferent_components.add(owner)
+    fan_out, fan_in = len(efferent_components), len(afferent_components)  # Ce, Ca
     denominator = fan_in + fan_out
-    instability = fan_out / denominator if denominator else 0.0         # SDP metric
+    # isolated component (no cross-component edges) → treated as maximally stable (I=0)
+    instability = fan_out / denominator if denominator else 0.0           # SDP metric
     print(component, round(instability, 2))
 ```
-Cycles (ADP): `grimp` exposes them directly —
-`graph.find_illegal_dependencies_for_layers(...)` for layered contracts, and cycle
-detection over `find_children`. Report each cycle as the chain of components.
+Cycles (ADP): `grimp` has **no** built-in cycle finder —
+`find_illegal_dependencies_for_layers(...)` checks a *layered* contract, not cycles.
+Build the component edge set from the fan-in/fan-out pass above and run a small
+SCC/DFS over it to enumerate cycles; to confirm a suspected pair, `graph.find_shortest_chain(a, b)`
+and `graph.find_shortest_chain(b, a)` both returning a chain proves a 2-cycle.
+Report each cycle as the chain of components.
 
 ## `import-linter` — the Dependency Rule as contracts
 

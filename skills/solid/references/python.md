@@ -36,9 +36,9 @@ with a sensible default so call sites stay simple:
 
 ```python
 class OrderService:
-    def __init__(self, repo: OrderRepository, mailer: Mailer) -> None:
+    def __init__(self, repo: OrderRepository, mailer: Mailer | None = None) -> None:
         self._repo = repo
-        self._mailer = mailer
+        self._mailer = mailer or SmtpMailer()   # None sentinel, not a mutable default
 ```
 
 Kill module-level singletons created at import time (`db = SqliteDb()`); move

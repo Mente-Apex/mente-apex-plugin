@@ -108,8 +108,8 @@ class AggregateRoot(ABC):
         self._events.clear()
         return recorded_events
 
-    def __eq__(self, other) -> bool:              # identity equality
-        return isinstance(other, type(self)) and other.id == self.id
+    def __eq__(self, other) -> bool:              # identity equality, exact type (symmetric)
+        return type(self) is type(other) and other.id == self.id
 
     def __hash__(self) -> int:
         return hash(self._id)
@@ -147,6 +147,7 @@ composition root. It returns a fully-constituted `Order`, never a row.
 ## Unit of work
 
 ```python
+from collections.abc import Iterator
 from typing import Protocol
 
 class UnitOfWork(Protocol):
@@ -154,7 +155,7 @@ class UnitOfWork(Protocol):
     def __enter__(self) -> "UnitOfWork": ...
     def __exit__(self, *exception_details) -> None: ...
     def commit(self) -> None: ...
-    def collect_new_events(self) -> list: ...
+    def collect_new_events(self) -> Iterator[DomainEvent]: ...   # a generator; annotate as what it yields
 
 class SqlAlchemyUnitOfWork:
     def __init__(self, session_factory):
@@ -184,8 +185,13 @@ in `ddd-core.md`).
 ## Application service — orchestrates, holds no business rules
 
 ```python
+from typing import Protocol
+
+class EventBus(Protocol):                    # the other injected port — typed, like the UoW
+    def publish(self, domain_event: DomainEvent) -> None: ...
+
 class PlaceOrderService:
-    def __init__(self, unit_of_work: UnitOfWork, event_bus):
+    def __init__(self, unit_of_work: UnitOfWork, event_bus: EventBus):
         self._unit_of_work = unit_of_work   # both injected — DIP
         self._event_bus = event_bus
 
