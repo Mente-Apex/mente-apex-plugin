@@ -1,7 +1,8 @@
 ---
 name: ddd
 description: >-
-  Domain-Driven Design for Python-first codebases, in two modes. DESIGN mode
+  Domain-Driven Design for object-oriented codebases, with deep idiom support for
+  Python and TypeScript, in two modes. DESIGN mode
   models a new domain (adaptive: inference-first, or facilitated event storming
   for tangled domains), gates the ubiquitous language + bounded contexts +
   aggregates for human sign-off, then drives the tdd skill to build it
@@ -31,8 +32,9 @@ layer ordering, and dependency direction**; it delegates the red-green cycle to
 
 **Progressive disclosure.** Load only what the domain warrants:
 `references/ddd-core.md` always; `references/strategic.md` only when more than
-one bounded context is in play; `references/python.md` for Python idioms;
-`references/report-template.md` + `agents/*` only in `analyze` mode.
+one bounded context is in play; `references/<language>.md` for the detected
+language's idioms (ships `python.md`, `typescript.md`; list `references/` for the
+current set); `references/report-template.md` + `agents/*` only in `analyze` mode.
 
 ## Invocation
 
@@ -194,8 +196,11 @@ capture key findings (and any kept domain decisions) to the memory brain.
   read.
 - `references/strategic.md` — event storming, subdomain classification, context-
   mapping catalogue. Load only for >1-context domains.
-- `references/python.md` — Python idioms (value objects, Protocol ports,
-  SQLAlchemy repository/UoW).
+- `references/<language>.md` — the detected language's tactical idioms (value
+  objects, ports, repository/UoW). Ships `python.md` (frozen dataclasses,
+  `Protocol` ports, SQLAlchemy) and `typescript.md` (readonly VOs, branded-type
+  ids, `interface` ports, async Prisma repos); list `references/` for the current
+  set. New languages drop in here.
 - `references/report-template.md` — exact `analyze` report format.
 - `agents/analyzer.md`, `agents/reviewer.md` — the two `analyze` subagent roles.
 - `../../docs/git-convention.md` — working-branch + offer-never-auto-publish.

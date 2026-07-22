@@ -9,9 +9,10 @@ description: >-
   replaceable detail?), import cycles (ADP), and stability direction (SDP).
   Secondary checks (opt-in) cover component cohesion (REP/CCP/CRP), Screaming
   Architecture, and the composition root; an opt-in appendix reports the
-  abstractness / Main-Sequence metrics (approximate in Python). Audit-first, no
-  build mode — building the layered shape is /ddd's job. Emits an import-linter
-  contract as a leave-behind CI tripwire. Use for "/clean-architecture",
+  abstractness / Main-Sequence metrics (approximate). Audit-first, no
+  build mode — building the layered shape is /ddd's job. Emits a dependency-rule
+  contract (import-linter for Python, dependency-cruiser for JS/TS) as a
+  leave-behind CI tripwire. Use for "/clean-architecture",
   dependency rule, boundaries, framework as a detail, import cycles, component
   cohesion/coupling, stable dependencies, screaming architecture, composition
   root.
@@ -57,22 +58,25 @@ rubric.
   import cycles (ADP); stability direction (SDP).
 - **Secondary (opt-in):** component cohesion (REP/CCP/CRP); Screaming
   Architecture; Main Component / composition root.
-- **Appendix (opt-in):** abstractness / Main-Sequence metrics — **approximate in
-  Python**; structural-health context, never a finding to refactor toward.
+- **Appendix (opt-in):** abstractness / Main-Sequence metrics — **approximate**
+  (see the language reference for the per-language caveat); structural-health
+  context, never a finding to refactor toward.
 
 ## Tooling posture (tool-assisted, graceful fallback)
 
 Detect a graph tool and use it when present; **degrade to agent-driven import
-reading** when not (say which mode ran in the report). See
-[references/python.md](references/python.md): `grimp` + `import-linter` (Python),
-`dependency-cruiser`/`madge` (TS), via any available runner (`uvx`, `pipx run`,
-project-local) — never a hard install.
+reading** when not (say which mode ran in the report). The detected language's
+`references/<language>.md` names the tools and the how-to: `grimp` +
+`import-linter` (`python.md`), `dependency-cruiser` / `madge` (`typescript.md`),
+via any available runner (`uvx`, `pipx run`, `npx`, `pnpm dlx`, project-local) —
+never a hard install.
 
 ## Leave-behind artifact
 
-The Dependency-Rule findings compile to an **`import-linter` contract**
-(`importlinter.ini`) written into the report dir — a one-time audit becomes a
-repeatable CI guardrail. Offered for the user to commit; never committed silently.
+The Dependency-Rule findings compile to a **dependency-rule contract** in the
+detected language's tool (`importlinter.ini` for Python, `.dependency-cruiser.cjs`
+for JS/TS) written into the report dir — a one-time audit becomes a repeatable CI
+guardrail. Offered for the user to commit; never committed silently.
 
 ## Flow (audit-first; apply opt-in)
 
@@ -87,7 +91,7 @@ Follows the shared workflow, Phases 0–3; apply (4–5) is opt-in and conservat
    every finding, tiers Critical/Major/Minor, cross-references the hub, writes
    `docs/reports/clean-architecture/CLEAN-ARCHITECTURE-REPORT-<YYYY-MM-DD>.md` per
    [references/report-template.md](references/report-template.md), and drafts the
-   `import-linter` contract.
+   dependency-rule contract.
 4. **Phase 3 — Decision gate.** Present the summary. Most CA fixes are large
    (High-risk architectural moves) and stay advisory; **only mechanical, low-risk
    fixes** (break a cycle by moving a class, introduce a boundary port) are opt-in
@@ -107,8 +111,10 @@ Follows the shared workflow, Phases 0–3; apply (4–5) is opt-in and conservat
 
 - [references/principles.md](references/principles.md) — the tiered rubric,
   violation signatures, when-NOT-to, tier assignment. Both analysis agents read it.
-- [references/python.md](references/python.md) — tool detection, metric how-to,
-  the import-linter contract, graceful degrade.
+- `references/<language>.md` — graph-tool detection, metric how-to, the
+  dependency-rule contract, and graceful degrade for a detected language; ships
+  `python.md` and `typescript.md` today (list the `references/` dir for the
+  current set). New languages drop in here.
 - [references/report-template.md](references/report-template.md) — report format.
 - [agents/analyzer.md](agents/analyzer.md), [agents/reviewer.md](agents/reviewer.md),
   [agents/implementer.md](agents/implementer.md) — the three roles.

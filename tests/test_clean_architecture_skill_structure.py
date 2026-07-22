@@ -83,7 +83,7 @@ def test_principles_cover_the_tiered_rubric():
         "REP", "CCP", "CRP",
         "Screaming Architecture", "composition root",
         "Instability", "Main Sequence",
-        "approximate in Python",   # the metrics caveat
+        "approximate",             # the metrics caveat (now language-neutral)
         "When NOT",                # judgment block
     ]
     missing = [concept for concept in required if concept.lower() not in text.lower()]
@@ -102,6 +102,16 @@ def test_python_reference_covers_tooling_and_degrade():
     assert "runtime_checkable" not in text  # sanity: this is CA, not the ddd port ref
 
 
+def test_typescript_reference_covers_tooling_and_degrade():
+    text = read_skill_file("references/typescript.md")
+    lowered = text.lower()
+    for tool in ["dependency-cruiser", "madge", ".dependency-cruiser"]:
+        assert tool in lowered, f"typescript.md missing tool: {tool}"
+    assert "fan-in" in lowered and "fan-out" in lowered, "must show how to compute Instability"
+    assert "degrade" in lowered or "fallback" in lowered, "must give the no-tool degrade path"
+    assert "erased" in lowered, "must state the interfaces-erased abstractness caveat for TS"
+
+
 def test_report_template_has_structure_contract_and_appendix():
     text = read_skill_file("references/report-template.md")
     # Assert one example ID per tier by *shape* (clean-arch/<tier>-<n>), not literal
@@ -110,7 +120,7 @@ def test_report_template_has_structure_contract_and_appendix():
         assert re.search(rf"\[clean-arch/{tier}-\d+\]", text), \
             f"report-template.md missing a clean-arch/{tier}-<n> example ID"
     for marker in ["Tier", "Status", "pending",
-                   "import-linter contract", "Analysis mode", "Structural health"]:
+                   "Dependency-rule contract", "Analysis mode", "Structural health"]:
         assert marker in text, f"report-template.md missing: {marker}"
 
 
@@ -120,10 +130,17 @@ def test_agents_state_their_contracts():
     implementer = read_skill_file("agents/implementer.md")
     assert "read-only" in analyzer.lower()
     assert "findings-draft.md" in analyzer
-    assert "principles.md" in analyzer and "python.md" in analyzer
+    assert "principles.md" in analyzer
+    # agent docs must follow the detect-and-load convention, not hardcode one language
+    assert "<language>.md" in analyzer, "analyzer must load references/<language>.md"
+    assert "typescript.md" in analyzer and "python.md" in analyzer, \
+        "analyzer must not have regressed to Python-only"
     assert "report-template.md" in reviewer
     assert "lens-overlap.md" in reviewer                     # cross-reference the hub
-    assert "importlinter" in reviewer.lower()                # drafts the contract
+    assert "<language>.md" in reviewer, "reviewer must load references/<language>.md"
+    assert "dependency-rule contract" in reviewer.lower()    # language-neutral contract
+    assert "importlinter" in reviewer.lower() and "dependency-cruiser" in reviewer.lower(), \
+        "reviewer must name both the Python and JS/TS contract tools"
     assert "mechanical" in implementer.lower() and "refactor-jobs.md" in implementer
     assert "advisory" in implementer.lower() or "opt-in" in implementer.lower()
 

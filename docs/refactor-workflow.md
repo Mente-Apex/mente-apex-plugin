@@ -46,8 +46,9 @@ the workflow usable non-interactively.
 Before any agent runs, establish ground truth yourself:
 
 1. **Scope**: list the target tree (skip vendored/generated dirs: node_modules,
-   .venv, dist, build, migrations, *_pb2.py, lockfiles). Note languages, rough
-   size, entry points.
+   .venv, dist, build, migrations, *_pb2.py, lockfiles). Note rough size and
+   entry points, and record the **detected language set** — this drives which
+   language reference each later phase loads (see the convention below).
 2. **Test suite**: detect it and record the exact command (see the lens's
    language references, or for other stacks the project's README/CI config).
    Then **run it once**. The baseline matters: a failure after a refactor is
@@ -62,12 +63,33 @@ Before any agent runs, establish ground truth yourself:
    Reports are ephemeral working artifacts by default; the user may choose to
    commit a final report as a living doc at the end.
 
+### Language references — the detect-and-load convention
+
+Lenses stay **language-agnostic in the body**; every language specific lives in a
+reference file, and Phase 0's detected-language set decides which ones load. This
+is the Open/Closed seam of the toolkit: **adding a language is adding a file, never
+editing a SKILL body.**
+
+- **Analysis lenses** load `references/<language>.md` (e.g. `python.md`,
+  `typescript.md`) for each detected language — per-principle/per-pattern idioms,
+  tool detection, and test-suite discovery.
+- **The apply engine** (`tdd`) loads `references/<language>-<runner>.md` (e.g.
+  `python-pytest.md`, `typescript-vitest.md`), keyed on the detected test runner.
+- **No matching reference → degrade gracefully**: apply the language-agnostic
+  rubric/cycle, discover test conventions from the repo, and note in the report
+  that idiom-specific guidance wasn't available (an adapter could be added next
+  time). Absence is a recorded coverage note, never a silent gap.
+
+To see which languages a lens currently ships deep support for, list its
+`references/` directory — don't rely on a hard-coded list in prose.
+
 ## Phase 1 — Analyzer
 
-Spawn the analyzer with: the target path, the scope notes from Phase 0, and
-instructions to read `docs/refactor-agents/analyzer.md` plus the lens's
-rubric (`references/<rubric>.md`) — and the matching language reference where
-one exists. It produces `docs/reports/<lens>/findings-draft.md` — evidence-backed
+Spawn the analyzer with: the target path, the scope notes from Phase 0 (including
+the detected-language set), and instructions to read `docs/refactor-agents/analyzer.md`
+plus the lens's rubric (`references/<rubric>.md`) and — per the detect-and-load
+convention above — `references/<language>.md` for each detected language that has
+one. It produces `docs/reports/<lens>/findings-draft.md` — evidence-backed
 candidate findings, not yet trusted.
 
 ## Phase 2 — Reviewer
