@@ -19,7 +19,7 @@ description: >-
   (design principles, patterns, dependency structure, domain model, line craft).
 user-invocable: true
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # code-quality — the five-lens umbrella audit
@@ -83,8 +83,9 @@ lens's `references/<language>.md` for each detected language that has one
 | gof | `skills/gof/agents/analyzer.md` | — |
 | clean-code | `skills/clean-code/agents/analyzer.md` | **deep gear** (two-stage, writes a report — not the inline quick gear) |
 
-Each writes its `docs/reports/<lens>/findings-draft.md`. Collect all five before
-the next wave; a lens that errors is a recorded coverage gap, not a blocker.
+Each analyzer writes its own `docs/reports/<lens>/findings-draft.md` — **you read
+those files, you never write them for the subagents.** Collect all five before the
+next wave; a lens that errors is a recorded coverage gap, not a blocker.
 
 ### Phase 2 — Fan out the five reviewers (parallel)
 
@@ -133,7 +134,14 @@ and offer to commit/PR via `/ship`; never auto-publish.
   lenses missed, it goes in the report's Coverage notes, not into the diff.
 - **Absence is data, never silence.** A lens that errors or finds nothing is
   recorded in the consolidated report's Coverage section. A missing report can then
-  only mean an agent died — say so loudly and proceed; a silent hole is worse.
+  only mean an agent died — say so loudly and proceed; a silent hole is worse. And
+  **you never write a lens artifact yourself:** a lens analyzer or reviewer that
+  returns its findings as chat text instead of writing its `docs/reports/<lens>/`
+  file has *failed to complete* — re-dispatch it with that instruction, don't
+  persist the draft for it. There is no "findings come back as text" mode here (that
+  is the built-in `/code-review` pattern, not this workflow); writing a lens's draft
+  on its behalf both defeats the death-detection above and collapses that lens's
+  analyzer↔reviewer independence.
 - **Reuse, don't fork.** The gate, the apply engine, the report field semantics,
   and the overlap hub are shared. This skill adds fan-out + consolidation and
   nothing else; if you find yourself restating a lens's rubric or the apply
