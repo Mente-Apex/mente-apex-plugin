@@ -53,10 +53,17 @@ Phase-0 scope/baseline notes.
    "use Strategy" — fold that into the note).
 
 5. **Build the Grouped changes section.** Whenever an overlap resolves to **one
-   physical edit** touching 2+ findings, add a `### One edit — …` banner listing the
-   Primary and each related finding with its label and a one-line "what it is". This
-   is the reader's map for "why do four codes point at the same lines"; a finding
-   that stands alone never appears here. If nothing clustered, omit the section.
+   physical edit** touching 2+ findings, add a `### [group-<n>] One edit — …` banner —
+   give each group a stable id (`group-1`, `group-2`, …) so the shared gate and apply
+   can address it. List the Primary and each related finding with its label and a
+   one-line "what it is", and **annotate each rider for apply**: `Same change` /
+   `Fix mechanism` / `Sub-symptom` are **subsumed** (they resolve automatically with
+   the Primary's edit — mark them `*(subsumed)*`), while `Rides along` is **separable**
+   (its own follow-on edit in the same job, vetoable — mark it `*(separable)*`). End the
+   banner with the two-part apply-instruction: apply the Primary (subsumed riders resolve
+   with it); then apply each separable rider as a follow-on step unless vetoed. The
+   group's tier is the Primary's tier. A finding that stands alone never appears here.
+   If nothing clustered, omit the section.
 
 6. **Write the per-finding Related line.** Every finding still gets a full entry
    under its tier section. Replace any bare cross-reference with the typed **Related**

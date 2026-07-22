@@ -84,14 +84,21 @@ never left guessing why four codes point at the same lines. Findings that stand
 alone are not listed here — they appear only under Recommendations. Omit this
 whole section if nothing clustered.
 
-### One edit — <imperative title of the physical change>   [resolves <k> findings across <j> lenses]
+### [group-1] One edit — <imperative title of the physical change>   [resolves <k> findings across <j> lenses]
+
+Give every group a stable id (`group-1`, `group-2`, …) so the gate and apply can
+reference it. The group's tier is its **Primary's** tier.
 
 - **Primary** · `clean-arch/major-1` — <what it is, one line>. *Owns the fix.*
-- **Same change** · `clean-arch/major-2` — <the same edge seen as a different violation>.
-- **Fix mechanism** · `solid/major-5` — <the how, not a separate edit>.
-- **Sub-symptom** · `clean-arch/minor-2` — <vanishes once the primary lands>.
+- **Same change** · `clean-arch/major-2` — <the same edge, a different violation>. *(subsumed — resolves with the Primary; not vetoable)*
+- **Fix mechanism** · `solid/major-5` — <the how, not a separate edit>. *(subsumed)*
+- **Sub-symptom** · `clean-arch/minor-2` — <vanishes once the primary lands>. *(subsumed)*
+- **Rides along** · `clean-code/minor-5` — <adjacent cleanup enabled by the primary>. *(separable — its own step in the same job; vetoable)*
 
-Apply `clean-arch/major-1`; the rest resolve with it.
+Apply `clean-arch/major-1` (subsumed riders resolve with it); then apply each
+**Rides along** rider as a follow-on step in the *same* job, unless vetoed at the gate.
+Omit any rider role that has no member. A group whose riders are all subsumed keeps
+just the first clause.
 
 ## Recommendations
 
