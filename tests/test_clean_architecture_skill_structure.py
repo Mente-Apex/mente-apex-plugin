@@ -104,7 +104,12 @@ def test_python_reference_covers_tooling_and_degrade():
 
 def test_report_template_has_structure_contract_and_appendix():
     text = read_skill_file("references/report-template.md")
-    for marker in ["[C1]", "[M1]", "[N1]", "Tier", "Status", "pending",
+    # Assert one example ID per tier by *shape* (clean-arch/<tier>-<n>), not literal
+    # numbers, so renumbering or re-tiering the examples never trips this guard.
+    for tier in ("critical", "major", "minor"):
+        assert re.search(rf"\[clean-arch/{tier}-\d+\]", text), \
+            f"report-template.md missing a clean-arch/{tier}-<n> example ID"
+    for marker in ["Tier", "Status", "pending",
                    "import-linter contract", "Analysis mode", "Structural health"]:
         assert marker in text, f"report-template.md missing: {marker}"
 

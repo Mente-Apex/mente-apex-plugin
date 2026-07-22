@@ -72,7 +72,7 @@ def test_standard_has_the_fifteen_principles_and_three_new_chapters():
         assert new_marker in lowered, f"standard missing new content: {new_marker}"
     # the meta-rule + severity rubric survive the move
     assert "meta-rule" in lowered
-    for severity in ["High", "Medium", "Low"]:
+    for severity in ["Critical", "Major", "Minor"]:
         assert severity in text, f"standard missing severity level: {severity}"
 
 
@@ -109,7 +109,11 @@ def test_deep_gear_agents_state_their_contracts():
 
 def test_report_template_has_the_expected_structure():
     text = read_skill_file("references/report-template.md")
-    for marker in ["[G1]", "Principle", "Severity", "High", "Medium", "Low", "Hand-offs"]:
+    # Assert the ID *shape* (clean-code/<tier>-<n>), not a literal example number, so
+    # renumbering or re-tiering the template's examples never trips this guard.
+    assert re.search(r"\[clean-code/(critical|major|minor)-\d+\]", text), \
+        "report-template.md missing a clean-code/<tier>-<n> example ID"
+    for marker in ["Principle", "Severity", "Critical", "Major", "Minor", "Hand-offs"]:
         assert marker in text, f"report-template.md missing: {marker}"
 
 

@@ -78,7 +78,7 @@ re-tiers what does, hunts for cross-file violations the analyzer's
 file-by-file pass tends to miss, and **cross-references the other lens** —
 check [docs/lens-overlap.md](lens-overlap.md) for findings that overlap or conflict with
 the sibling lens's territory so the two reports don't contradict each other —
-before writing the final report to `docs/reports/<lens>/<LENS>-REFACTOR-<YYYY-MM-DD>.md`
+before writing the final report to `docs/reports/<lens>/<LENS>-REPORT-<YYYY-MM-DD>.md`
 using the lens's `references/report-template.md` **exactly**: the apply
 phase depends on its structure (IDs, Risk and Status fields).
 
@@ -172,6 +172,26 @@ When a refactor job yields:
    commit and raise a PR (the plugin's `/ship` skill is exactly that flow).
    "Leave it on the branch" and "discard it" are first-class answers; pushing
    needs an explicit yes even when the apply phase was pre-authorized.
+
+## Status & Apply-log format (canonical)
+
+Every apply-capable lens report ends with the same two mechanics. The lens report
+templates lay down the *skeleton* (the `Status:` line on each rec and an `## Apply
+log` heading); this section is the single definition of what fills them, so the
+templates point here instead of each restating it — if the vocabulary ever grows,
+it grows in one place.
+
+- **Status values** — each rec's `Status:` line moves through
+  `pending` → `applied` | `failed (reverted)` | `skipped (not approved)`. The
+  implementer edits only the `Status:` line of each rec it touches and appends to
+  the Apply log; it changes nothing else in the report.
+- **Apply-log lines** — the implementer appends one line per attempt under the
+  report's `## Apply log` heading:
+  - applied: `<UTC timestamp> [<rec-id>] applied — suite green (42 passed) — diffstat: 3 files, +120/-85`
+  - reverted: `<UTC timestamp> [<rec-id>] FAILED — test_x broke, fix attempt failed, reverted`
+
+Analyze-only reports (`ddd`, `clean-code`) have no apply phase, so `Status:
+pending` there just records that a finding is unactioned and there is no Apply log.
 
 ## Guardrails
 

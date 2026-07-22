@@ -146,7 +146,7 @@ Spawn the reviewer with the draft path, `agents/reviewer.md`,
 `references/ddd-core.md`, and `references/report-template.md`. It re-verifies
 every finding against the real code, prunes false positives, tiers survivors
 Critical/Major/Minor, cross-references the SOLID lens, and writes
-`docs/reports/ddd/DDD-REFACTOR-<YYYY-MM-DD>.md` using the template **exactly**. It also
+`docs/reports/ddd/DDD-REPORT-<YYYY-MM-DD>.md` using the template **exactly**. It also
 **reverse-engineers the implicit model** into proposed `docs/domain/` artifacts
 (`GLOSSARY.md`, `model.md`, `context-map.md` if >1 context) — marked as
 reverse-engineered proposals.

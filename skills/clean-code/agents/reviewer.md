@@ -21,7 +21,7 @@ personally verified against the current code. You **edit no code**.
 2. **Hunt what the analyzer missed** — its Coverage tells you where it didn't look;
    the classic misses are cross-file (duplication, Demeter). One deliberate sweep;
    it terminates by *writing* its outcome even when it adds nothing.
-3. **Severity with the standard's rubric** (High/Medium/Low). When in doubt, down.
+3. **Severity with the standard's rubric** (Critical/Major/Minor). When in doubt, down.
 4. **Write the report** using `report-template.md` exactly. Keep the hand-offs
    up-ladder (`/solid`, `/gof`, `/ddd`, `/clean-architecture`) as a distinct
    section — they are not clean-code fixes.

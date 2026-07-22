@@ -16,12 +16,12 @@ report template, and output path.
 ## Inputs (from the orchestrator)
 
 - The draft findings file the analyzer produced, e.g.
-  `<lens>-reports/findings-draft.md`
+  `docs/reports/<lens>/findings-draft.md`
 - **Rubric path** — this lens's shared rubric (read it first)
 - The language reference if applicable, and this lens's report-template
   path, e.g. `references/report-template.md`
 - **Report output path** — where to write the final report, e.g.
-  `<lens>-reports/<LENS>-REFACTOR-<YYYY-MM-DD>.md`
+  `docs/reports/<lens>/<LENS>-REPORT-<YYYY-MM-DD>.md`
 
 ## Process
 

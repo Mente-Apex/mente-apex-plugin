@@ -18,37 +18,70 @@ Phase-0 scope/baseline notes.
 ## What to do
 
 1. **Load every finding** from each present lens report, preserving its ID, tier,
-   Risk, Location, Evidence, Proposed change, and lens origin. Re-ID each as
-   `<LENS>-<origID>` (CA / DDD / SOLID / GOF / CC).
+   Risk, Location, Evidence, Proposed change, and lens origin. Each lens ID is
+   already globally unique and self-describing (`<lens>/<tier>-<n>`, e.g.
+   `solid/major-5`, `clean-code/major-2`) — **carry it verbatim; never re-prefix
+   or renumber.** A reader decodes it via the Legend, so you never invent a new code.
 
-2. **Find overlaps.** Two findings overlap when they name the **same smell at the
-   same location(s)** — e.g. a duplicated type-switch flagged by SOLID (OCP) and
-   GOF (Strategy), or a core-imports-framework flagged by CA (dependency rule),
-   DDD (missing port), and SOLID (DIP). Use the hub's rows to recognize the
+2. **Emit the Legend.** Copy the template's Legend block into the report, pruned to
+   only the codes that actually appear (drop a lens's row if it produced nothing,
+   drop a principle abbreviation no finding uses). The report must be decodable
+   without leaving the page — that is the whole point of the legend.
+
+3. **Find overlaps.** Two findings overlap when they name the **same smell at the
+   same location(s)** — e.g. a duplicated type-switch flagged by solid (OCP) and
+   gof (Strategy), or a core-imports-framework flagged by clean-arch (dependency
+   rule), ddd (missing port), and solid (DIP). Use the hub's rows to recognize the
    canonical pairs; also merge any two findings whose Locations substantially
    coincide even if the hub doesn't list them.
 
-3. **Pick the owner** for each overlap using the hub's altitude rule: file the
-   shared smell **once**, at the altitude where the fix lives, and reference the
-   rest. Precedence when several lenses claim it: **CA → DDD → SOLID → GOF → CC**
-   (widest structural altitude files it; line-level defers up-ladder). The other
-   lenses' IDs go in the merged finding's **Also seen by** field and in the
-   Cross-lens reconciliation table. Keep the **highest tier** among the merged
-   findings, and the clearest Proposed change (usually the owner's; if a lower
-   lens names the concrete fix idiom — "use Strategy" — fold that into the note).
+4. **Pick the owner and the relationship type.** For each overlap, use the hub's
+   altitude rule to choose the **Primary** — the finding at the altitude where the
+   fix actually lives (precedence when several claim it: **clean-arch → ddd → solid
+   → gof → clean-code**; widest structural altitude files it, line-level defers
+   up-ladder). Then label how each *other* finding relates to the Primary, using the
+   template's cross-reference vocabulary — this is the heart of making overlaps
+   legible instead of cryptic:
+   - **Same change** — a different lens/principle *view of the very same edit*
+     (e.g. the ADP-cycle view and the SDP dependency-direction view of one edge).
+   - **Fix mechanism** — names *how* the Primary is fixed, not a separate edit
+     (e.g. solid's DIP inversion is the mechanism that breaks clean-arch's cycle).
+   - **Sub-symptom** — a smaller smell that disappears once the Primary is applied.
+   - **Rides along** — a distinct but adjacent fix best done in the same edit.
+   Keep the **highest tier** among the merged findings, and the clearest Proposed
+   change (usually the Primary's; if a lower lens names the concrete fix idiom —
+   "use Strategy" — fold that into the note).
 
-4. **Surface tensions, don't resolve them.** The hub marks Singleton ↔ DIP as a
+5. **Build the Grouped changes section.** Whenever an overlap resolves to **one
+   physical edit** touching 2+ findings, add a `### One edit — …` banner listing the
+   Primary and each related finding with its label and a one-line "what it is". This
+   is the reader's map for "why do four codes point at the same lines"; a finding
+   that stands alone never appears here. If nothing clustered, omit the section.
+
+6. **Write the per-finding Related line.** Every finding still gets a full entry
+   under its tier section. Replace any bare cross-reference with the typed **Related**
+   line: name the group it belongs to, its role, and the Primary's ID — e.g.
+   `Fix mechanism in "Extract config_sync_fs.py leaf" (see Grouped changes); primary
+   is clean-arch/major-1`. A standalone finding's Related line is just `—`.
+
+7. **Surface tensions, don't resolve them.** The hub marks Singleton ↔ DIP as a
    genuine disagreement. When merged findings actually conflict (one lens wants a
-   module-level singleton, another wants injection), do **not** pick a winner —
-   list it under *Unresolved tensions* for the human to decide at the gate.
+   module-level singleton, another wants injection), do **not** pick a winner — list
+   it under *Unresolved tensions* for the human to decide at the gate.
 
-5. **Carry the non-overlapping findings** through unchanged (just re-IDed).
+8. **Carry the non-overlapping findings** through unchanged (verbatim ID, `Related: —`).
 
-6. **Write** `docs/reports/code-quality/CODE-QUALITY-<YYYY-MM-DD>.md` per the
-   template, sorted Critical → Major → Minor within which lens-origin order is
-   only cosmetic. Fill Summary counts *after* dedup (report both the deduped count
-   and how many overlaps were merged). Every finding's **Full detail** link points
-   back to the owning lens report so a reader can get the long-form evidence.
+9. **Write** `docs/reports/code-quality/CODE-QUALITY-<YYYY-MM-DD>.md` per the
+   template, Recommendations sorted Critical → Major → Minor. Fill Summary counts
+   *after* dedup (report the deduped count and how many findings folded into how many
+   grouped changes). Non-edit overlaps (hand-offs, overlaps adjudicated to no action)
+   go in **Cross-lens notes**, not Grouped changes. Every finding's **Full detail**
+   is a *relative* link into the owning lens report at the finding's anchor — the
+   exact shape is in the template's *Full detail* line; the anchor is the lens ID
+   with `/` rewritten to `-` (e.g. `clean-arch/major-1` → `#clean-arch-major-1`), and
+   the lens reviewers emit the matching `<a id>` in their reports so the link
+   resolves. Precede each finding you write with its own `<a id>` anchor too, so the
+   consolidated report is internally navigable.
 
 ## Guardrails
 
@@ -56,8 +89,8 @@ Phase-0 scope/baseline notes.
   verified. If something looks missed, note it in Coverage & method — don't add it
   as a finding.
 - **Never drop a finding silently.** Every input finding ends up either as a
-  standalone merged finding or folded into one via *Also seen by* — account for
-  all of them. A dropped finding is a bug.
+  standalone finding or folded into a grouped change via a typed *Related* label —
+  account for all of them. A dropped finding is a bug.
 - **Absence is data.** If the orchestrator says a lens errored or produced no
   report, record it in Coverage & method as a gap — never pretend it ran clean.
 - **You write one file and touch no code.** Apply is a later, human-gated phase.

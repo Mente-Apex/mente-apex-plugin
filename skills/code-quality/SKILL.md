@@ -85,7 +85,7 @@ the next wave; a lens that errors is a recorded coverage gap, not a blocker.
 
 Dispatch **five reviewer subagents**, one per lens (`skills/<lens>/agents/reviewer.md`),
 each given only its own lens's draft. They run their normal verified pass and write
-their lens's own report (e.g. `docs/reports/solid/SOLID-REFACTOR-<date>.md`). They
+their lens's own report (e.g. `docs/reports/solid/SOLID-REPORT-<date>.md`). They
 need **not** cross-reference each other here — because dedup is deferred to the
 consolidator, the five reviewers are independent and run concurrently. (If a
 reviewer cross-references the hub out of habit, that's harmless; the consolidator is

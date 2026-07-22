@@ -126,7 +126,12 @@ def test_python_reference_gives_the_protocol_vs_abc_decision():
 
 def test_report_template_has_the_parsed_structure():
     text = read_skill_file("references/report-template.md")
-    for marker in ["[C1]", "[M1]", "[N1]", "Tier", "Impact", "Status", "pending"]:
+    # Assert one example ID per tier by *shape* (ddd/<tier>-<n>), not literal numbers,
+    # so renumbering or re-tiering the template's examples never trips this guard.
+    for tier in ("critical", "major", "minor"):
+        assert re.search(rf"\[ddd/{tier}-\d+\]", text), \
+            f"report-template.md missing a ddd/{tier}-<n> example ID"
+    for marker in ["Tier", "Impact", "Status", "pending"]:
         assert marker in text, f"report-template.md missing: {marker}"
     assert "Target architecture sketch" in text
 

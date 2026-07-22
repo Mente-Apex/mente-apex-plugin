@@ -33,7 +33,7 @@ One entry per finding:
 - **Location:** `file:line` <all sites>
 - **Evidence:** <quote the key lines>
 - **Why it costs the reader:** <one or two sentences — not just the rule name>
-- **Suggested severity:** <High|Medium|Low> **Confidence:** <high|medium|low>
+- **Suggested severity:** <Critical|Major|Minor> **Confidence:** <high|medium|low>
 ```
 End with a **Coverage** section: what you examined, what you skipped and why.
 
