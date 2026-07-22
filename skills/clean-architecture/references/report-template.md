@@ -2,8 +2,20 @@
 
 The reviewer writes
 `docs/reports/clean-architecture/CLEAN-ARCHITECTURE-REPORT-<YYYY-MM-DD>.md` in
-exactly this shape. IDs `C1,C2,…` / `M1,…` / `N1,…`, permanent once assigned.
-Angle brackets are runtime fill-slots.
+exactly this shape. Angle brackets are runtime fill-slots.
+
+Rec IDs are self-describing: `clean-arch/<tier>-<n>`, where `<tier>` ∈ `critical |
+major | minor` — so `clean-arch/major-1` reads as "the first Major finding from
+the clean-architecture lens" with no legend lookup. The `clean-arch/` prefix makes
+every ID globally unique, so the code-quality umbrella carries it verbatim (no
+re-prefixing). IDs are permanent once assigned. The tier word records the tier **at
+first assignment**; if a finding is later re-tiered, the section heading it sits
+under is authoritative and the ID is left unchanged.
+
+**Anchors.** Precede each finding heading with an explicit anchor — the ID with
+`/`→`-`, e.g. `<a id="clean-arch-critical-1"></a>` above `#### [clean-arch/critical-1]` —
+so the code-quality umbrella's *Full detail* links can jump straight to it (markdown's
+auto-generated heading anchors don't handle the `/`).
 
 ```markdown
 # Clean-architecture Audit — <project> — <YYYY-MM-DD>
@@ -18,22 +30,23 @@ Angle brackets are runtime fill-slots.
 ## Findings
 
 ### Critical
-#### [C1] <short imperative title, e.g. "Lift the ORM out of the use-case layer">
+<a id="clean-arch-critical-1"></a>
+#### [clean-arch/critical-1] <short imperative title, e.g. "Lift the ORM out of the use-case layer">
 - **Check:** <Dependency Rule | ADP cycle | SDP | cohesion | screaming | composition root>
 - **Location:** `package / path:line` <all sites; for a cycle, the component chain>
 - **Evidence:** <the offending imports / the metric. No evidence, no finding.>
 - **Impact:** <why it hurts change-safety/testability — justifies the tier>
 - **Fix:** <concrete: introduce a port, invert the edge, extract a component,
   move construction to the composition root>
-- **Cross-ref:** <lens-overlap rec, e.g. "solid DIP" / "ddd missing port", or none>
+- **Related:** <lens-overlap rec, e.g. "solid DIP" / "ddd missing port", or none>
 - **Tier:** Critical
 - **Status:** pending
 
 ### Major
-#### [M1] ...
+#### [clean-arch/major-1] ...
 
 ### Minor
-#### [N1] ...
+#### [clean-arch/minor-1] ...
 
 ## import-linter contract (leave-behind)
 <the drafted importlinter.ini encoding the Dependency-Rule findings — offered as a
@@ -45,6 +58,6 @@ call out any Zone-of-Pain / Zone-of-Uselessness components — context, not find
 
 ## Reviewer notes
 - Draft findings pruned as false positives: <finding → reason>, or "none"
-- Cross-references filed to other lenses: <ids>, or "none"
+- Related findings filed to other lenses: <ids>, or "none"
 - Areas not examined: <coverage gaps>
 ```

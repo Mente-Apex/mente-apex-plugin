@@ -5,4 +5,4 @@ Your rubric is [../references/principles.md](../references/principles.md); your 
 template is [../references/report-template.md](../references/report-template.md).
 Cross-reference the GoF lens via
 [../../../docs/lens-overlap.md](../../../docs/lens-overlap.md). Final report:
-`docs/reports/solid/SOLID-REFACTOR-<YYYY-MM-DD>.md`.
+`docs/reports/solid/SOLID-REPORT-<YYYY-MM-DD>.md`.

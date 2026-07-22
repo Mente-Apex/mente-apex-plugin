@@ -233,36 +233,40 @@ When reviewing code, a diff, or a PR:
 
 ### Severity
 
-- **High** — bites correctness or makes the code genuinely hard to change: hidden
+These are the **same three tiers the other refactor lenses use** (critical / major /
+minor), so a clean-code finding needs no translation when it reaches the
+`/code-quality` umbrella.
+
+- **Critical** — bites correctness or makes the code genuinely hard to change: hidden
   side effects, SRP violations that tangle unrelated change, returned `null` that
   will crash, real duplicated logic that will drift, misleading names/comments.
-- **Medium** — clear readability or maintainability drag: too many/flag arguments,
+- **Major** — clear readability or maintainability drag: too many/flag arguments,
   unencapsulated complex conditionals, mixed abstraction levels, Demeter train
   wrecks, weak test structure.
-- **Low** — polish: minor naming, ordering, formatting (prefer the formatter).
+- **Minor** — polish: minor naming, ordering, formatting (prefer the formatter).
 
 ### Suggested output
 
 ```
 Clean-code review — <scope>
 
-High
+Critical
   path/to/file.py:42  Hidden side effect — load_config() also writes a cache file;
                       callers can't tell from the name. → split the write out, or
                       rename to load_and_cache_config().
 
-Medium
+Major
   path/to/file.py:88  Flag argument — render(items, isAdmin) branches into two
                       behaviors. → two functions: render() / renderForAdmin().
 
-Low
+Minor
   path/to/file.py:12  Name `tmp2` doesn't reveal intent. → `pendingInvoices`.
 
 Looks good
   - Error handling via exceptions, happy path stays clean.
   - Comment at :70 explains *why* the retry backoff is capped — keep it.
 
-Summary: 1 high, 1 medium, 1 low. The high one is worth fixing before merge.
+Summary: 1 critical, 1 major, 1 minor. The critical one is worth fixing before merge.
 ```
 
 If nothing meaningful is wrong, say so plainly — don't manufacture findings to look

@@ -1,12 +1,24 @@
 # DDD analyze report template
 
-The reviewer writes `docs/reports/ddd/DDD-REFACTOR-<YYYY-MM-DD>.md` in exactly this
+The reviewer writes `docs/reports/ddd/DDD-REPORT-<YYYY-MM-DD>.md` in exactly this
 shape. Structure is load-bearing — the orchestrator reads tiers to build the
-summary. Field names verbatim. IDs: `C1,C2,…` (Critical), `M1,…` (Major),
-`N1,…` (Minor); permanent once assigned.
+summary. Field names verbatim.
+
+Rec IDs are self-describing: `ddd/<tier>-<n>`, where `<tier>` ∈ `critical | major
+| minor` — so `ddd/major-1` reads as "the first Major finding from the DDD lens"
+with no legend lookup. The `ddd/` prefix makes every ID globally unique, so the
+code-quality umbrella carries it verbatim (no re-prefixing). IDs are permanent
+once assigned. The tier word records the tier **at first assignment**; if a
+finding is later re-tiered, the section heading it sits under is authoritative and
+the ID is left unchanged.
 
 This mode is **report-only** — there is no Status transition to `applied` and no
 apply log; `Status: pending` simply records that the finding is unactioned.
+
+**Anchors.** Precede each finding heading with an explicit anchor — the ID with
+`/`→`-`, e.g. `<a id="ddd-critical-1"></a>` above `#### [ddd/critical-1]` — so the
+code-quality umbrella's *Full detail* links can jump straight to it (markdown's
+auto-generated heading anchors don't handle the `/`).
 
 ```markdown
 # DDD Refactor Plan — <project name> — <YYYY-MM-DD>
@@ -23,7 +35,8 @@ apply log; `Status: pending` simply records that the finding is unactioned.
 
 ### Critical
 
-#### [C1] <short imperative title, e.g. "Lift order pricing out of the HTTP controller">
+<a id="ddd-critical-1"></a>
+#### [ddd/critical-1] <short imperative title, e.g. "Lift order pricing out of the HTTP controller">
 
 - **Smell:** <anemic domain model | domain logic in controller/ORM model |
   missing port (direct DB/HTTP in domain) | fat repository | aggregate without
@@ -38,11 +51,11 @@ apply log; `Status: pending` simply records that the finding is unactioned.
 
 ### Major
 
-#### [M1] ...
+#### [ddd/major-1] ...
 
 ### Minor
 
-#### [N1] ...
+#### [ddd/minor-1] ...
 
 ## Target architecture sketch
 

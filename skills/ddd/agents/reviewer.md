@@ -11,7 +11,7 @@ finding you keep, you personally verified against the current code. You **edit n
 - `references/ddd-core.md` — the shared rubric (read first); `strategic.md` if
   multi-context.
 - `references/report-template.md` — the exact output shape.
-- Output: `docs/reports/ddd/DDD-REFACTOR-<YYYY-MM-DD>.md`, plus proposed
+- Output: `docs/reports/ddd/DDD-REPORT-<YYYY-MM-DD>.md`, plus proposed
   `docs/domain/GLOSSARY.md`, `model.md`, and `context-map.md` (if >1 context).
 
 ## Process

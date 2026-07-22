@@ -1,12 +1,22 @@
 # Report template
 
-The reviewer writes `docs/reports/solid/SOLID-REFACTOR-<YYYY-MM-DD>.md` in exactly
+The reviewer writes `docs/reports/solid/SOLID-REPORT-<YYYY-MM-DD>.md` in exactly
 this shape. The structure is load-bearing: the orchestrator parses tiers and
 Risk fields to build the approval question, and the implementer updates Status
 and the Apply log in place. Keep the field names verbatim.
 
-Rec IDs: `C1, C2, …` (Critical), `M1, …` (Major), `N1, …` (Minor). IDs are
-permanent once assigned — later cycles append, never renumber.
+Rec IDs are self-describing: `solid/<tier>-<n>`, where `<tier>` ∈ `critical |
+major | minor` — so `solid/major-1` reads as "the first Major finding from the
+SOLID lens" with no legend lookup. The `solid/` prefix makes every ID globally
+unique, so the code-quality umbrella carries it verbatim (no re-prefixing). IDs
+are permanent once assigned — later cycles append, never renumber. The tier word
+records the tier **at first assignment**; if a finding is later re-tiered, the
+section heading it sits under is authoritative and the ID is left unchanged.
+
+**Anchors.** Precede each finding heading with an explicit anchor — the ID with
+`/`→`-`, e.g. `<a id="solid-critical-1"></a>` above `#### [solid/critical-1]` — so the
+code-quality umbrella's *Full detail* links can jump straight to it (markdown's
+auto-generated heading anchors don't handle the `/`).
 
 ```markdown
 # SOLID Refactor Plan — <project name> — <YYYY-MM-DD>
@@ -22,7 +32,8 @@ permanent once assigned — later cycles append, never renumber.
 
 ### Critical
 
-#### [C1] <short imperative title, e.g. "Split OrderManager god class">
+<a id="solid-critical-1"></a>
+#### [solid/critical-1] <short imperative title, e.g. "Split OrderManager god class">
 
 - **Principle:** <SRP | OCP | LSP | ISP | DIP>
 - **Location:** `path/to/file.py:120-310` <all affected sites>
@@ -39,11 +50,11 @@ permanent once assigned — later cycles append, never renumber.
 
 ### Major
 
-#### [M1] ...
+#### [solid/major-1] ...
 
 ### Minor
 
-#### [N1] ...
+#### [solid/minor-1] ...
 
 ## Reviewer notes
 
@@ -54,10 +65,11 @@ permanent once assigned — later cycles append, never renumber.
 ## Apply log
 
 <!-- Appended by the implementer, one line per attempt: -->
-<!-- <UTC timestamp> [C1] applied — suite green (42 passed) — diffstat: 3 files, +120/-85 -->
-<!-- <UTC timestamp> [M2] FAILED — test_x broke, fix attempt failed, reverted -->
+<!-- <UTC timestamp> [solid/critical-1] applied — suite green (42 passed) — diffstat: 3 files, +120/-85 -->
+<!-- <UTC timestamp> [solid/major-2] FAILED — test_x broke, fix attempt failed, reverted -->
 ```
 
-Status values: `pending` → `applied` | `failed (reverted)` | `skipped (not
-approved)`. The implementer edits the Status line of each rec it touches and
-appends to the Apply log; it changes nothing else in the report.
+The `Status:` vocabulary and the Apply-log line format are defined once in the
+shared workflow — see [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md)
+("Status & Apply-log format"). The skeleton above is what the reviewer lays down;
+the implementer fills it per that spec.
