@@ -103,22 +103,23 @@ report yourself before the gate.
 
 ### Phase 3 — Decision gate (human, shared)
 
-Follow the shared workflow's Phase 3 on the **consolidated** report: present counts
-by tier, the top wins across all lenses, anything High-risk, and any *Unresolved
-tensions* the consolidator surfaced (e.g. Singleton ↔ DIP). Ask which recs to apply
-by tier or ID — unless pre-authorized. **"None — just the report" is a first-class
-outcome**; stop there gracefully. Since the merged report carries each lens's
-original rec IDs, Risk, and Status fields verbatim, no lens-specific handling is
-needed here.
+Follow the shared workflow's Phase 3 on the **consolidated** report: present counts by
+tier, the top wins across all lenses, anything High-risk, and any *Unresolved tensions*
+the consolidator surfaced (e.g. Singleton ↔ DIP). The consolidated report carries a
+`## Grouped changes` section, so the shared gate presents those as units — approvable by
+title/id or by their Primary's tier, with separable `Rides along` riders individually
+vetoable. Standalone recs keep their verbatim IDs, Risk, and Status; approve by tier or
+id as usual. **"None — just the report" is a first-class outcome**; stop there gracefully.
 
 ### Phases 4–5 — Apply via TDD & final review (shared, opt-in)
 
-Approved recs apply through the **unchanged** shared Phase 4/5 (the TDD refactor
-engine). Each merged finding keeps its lens origin, so the implementer applies it
-with the fix idiom that lens intended. One working branch (`code-quality/<slug>`),
-one queue ordered Critical → Major → Minor, suite green after each — exactly as a
-single lens would, just spanning all five. Then verify the suite yourself and offer
-to commit/PR via `/ship`; never auto-publish.
+Approved recs apply through the shared Phase 4/5 (the TDD refactor engine), **unchanged
+by this skill**: a declared grouped change is one job (Primary + subsumed riders, then
+each approved separable rider, verified per the shared workflow), and ungrouped recs
+apply per-rec. Each merged finding keeps its lens origin, so the implementer applies it
+with the fix idiom that lens intended. One working branch (`code-quality/<slug>`), jobs
+ordered Critical → Major → Minor, suite green after each. Then verify the suite yourself
+and offer to commit/PR via `/ship`; never auto-publish.
 
 ## Guardrails
 

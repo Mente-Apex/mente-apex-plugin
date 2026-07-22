@@ -65,3 +65,13 @@ def test_implementer_has_group_apply_unit():
     assert "group" in text.lower(), "implementer must gain a group apply unit"
     assert "applied (via" in text, \
         "implementer must record subsumed riders as 'applied (via <primary>)'"
+
+
+def test_umbrella_skill_prose_is_group_aware():
+    text = read_cq("SKILL.md")
+    lowered = text.lower()
+    assert "group" in lowered, \
+        "umbrella SKILL.md must mention grouped-change approval/apply"
+    # the stale 'by tier or ID' phrasing must no longer be the only stated path
+    assert "grouped change" in lowered or "as units" in lowered, \
+        "umbrella SKILL.md must state groups are approved/applied as units"
