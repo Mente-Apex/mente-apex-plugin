@@ -19,7 +19,8 @@ and output path.
 - **Rubric path** — this lens's shared rubric, e.g. `references/<rubric>.md`.
   Read it first; your tiers and thresholds must come from it, not from your
   own taste.
-- The language reference (`python.md` / `typescript.md`) if applicable.
+- The language reference(s) — `references/<language>.md` for each detected
+  language that has one (e.g. `python.md`, `typescript.md`) — if applicable.
 - **Report output path** — where to write your draft, e.g.
   `<lens>-reports/findings-draft.md`.
 

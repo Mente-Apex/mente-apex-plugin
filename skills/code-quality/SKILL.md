@@ -58,17 +58,22 @@ verification — is the shared flow, unchanged.
 ### Phase 0 — Inventory & baseline (once, shared)
 
 Run [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md) **Phase 0
-yourself, a single time**: scope the tree, detect and run the test suite once to
-establish the baseline, and create the git-excluded report dirs. This is the whole
-point of an umbrella — the five lenses would otherwise each re-scan the tree and
-re-run the suite. Create `docs/reports/code-quality/` **plus** each lens's own
-`docs/reports/<lens>/` (the lenses write there; the consolidator reads from there).
+yourself, a single time**: scope the tree, record the **detected language set**
+(it drives the detect-and-load reference convention below), detect and run the test
+suite once to establish the baseline, and create the git-excluded report dirs. This
+is the whole point of an umbrella — the five lenses would otherwise each re-scan the
+tree, re-detect the languages, and re-run the suite. Create
+`docs/reports/code-quality/` **plus** each lens's own `docs/reports/<lens>/` (the
+lenses write there; the consolidator reads from there).
 
 ### Phase 1 — Fan out the five analyzers (parallel)
 
 Dispatch **five analyzer subagents at once** (Agent tool, `general-purpose`,
-read-only), one per lens. Give each the Phase-0 scope notes and test command so it
-doesn't redo them, and tell it to read its lens's analyzer instructions:
+read-only), one per lens. Give each the Phase-0 scope notes, the **detected
+language set**, and the test command so it doesn't redo them; tell it to read its
+lens's analyzer instructions **and**, per the detect-and-load convention, its
+lens's `references/<language>.md` for each detected language that has one
+(degrade gracefully and record it as a coverage note where none does):
 
 | Lens | Analyzer reads | Mode passed |
 |---|---|---|

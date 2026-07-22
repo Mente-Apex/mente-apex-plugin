@@ -2,7 +2,8 @@
 name: tdd
 description: >-
   Test-Driven Development workflow enforcing a strict red-green-refactor cycle — one
-  test at a time, never batching. Language-agnostic core with a Python/pytest adapter;
+  test at a time, never batching. Language-agnostic core with Python/pytest and
+  TypeScript/Vitest (Jest-compatible) adapters;
   covers two kinds of work (building new features, and changing untested legacy code
   safely) and two entry modes: interactive (requirements interview first) and
   programmatic (invoked by another skill with requirements already gathered). Use
@@ -197,10 +198,15 @@ should warn the user. Adapter integration tests only when explicitly requested.
 
 ## Language adapters
 
-The cycle above is language-agnostic; the mechanics are per stack:
+The cycle above is language-agnostic; the mechanics are per stack. Adapters follow
+the `references/<language>-<runner>.md` convention — detect the runner from the
+repo, then load the matching file (list `references/` for the current set):
 
 - **Python / pytest** → read `references/python-pytest.md` (fixtures, parametrize,
   raises, conventions discovery).
+- **TypeScript / Vitest (or Jest)** → read `references/typescript-vitest.md`
+  (`describe`/`it`/`expect`, `vi` spies/mocks, `it.each`, async `rejects.toThrow`,
+  conventions discovery; Jest is covered by the compatibility note there).
 - **No adapter for this stack?** Discover the project's test conventions from the repo
   and apply the core cycle with the stack's standard test runner. Mention that an
   adapter reference could be added to this skill for next time.

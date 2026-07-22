@@ -51,9 +51,10 @@ reader / change-safety impact.
 7. **SAP / the Main Sequence.** **Abstractness** `A = abstract classes / total`.
    Healthy line `A + I = 1`; **distance** `D = |A + I − 1|`; Zone of Pain
    (stable + concrete), Zone of Uselessness (abstract + unstable). **`A` is
-   approximate in Python** — duck typing and `Protocol`s defeat "count the
-   abstract classes." Present as structural-health context, **never a finding to
-   refactor toward**.
+   approximate** and the reason is language-dependent (Python duck typing /
+   `Protocol`s, TS compile-time-erased `interface`s both defeat "count the abstract
+   classes") — see the language reference for the specific caveat. Present as
+   structural-health context, **never a finding to refactor toward**.
 
 ## When NOT to flag (judgment, not ceremony)
 

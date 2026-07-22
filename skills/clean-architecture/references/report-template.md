@@ -48,13 +48,15 @@ auto-generated heading anchors don't handle the `/`).
 ### Minor
 #### [clean-arch/minor-1] ...
 
-## import-linter contract (leave-behind)
-<the drafted importlinter.ini encoding the Dependency-Rule findings — offered as a
-CI tripwire; written to docs/reports/clean-architecture/importlinter.ini>
+## Dependency-rule contract (leave-behind)
+<the drafted contract encoding the Dependency-Rule findings, in the detected
+language's tool (importlinter.ini for Python, .dependency-cruiser.cjs for JS/TS) —
+offered as a CI tripwire; written to docs/reports/clean-architecture/>
 
 ## Structural health (appendix — only if --metrics)
-<per-component I / A / D table, labelled "abstractness approximate in Python";
-call out any Zone-of-Pain / Zone-of-Uselessness components — context, not findings>
+<per-component I / A / D table, labelled "abstractness approximate (see the
+language reference's caveat)"; call out any Zone-of-Pain / Zone-of-Uselessness
+components — context, not findings>
 
 ## Reviewer notes
 - Draft findings pruned as false positives: <finding → reason>, or "none"

@@ -111,6 +111,28 @@ def test_python_reference_shows_the_core_idioms():
     assert re.search(r"class\s+\w*UnitOfWork", text), "need a unit-of-work class idiom"
 
 
+def test_typescript_reference_shows_the_core_idioms():
+    text = read_skill_file("references/typescript.md")
+    lowered = text.lower()
+    assert "readonly" in lowered, "need readonly (immutable value objects)"
+    assert "equals(" in text, "TS has no free value equality — VOs must define equals"
+    assert "brand" in lowered, "need branded-type typed identities"
+    assert "unit of work" in lowered, "need a unit-of-work idiom"
+    assert re.search(r"class\s+\w*Repository", text), "need a repository class idiom"
+
+
+def test_typescript_reference_gives_the_interface_vs_abstract_class_decision():
+    text = read_skill_file("references/typescript.md")
+    lowered = text.lower()
+    # the TS analogue of ports->Protocol / base-classes->ABC:
+    # ports are interfaces, domain base classes are abstract classes
+    assert "interface" in lowered and "port" in lowered, "ports are interfaces"
+    assert "abstract class" in lowered, "domain base classes use abstract class"
+    assert re.search(r"abstract\s+class\s+AggregateRoot", text), \
+        "need an AggregateRoot abstract-class example to contrast with interface ports"
+    assert "promise" in lowered, "TS persistence ports are async (return Promises)"
+
+
 def test_python_reference_gives_the_protocol_vs_abc_decision():
     text = read_skill_file("references/python.md")
     lowered = text.lower()

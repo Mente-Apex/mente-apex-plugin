@@ -86,6 +86,28 @@ def test_implementer_has_group_apply_unit():
         "implementer must record subsumed riders as 'applied (via <primary>)'"
 
 
+def test_workflow_states_the_detect_and_load_language_convention():
+    text = (REPO_ROOT / "docs" / "refactor-workflow.md").read_text(encoding="utf-8")
+    lowered = text.lower()
+    # the convention that lets a new language be a new file, not a SKILL-body edit
+    assert "references/<language>.md" in text, \
+        "workflow must state the references/<language>.md convention"
+    assert "references/<language>-<runner>.md" in text, \
+        "workflow must state the apply-engine references/<language>-<runner>.md convention"
+    assert "detected language" in lowered, \
+        "Phase 0 must record the detected-language set that drives reference loading"
+    assert "degrade" in lowered, \
+        "convention must state graceful degradation when no reference matches"
+
+
+def test_umbrella_passes_detected_language_set_to_analyzers():
+    text = read_cq("SKILL.md").lower()
+    assert "detected language" in text, \
+        "umbrella must detect the language set once in Phase 0"
+    assert "references/<language>.md" in read_cq("SKILL.md"), \
+        "umbrella must hand each analyzer its references/<language>.md per the convention"
+
+
 def test_umbrella_skill_prose_is_group_aware():
     text = read_cq("SKILL.md")
     lowered = text.lower()

@@ -1,7 +1,8 @@
 ---
 name: gof
 description: >
-  Gang of Four design-pattern analysis and guided refactor for Python codebases.
+  Gang of Four design-pattern analysis and guided refactor for object-oriented
+  codebases, with deep idiom support for Python and TypeScript.
   Two-stage analysis: an analyzer detects existing patterns (graded A–F) and
   proposes where unimplemented patterns genuinely help; an independent reviewer
   verifies every finding, tiers the actionable ones (Critical/Major/Minor), and
@@ -17,7 +18,7 @@ metadata:
 
 # gof — GoF pattern analysis & guided refactor
 
-GoF pattern analysis for Python codebases: detect and grade the design
+GoF pattern analysis for object-oriented codebases: detect and grade the design
 patterns already implemented (A–F), propose genuine opportunities to apply
 unimplemented patterns where they'd help, and — only after human sign-off —
 apply approved recommendations through the shared TDD refactor engine, one
@@ -26,7 +27,8 @@ change at a time with the test suite as a tripwire.
 **This skill follows [docs/refactor-workflow.md](../../docs/refactor-workflow.md).**
 Its lens is `references/patterns.md` (rubric) + `references/report-template.md`.
 Reports go to `docs/reports/gof/`. The HTML preview follows `references/html-report.md`.
-Python idioms + test detection: `references/python.md`.
+Per-language idioms + test detection: `references/<language>.md` for each language
+Phase 0 detects (ships `python.md`, `typescript.md`; list `references/` for the set).
 
 ## Invocation
 
@@ -83,8 +85,10 @@ pattern back into `patterns.md` and bump this file's `metadata.version`.
   exact report shape (IDs, Risk, Status) the reviewer and implementer parse.
 - [references/html-report.md](references/html-report.md) — the
   self-contained HTML preview spec, written after the Markdown report.
-- [references/python.md](references/python.md) — idiomatic Python
-  translations of the 23 patterns, plus test-suite detection.
+- `references/<language>.md` — idiomatic translations of the 23 patterns plus
+  test-suite detection for a detected language; ships `python.md` and
+  `typescript.md` today (list `references/` for the current set). New languages
+  drop in here.
 - [agents/analyzer.md](agents/analyzer.md), [agents/reviewer.md](agents/reviewer.md),
   [agents/implementer.md](agents/implementer.md) — this skill's thin
   pointers into the shared roles.

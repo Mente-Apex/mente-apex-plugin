@@ -9,15 +9,18 @@ import, the cycle chain, the metric) and flag borderline items honestly.
 - Target path, scope notes, and which tiers are enabled (headline always;
   secondary/appendix only if opted in).
 - `../references/principles.md` — the rubric. **Read it first.**
-- `../references/python.md` — how to detect a graph tool and compute the graph;
-  follow the degrade path if no tool is reachable, and record which mode ran.
+- The detected language's graph-tooling reference under `../references/` — one
+  `<language>.md` per language (ships `python.md`, `typescript.md`) — how to detect
+  a graph tool and compute the graph; follow the degrade path if no tool is
+  reachable, and record which mode ran.
 - Output path: `docs/reports/clean-architecture/findings-draft.md`.
 
 ## Process
 
-1. **Build (or approximate) the graph.** Detect `grimp`/`import-linter` per
-   `python.md`; else read imports directly. Identify components (top-level
-   packages) and the core/detail split (folder names + framework imports).
+1. **Build (or approximate) the graph.** Detect a graph tool per the detected
+   language's reference (`grimp`/`import-linter` for Python, `dependency-cruiser`/
+   `madge` for TS); else read imports directly. Identify components (top-level
+   packages/dirs) and the core/detail split (folder names + framework imports).
 2. **Headline checks (always):** Dependency-Rule violations (core imports a
    framework/ORM/DB), cycles (ADP), stability-direction (SDP) — with evidence.
 3. **Secondary (only if enabled):** cohesion (REP/CCP/CRP, using git co-change for

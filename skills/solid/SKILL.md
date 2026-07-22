@@ -29,8 +29,9 @@ The human is always the editor; the skill never redesigns on its own.
 
 **This skill follows [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md).**
 Its lens is `references/principles.md` (rubric) + `references/report-template.md`,
-with `references/python.md` / `references/typescript.md` for language
-specifics. Reports go to `docs/reports/solid/`.
+with a per-language `references/<language>.md` loaded for each language Phase 0
+detects (the detect-and-load convention in the shared workflow). Reports go to
+`docs/reports/solid/`.
 
 ## Invocation
 
@@ -104,9 +105,9 @@ rubric edit beats re-litigating the same judgment call every run.
   agents must read it** — they start with fresh context, and a shared rubric
   is what makes the generator–critic pair calibrated. Read it yourself before
   the decision gate.
-- [references/python.md](references/python.md) /
-  [references/typescript.md](references/typescript.md) — per-principle
-  idioms and test-runner detection for the two deep-support languages.
+- `references/<language>.md` — per-principle idioms and test-runner detection for
+  a detected language; ships `python.md` and `typescript.md` today (list the
+  `references/` dir for the current set). New languages drop in here.
 - [references/report-template.md](references/report-template.md) — the exact
   report format.
 - [agents/analyzer.md](agents/analyzer.md), [agents/reviewer.md](agents/reviewer.md),
