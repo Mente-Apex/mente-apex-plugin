@@ -35,6 +35,7 @@ GOF_PATTERNS = [
 INTEGRITY_SCAN_GLOBS = (
     "skills/clean-architecture/**/*.md",
     "skills/clean-code/**/*.md",
+    "skills/code-quality/**/*.md",
     "skills/ddd/**/*.md",
     "skills/gof/**/*.md",
     "skills/solid/**/*.md",

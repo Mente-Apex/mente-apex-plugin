@@ -14,5 +14,8 @@ skills/*-workspace/
 # Lens reports (regenerable working artifacts)
 docs/reports/
 
+# graphify knowledge-graph output (generated, AST-derived)
+graphify-out/
+
 # Local eval set for the deliverable skill (references customer folders)
 skills/menteapex-deliverable/evals/
