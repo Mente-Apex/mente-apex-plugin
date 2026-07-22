@@ -85,10 +85,27 @@ phase depends on its structure (IDs, Risk and Status fields).
 ## Phase 3 — Decision gate (human)
 
 Read the final report and present a compact summary: findings count by tier,
-the top wins, and anything marked High risk. Then ask the user
-(AskUserQuestion) which recommendations to apply — by tier ("all Critical +
-Major") or by ID — unless they already pre-authorized. **"None — I just wanted
-the doc" is a first-class outcome**, not a failure; stop there gracefully.
+the top wins, and anything marked High risk. Then ask the user (AskUserQuestion)
+which recommendations to apply — unless they already pre-authorized. **"None — I
+just wanted the doc" is a first-class outcome**, not a failure; stop there gracefully.
+
+**Grouped changes are approved as units.** When the report has a `## Grouped changes`
+section, each group is one physical edit — present it by its **title + id** (e.g.
+`group-1`) with its members (Primary; subsumed riders, which resolve automatically;
+separable `Rides along` riders, which are optional). Approval works three ways, all
+valid at once:
+
+- **By tier** ("all Major") — a group is included when its **Primary's tier** matches;
+  approving pulls the whole group in. (A group's tier is its Primary's tier.)
+- **By group** ("apply group-1").
+- **By id** — unchanged, for standalone recs that belong to no group.
+
+The one sub-group choice is **vetoing a separable rider**: offer it only on `Rides
+along` members. Subsumed riders are not vetoable — the Primary's single edit resolves
+them, so excluding one means rejecting the group. A rider only lands **through its
+Primary**: approving a Minor rider whose Primary is an unapproved Major does not apply
+it. A report with no `## Grouped changes` section is approved exactly as before (by
+tier or id).
 
 If the project has **no test suite** and the user wants changes applied, ask
 how to proceed — this choice becomes the `coverage` policy passed to the TDD
