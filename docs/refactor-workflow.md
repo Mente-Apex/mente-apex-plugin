@@ -216,9 +216,11 @@ templates point here instead of each restating it — if the vocabulary ever gro
 it grows in one place.
 
 - **Status values** — each rec's `Status:` line moves through
-  `pending` → `applied` | `failed (reverted)` | `skipped (not approved)`. The
-  implementer edits only the `Status:` line of each rec it touches and appends to
-  the Apply log; it changes nothing else in the report.
+  `pending` → `applied` | `failed (reverted)` | `skipped (not approved)`, where
+  `applied` means the edit landed (or `applied (via <primary-id>)` for a
+  subsumed rider whose Primary's single edit resolved it). The implementer
+  edits only the `Status:` line of each rec it touches and appends to the
+  Apply log; it changes nothing else in the report.
 - **Apply-log lines** — the implementer appends one line per attempt under the
   report's `## Apply log` heading:
   - applied: `<UTC timestamp> [<rec-id>] applied — suite green (42 passed) — diffstat: 3 files, +120/-85`

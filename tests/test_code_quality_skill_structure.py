@@ -18,6 +18,25 @@ def read_cq(relative_path):
     return target.read_text(encoding="utf-8")
 
 
+def extract_section(text, heading_text):
+    """Return the text between a Markdown heading containing heading_text and
+    the next heading of the same-or-higher level (fewer or equal '#'s).
+
+    Scopes an assertion to one section of a doc instead of the whole file, so a
+    marker that only happens to reappear in a later section can't paper over
+    its absence from the section under test.
+    """
+    heading_pattern = re.compile(r"^(#{1,6})\s.*" + re.escape(heading_text) + r".*$", re.MULTILINE)
+    heading_match = heading_pattern.search(text)
+    assert heading_match, f"heading containing {heading_text!r} not found"
+    level = len(heading_match.group(1))
+    section_start = heading_match.end()
+    next_heading_pattern = re.compile(r"^#{1," + str(level) + r"}\s", re.MULTILINE)
+    next_heading_match = next_heading_pattern.search(text, section_start)
+    section_end = next_heading_match.start() if next_heading_match else len(text)
+    return text[section_start:section_end]
+
+
 def test_grouped_changes_banner_carries_group_id():
     text = read_cq("references/report-template.md")
     assert re.search(r"\[group-\d+\]", text), \
@@ -40,23 +59,23 @@ def test_consolidator_emits_group_id_and_rider_split():
 
 def test_workflow_phase3_is_group_aware():
     text = (REPO_ROOT / "docs" / "refactor-workflow.md").read_text(encoding="utf-8")
-    lowered = text.lower()
-    assert "grouped change" in lowered or "group" in lowered, \
+    phase3 = extract_section(text, "Phase 3").lower()
+    assert "grouped change" in phase3 or "group" in phase3, \
         "Phase 3 must let the human approve a group"
-    assert "veto" in lowered and "separable" in lowered, \
+    assert "veto" in phase3 and "separable" in phase3, \
         "Phase 3 must describe vetoing a separable rider"
-    assert "primary's tier" in lowered or "tier of its primary" in lowered, \
+    assert "primary's tier" in phase3 or "tier of its primary" in phase3, \
         "Phase 3 must state a group is approved at its Primary's tier"
 
 
 def test_workflow_phase4_group_is_one_job():
     text = (REPO_ROOT / "docs" / "refactor-workflow.md").read_text(encoding="utf-8")
-    lowered = text.lower()
-    assert "one job" in lowered and "group" in lowered, \
+    phase4 = extract_section(text, "Phase 4").lower()
+    assert "one job" in phase4 and "group" in phase4, \
         "Phase 4 must map a declared group to one job"
-    assert "ungrouped" in lowered, \
+    assert "ungrouped" in phase4, \
         "Phase 4 must retain the ungrouped (file-overlap) fallback"
-    assert "separable" in lowered and "revert" in lowered, \
+    assert "separable" in phase4 and "revert" in phase4, \
         "Phase 4 must describe reverting a failed separable rider alone"
 
 
