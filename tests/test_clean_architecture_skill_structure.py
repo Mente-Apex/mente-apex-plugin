@@ -148,5 +148,11 @@ def test_manifests_advertise_ca_and_versions_are_bumped():
     assert "clean-architecture" in plugin_manifest["keywords"]
     marketplace_blob = json.dumps(marketplace_manifest).lower()
     assert "clean-architecture" in marketplace_blob
-    assert plugin_manifest["version"] == "0.13.0"
-    assert marketplace_manifest["plugins"][0]["version"] == "0.13.0"
+    # Versions must stay mirrored and never regress below the release that
+    # introduced clean-architecture (0.13.0). Pinning the exact literal made this
+    # break on every subsequent bump, so assert lockstep + floor instead.
+    plugin_version = plugin_manifest["version"]
+    marketplace_version = marketplace_manifest["plugins"][0]["version"]
+    assert plugin_version == marketplace_version
+    to_tuple = lambda semver: tuple(int(part) for part in semver.split("."))
+    assert to_tuple(plugin_version) >= (0, 13, 0)
