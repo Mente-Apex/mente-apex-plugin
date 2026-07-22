@@ -47,3 +47,21 @@ def test_workflow_phase3_is_group_aware():
         "Phase 3 must describe vetoing a separable rider"
     assert "primary's tier" in lowered or "tier of its primary" in lowered, \
         "Phase 3 must state a group is approved at its Primary's tier"
+
+
+def test_workflow_phase4_group_is_one_job():
+    text = (REPO_ROOT / "docs" / "refactor-workflow.md").read_text(encoding="utf-8")
+    lowered = text.lower()
+    assert "one job" in lowered and "group" in lowered, \
+        "Phase 4 must map a declared group to one job"
+    assert "ungrouped" in lowered, \
+        "Phase 4 must retain the ungrouped (file-overlap) fallback"
+    assert "separable" in lowered and "revert" in lowered, \
+        "Phase 4 must describe reverting a failed separable rider alone"
+
+
+def test_implementer_has_group_apply_unit():
+    text = (REPO_ROOT / "docs" / "refactor-agents" / "implementer.md").read_text(encoding="utf-8")
+    assert "group" in text.lower(), "implementer must gain a group apply unit"
+    assert "applied (via" in text, \
+        "implementer must record subsumed riders as 'applied (via <primary>)'"

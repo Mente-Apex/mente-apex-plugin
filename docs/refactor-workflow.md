@@ -142,21 +142,38 @@ shared engine at
 [skills/tdd/references/refactor-jobs.md](../skills/tdd/references/refactor-jobs.md).
 The implementer/TDD-coordinator role (`docs/refactor-agents/implementer.md`)
 translates a rec into that engine's calling contract (`targets`, `change`,
-`test_command` + `baseline_status`, `coverage`) and dispatches **one job per
-rec** (or per dependent chain), **sequentially**, each with a fresh context.
+`test_command` + `baseline_status`, `coverage`) and dispatches **one job
+per group** (a declared `## Grouped changes` entry), **or one job
+per rec** / dependent chain for ungrouped recs, **sequentially**, each with a fresh context.
 One coordinator grinding through a long batch spends its shrinking context
 window on the later recs — the widest change gets reasoned about in the
 dregs. Per-rec contexts also isolate failure: a rec that reverts poisons
 nothing downstream, and blame stays 1:1.
 
-Order the queue first: recs touching the same file form one **chain** (same
-job runner, dependency order — a rec that moves code into a module another
-rec creates runs after it); order chains Critical → Major → Minor. Give each
-dispatch: the report path, its rec ID (or chain), the test command and
-baseline status, and the coverage policy from Phase 3. The refactor job
-updates Status and the Apply log in place and yields a structured summary
-(`job_id`, `outcome`, `tests_written`, `files_touched`, `diffstat`,
-`suite_status`, `noticed_not_touched`) — read it before dispatching the next.
+Order the queue first, then batch it:
+
+- **Grouped changes are one job.** When the report declares a `## Grouped changes`
+  entry, that whole group is a single refactor job — do **not** re-derive a batch from
+  file overlap for it. The job applies the **Primary** (its subsumed riders resolve with
+  that edit) and then each approved **separable** (`Rides along`) rider as a follow-on
+  step in the same job.
+- **Ungrouped recs apply per-rec, as before.** For any rec that belongs to no group,
+  keep today's batching: recs touching the same file form one **chain** (same job
+  runner, dependency order — a rec that moves code into a module another rec creates runs
+  after it). This file-overlap chain is the fallback; a report with no `## Grouped
+  changes` section drives this path identically to before.
+
+Order the jobs Critical → Major → Minor (a group's tier is its Primary's tier). Give
+each dispatch: the report path, its group id (or rec id / chain), the test command and
+baseline status, and the coverage policy from Phase 3.
+
+**Verification inside a group job.** Run the suite after the **Primary + subsumed** edit
+— green lands the core fix as one unit. Then apply each approved separable rider and
+verify it; a separable edit that breaks the suite **reverts alone**, leaving the Primary
+green (an optional adjacent cleanup must never sink the core structural fix). The
+refactor job updates Status and the Apply log in place and yields a structured summary
+(`job_id`, `outcome`, `tests_written`, `files_touched`, `diffstat`, `suite_status`,
+`noticed_not_touched`) — read it before dispatching the next.
 
 **Parallel option** — for large approvals (roughly 6+ recs across disjoint
 files) independent chains may run concurrently, each in its own git worktree
