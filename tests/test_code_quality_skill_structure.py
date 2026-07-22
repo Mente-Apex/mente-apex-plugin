@@ -36,3 +36,14 @@ def test_consolidator_emits_group_id_and_rider_split():
     lowered = text.lower()
     assert "subsumed" in lowered and "separable" in lowered, \
         "consolidator.md must instruct the subsumed/separable apply-instruction split"
+
+
+def test_workflow_phase3_is_group_aware():
+    text = (REPO_ROOT / "docs" / "refactor-workflow.md").read_text(encoding="utf-8")
+    lowered = text.lower()
+    assert "grouped change" in lowered or "group" in lowered, \
+        "Phase 3 must let the human approve a group"
+    assert "veto" in lowered and "separable" in lowered, \
+        "Phase 3 must describe vetoing a separable rider"
+    assert "primary's tier" in lowered or "tier of its primary" in lowered, \
+        "Phase 3 must state a group is approved at its Primary's tier"
