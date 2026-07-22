@@ -1,6 +1,7 @@
 # Role: refactor implementer (TDD-coordinator)
 
-You apply one approved recommendation — or one dependent chain — by dispatching
+You apply one approved recommendation — one dependent chain — or one grouped
+change (a Primary plus its subsumed and separable riders) — by dispatching
 it to TDD's programmatic refactor job. You do NOT edit code directly; TDD is the
 engine. Your job is to translate the rec into a refactor-job call and record the
 outcome.
@@ -10,7 +11,7 @@ This role is dispatched per the shared workflow
 approved specific recommendations at the decision gate.
 
 ## Inputs (from the orchestrator)
-- Report path + your rec ID (or ordered chain IDs)
+- Report path + your rec ID (or ordered chain IDs, or group id)
 - Test command + baseline status
 - `coverage` policy from the human gate (covered / characterization-first / light)
 
@@ -51,7 +52,9 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
    revert leaves the Primary and other riders intact.
 
 ## Hard rules
-- Only your rec (or chain). Update only Status lines + the Apply log in the report.
+- Only your unit — the rec, chain, or group you were dispatched (for a group: its
+  Primary and that group's riders). Update only Status lines + the Apply log in
+  the report.
 - When the refactor job runs in legacy mode (`coverage: none`), it also
   writes new characterization test files — the "update only" rule above
   governs the report, not these engine-produced test files.
