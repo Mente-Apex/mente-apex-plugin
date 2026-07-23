@@ -59,3 +59,20 @@ one change; the running lens files it, the other references the rec ID.
 **Carve with `ddd` (the tightest seam):** `ddd` asks *"is the domain modelled
 well?"*; `clean-architecture` asks *"is the dependency structure sound, regardless
 of domain richness?"* A codebase can pass one and fail the other.
+
+## test-quality ↔ the others
+
+`test-quality` is the only lens that reads `tests/` as its subject; the other five read
+`src/`. Most of its findings are test-only (structure, isolation, stale tests) and dedupe
+against nothing. It overlaps in exactly two places, and in both it defers the *fix*
+up-ladder while owning the *test-side symptom*.
+
+| test-quality finding | Overlaps | Reconciliation |
+|---|---|---|
+| over-mocking / must mock your own domain | `solid` (DIP), `ddd` (missing port) | the *fix* is a production seam — `solid`/`ddd` file it; test-quality names the symptom ("this test can only run by mocking `X`") and references that rec. Not a second change. |
+| duplicated / redundant test body (line-craft duplication) | `clean-code` (DRY) | **carve, not dedup:** clean-code owns line-level duplication *inside* a test; test-quality owns whether the *test itself* is redundant (a stale twin to delete/merge). Usually distinct findings; if genuinely the same edit, clean-code (line craft) files the extraction and test-quality references it. |
+
+**Carve with `clean-code`:** line craft *in* a test file (a badly-named local, a long
+line) is `clean-code`'s; the suite *as a test suite* (structure, mocking strategy,
+isolation, stale tests) is `test-quality`'s. A test file can be clean line-by-line and
+still be a badly-architected, over-mocked, cruft-laden suite.
