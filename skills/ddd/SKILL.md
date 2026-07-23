@@ -18,7 +18,7 @@ description: >-
   repository / unit of work.
 user-invocable: true
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # ddd — Domain-Driven Design modelling, build & analysis
@@ -126,7 +126,9 @@ boundary compounds.
 Full suite green, then per the git convention **offer** (never auto) commit + PR
 via `mente-apex:ship`. Finally, **offer** (never silently) to capture durable
 domain decisions — bounded-context names, core invariants, key ubiquitous-
-language terms — to the Mente Apex memory brain via the `/memory` protocol.
+language terms — wherever the project persists knowledge: the Mente Apex brain via
+the `/memory` protocol when present, else a short `docs/domain/` note in the repo.
+Never assume an external memory system exists.
 
 ## Mode: analyze (report-only)
 
@@ -163,7 +165,8 @@ human review (the same three decisions gated in `design`). On approval they are
 Present a compact summary: findings by tier, top 2–3 wins, anything High-impact.
 **No code changes.** Offer next steps: `/ddd design` on a new context, hand
 specific findings to `/tdd`, or `/solid` for the pure-SOLID cut. **Offer** to
-capture key findings (and any kept domain decisions) to the memory brain.
+capture key findings (and any kept domain decisions) wherever the project keeps
+durable knowledge — the memory brain when present, else a short repo `docs/domain/` note.
 
 ## Interplay contract (stable)
 

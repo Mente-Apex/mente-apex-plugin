@@ -251,8 +251,10 @@ repo, then load the matching file (list `references/` for the current set):
 ## Learning and adaptation
 
 Lessons from a session — fixture strategies, recurring smells, library gotchas — should
-outlive the session. Read `references/learning.md` for how to capture them into the
-Mente Apex memory brain (with the user's approval, never silently).
+outlive the session. Read `references/learning.md` for how to persist them: it detects a
+backend and degrades gracefully — a committed repo `memory/` dir, the Mente Apex brain
+when present, else a short repo doc — so nothing here assumes an external memory system.
+Always with the user's approval, never silently.
 
 ## Finishing
 
