@@ -1,6 +1,8 @@
 # Shared refactor workflow (Phase 0–5)
 
-Shared orchestration for the plugin's refactor lenses (`solid`, `gof`). Each
+Shared orchestration for the plugin's refactor lenses (`solid`, `gof`,
+`clean-architecture`, and the `code-quality` umbrella that fans them out; the
+analyze-only lenses `ddd` and `clean-code` use Phases 0–3 and stop before apply). Each
 lens supplies a **rubric** (`references/<rubric>.md`) and a **report
 template** (`references/report-template.md`); this file supplies the
 workflow. The engine is TDD's refactor job
@@ -159,6 +161,23 @@ Split the approved recommendations by their **Risk** field:
   A blanket pre-authorization that explicitly includes high-risk items ("apply
   everything, including high-risk") satisfies this.
 
+**Match the implementer's model to the job (token frugality).** A dead-parameter
+deletion and a 23-module-cycle break are not the same amount of thinking, so don't
+spend the same model on both. Dispatch each refactor job's implementer subagent
+(Agent tool `model` override) keyed on the job's **Risk** — the signal you already
+have:
+
+- **Low** → `haiku` — mechanical, well-covered edits (drop dead code, hoist an
+  import, name a constant, a single-site DRY extraction, a parameter object).
+- **Medium** → `sonnet`.
+- **High** → `opus` (or inherit the orchestrator's model) — cross-module moves,
+  signature changes, anything behavior-adjacent that also passes the per-item gate.
+- **Floor:** never below `sonnet` for a job whose targets need characterization pins
+  first (`coverage: none`) — writing faithful pins that pin *exact* current behavior
+  is delicate, and a weak pin is worse than none. Bump a job up a tier on judgment
+  (a "Low" that touches a subtle invariant); the mapping is a default, not a cage.
+  A group's tier/risk for this purpose is its **Primary's**.
+
 **Each approved rec is applied by dispatching a TDD refactor job** — the
 shared engine at
 [skills/tdd/references/refactor-jobs.md](../skills/tdd/references/refactor-jobs.md).
@@ -189,13 +208,36 @@ Order the jobs Critical → Major → Minor (a group's tier is its Primary's tie
 each dispatch: the report path, its group id (or rec id / chain), the test command and
 baseline status, and the coverage policy from Phase 3.
 
-**Verification inside a group job.** Run the suite after the **Primary + subsumed** edit
-— green lands the core fix as one unit. Then apply each approved separable rider and
-verify it; a separable edit that breaks the suite **reverts alone**, leaving the Primary
+**Verification inside a group job.** Run the safety net after the **Primary + subsumed**
+edit — green lands the core fix as one unit. Then apply each approved separable rider and
+verify it; a separable edit that breaks the net **reverts alone**, leaving the Primary
 green (an optional adjacent cleanup must never sink the core structural fix). The
 refactor job updates Status and the Apply log in place and yields a structured summary
-(`job_id`, `outcome`, `tests_written`, `files_touched`, `diffstat`, `suite_status`,
-`noticed_not_touched`) — read it before dispatching the next.
+(`job_id`, `outcome`, `tests_written`, `coverage_proof`, `files_touched`, `diffstat`,
+`suite_status`, `noticed_not_touched`) — read it before dispatching the next.
+
+**Two-tier testing (so a big suite doesn't dominate wall time).** On a large suite,
+running all of it after the Primary *and* after every rider is the main cost of a slow
+apply. The refactor job may instead run a **scoped subset** (the tests exercising the
+changed modules) for those *inner* checks, and the **full `test_command` once as the
+job's end gate** — the mechanics are in the language adapter
+([skills/tdd/references/refactor-jobs.md](../skills/tdd/references/refactor-jobs.md)).
+Safety is preserved because the full run still precedes the checkpoint below: a
+distant breakage is caught before the job is ever committed, just localized at
+job-end rather than paid for on every rider.
+
+**Checkpoint after each job (so the next agent sees an unambiguous baseline).** Each
+implementer runs in a *fresh* context; if the tree still carries the uncommitted
+diffs of jobs 1…N-1, job N can't tell the baseline from prior work and its own
+diffstat is polluted — the "agents get confused between runs" failure. So once a job
+yields `applied` **and you have independently confirmed the full suite is green**
+(Phase 5, step 1, done per-job here), make a **checkpoint commit on the working
+branch** — `refactor(<lens>): <group/rec id> — <one line>` — *before* dispatching the
+next job. The next implementer then opens a clean tree whose only diff is its own.
+These are working-branch checkpoints, not publication (see
+[docs/git-convention.md](git-convention.md)); `/ship` squashes/curates them at the
+end. A job that fails and reverts leaves nothing to checkpoint — the tree is already
+back at the last green commit, exactly the clean baseline the next job needs.
 
 **Parallel option** — for large approvals (roughly 6+ recs across disjoint
 files) independent chains may run concurrently, each in its own git worktree
@@ -221,21 +263,30 @@ When a refactor job yields:
    files only*, then reviewer, then back to the human at Phase 3. **Hard cap: 3
    cycles**; a refactor loop that can't converge in three passes needs a human
    architect, not a fourth pass. Say so plainly.
-4. **Summarize**: what was applied (rec IDs + diffstat), what failed and why,
-   suite status before/after, and what remains in the doc for a future pass.
+4. **Summarize — into the report, not just chat.** Write the run's synthesis into the
+   report's **`## Outcome`** section: what was applied (rec/group ids + net diffstat),
+   what was deferred or not approved, what failed and why, suite status before/after,
+   the *verification method* per job (existing-suite coverage vs. characterization pins
+   written red-first — carried from each yield's `coverage_proof`), the number of
+   checkpoint commits, and what remains for a future pass. The per-finding `Status:`
+   lines and the Apply log are the raw ledger; the Outcome is the synthesis that must
+   **survive loss of this session's context** — a chat-only summary is gone the moment
+   the window rolls, which is precisely the overview a returning session most needs.
+   Then also say it in chat. (If the report has no `## Outcome` heading — an older
+   template — add one; if nothing was applied, there is no Outcome to write.)
 5. **Offer to commit and PR — never auto-publish.** Per the git convention,
    propose a Conventional Commit for the working branch and ask whether to
    commit and raise a PR (the plugin's `/ship` skill is exactly that flow).
    "Leave it on the branch" and "discard it" are first-class answers; pushing
    needs an explicit yes even when the apply phase was pre-authorized.
 
-## Status & Apply-log format (canonical)
+## Status, Apply-log & Outcome format (canonical)
 
-Every apply-capable lens report ends with the same two mechanics. The lens report
-templates lay down the *skeleton* (the `Status:` line on each rec and an `## Apply
-log` heading); this section is the single definition of what fills them, so the
-templates point here instead of each restating it — if the vocabulary ever grows,
-it grows in one place.
+Every apply-capable report ends with the same mechanics. The report templates lay down
+the *skeleton* (the `Status:` line on each rec, an `## Apply log` heading, and — where
+present — an `## Outcome` heading); this section is the single definition of what fills
+them, so the templates point here instead of each restating it — if the vocabulary ever
+grows, it grows in one place.
 
 - **Status values** — each rec's `Status:` line moves through
   `pending` → `applied` | `failed (reverted)` | `skipped (not approved)`, where
@@ -244,9 +295,24 @@ it grows in one place.
   edits only the `Status:` line of each rec it touches and appends to the
   Apply log; it changes nothing else in the report.
 - **Apply-log lines** — the implementer appends one line per attempt under the
-  report's `## Apply log` heading:
-  - applied: `<UTC timestamp> [<rec-id>] applied — suite green (42 passed) — diffstat: 3 files, +120/-85`
-  - reverted: `<UTC timestamp> [<rec-id>] FAILED — test_x broke, fix attempt failed, reverted`
+  report's `## Apply log` heading. Each carries a **safety clause** — the coverage
+  source, or the pins written red-first — because that clause is what makes "a safe
+  refactor actually ran through the engine" observable after the fact, rather than
+  taken on faith:
+  - applied (covered): `<UTC ts> [<rec-id>] applied — covered by test_x.py::… — suite green (42 passed) — diffstat: 3 files, +120/-85`
+  - applied (was uncovered): `<UTC ts> [<rec-id>] applied — uncovered → N pins written red-first (test_x.py) — suite green (45 passed) — diffstat: 2 files, +80/-30`
+  - subsumed rider: `<UTC ts> [<rider-id>] applied — subsumed by <primary-id> (no separate edit)`
+  - reverted: `<UTC ts> [<rec-id>] FAILED — test_x broke, fix attempt failed, reverted`
+- **Outcome** — where the template has an `## Outcome` heading, the orchestrator (not
+  the implementer) fills it once at Phase 5 as the persisted run synthesis: applied /
+  deferred / failed ids, baseline → final suite status, net diffstat, checkpoint count,
+  the aggregate verification method (covered vs. pins-first), and residuals for a next
+  pass. It exists so the result outlives this session's context — see Phase 5, step 4.
+  Omit it on an audit-only run.
+
+If a report has an `## Outcome` heading but predates the coverage-source apply-log
+clause, keep appending in the newer form — the older lines stay valid; the vocabulary
+only ever grows.
 
 Analyze-only reports (`ddd`, `clean-code`) have no apply phase, so `Status:
 pending` there just records that a finding is unactioned and there is no Apply log.

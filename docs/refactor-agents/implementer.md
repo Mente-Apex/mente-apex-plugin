@@ -36,12 +36,18 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
    [skills/tdd/references/refactor-jobs.md](../../skills/tdd/references/refactor-jobs.md)):
    `targets` = the cited files; `change` = the Primary's Proposed change verbatim, plus
    each approved separable rider's change as an explicit follow-on step; `test_command`
-   + `baseline_status` = as given; `coverage` = per the gate; `new_behavior` = any part
-   the rec marks as new behavior (usually none).
+   + `baseline_status` = as given; `coverage` = per the gate — but the engine **verifies
+   it before editing**, so treat the gate's value as a claim to confirm, not a licence to
+   skip pins; `new_behavior` = **none**. An apply job is *purely a refactor* —
+   behavior-preserving under a net. If a rec cannot be done without changing behavior, it
+   is not an apply job: stop, mark it `skipped (not approved)` with a one-line reason, and
+   surface it for the human — never quietly slip new behavior in through a refactor.
 3. Dispatch the TDD refactor job. For a group, it verifies after the Primary+subsumed
    edit, then after each separable rider — a failed separable rider reverts alone.
 4. Record outcomes into each finding's Status line and append Apply-log lines, using the
-   report's exact fields:
+   report's exact fields — including the **safety clause** (the covering tests, or the
+   pins written red-first) carried from the job's `coverage_proof`, per the canonical
+   Apply-log format:
    - **Primary** → `applied` or `failed (reverted)`.
    - **Subsumed rider** → `applied (via <primary-id>)`; Apply-log:
      `<ts> [<rider>] applied — subsumed by <primary> (no separate edit)`.
@@ -61,5 +67,10 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
 - Unrelated problems go in your final summary, not into any change.
 
 ## Yield back
-Per rec ID: applied/failed/skipped + one line; final suite status vs baseline;
-total diffstat; anything noticed but not touched.
+Per rec ID: applied/failed/skipped + one line, **each with its safety clause** (from the
+job's `coverage_proof`: which existing tests exercised the targets, or the pins written
+red-first) — this is what lets the orchestrator prove a safe refactor ran, and it flows
+into the Apply log and Outcome. Then: final suite status vs baseline; total diffstat;
+anything noticed but not touched. You start from a **clean working tree** (the
+orchestrator checkpoint-commits each job once green, so your diff is only your own) —
+do **not** commit yourself; checkpointing and publication are the orchestrator's.

@@ -19,7 +19,7 @@ description: >-
   (design principles, patterns, dependency structure, domain model, line craft).
 user-invocable: true
 metadata:
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 
 # code-quality — the five-lens umbrella audit
@@ -66,14 +66,42 @@ tree, re-detect the languages, and re-run the suite. Create
 `docs/reports/code-quality/` **plus** each lens's own `docs/reports/<lens>/` (the
 lenses write there; the consolidator reads from there).
 
+**Build the shared index here, once — it is the umbrella's biggest speed lever.** Five
+analyzers each independently globbing and grepping a large tree is ~5× the necessary
+scanning before a single finding exists (on a big repo this is where the minutes go).
+So produce a small **inventory artifact** in `docs/reports/code-quality/` now and hand
+it to every analyzer: the scoped **file list** (with rough LOC, vendored/generated dirs
+already excluded) and the **import graph** built once with the real tool
+(`grimp` for Python, `madge` for TS — clean-architecture needs it anyway, so build it
+here and share rather than have each lens re-derive imports by grep). Note in each
+analyzer's brief that imports are answered from this graph, not re-grepped.
+
+**On a large codebase, prefer scope over a whole-repo sweep.** If the tree is big
+(roughly: the suite alone takes minutes, or hundreds of source files), say so and offer
+to **scope the audit to a package/subtree**, or an **incremental "changed files since
+<ref>" pass**, rather than sweeping everything — a focused audit a human can actually
+action beats an exhaustive one that takes 20 minutes and buries the wins. Whole-repo
+stays available; it just shouldn't be the silent default when the repo is large.
+
 ### Phase 1 — Fan out the five analyzers (parallel)
 
 Dispatch **five analyzer subagents at once** (Agent tool, `general-purpose`,
 read-only), one per lens. Give each the Phase-0 scope notes, the **detected
-language set**, and the test command so it doesn't redo them; tell it to read its
+language set**, the test command, and **the shared index** (file list + import graph)
+so none of them re-scans the tree; tell it to read its
 lens's analyzer instructions **and**, per the detect-and-load convention, its
 lens's `references/<language>.md` for each detected language that has one
-(degrade gracefully and record it as a coverage note where none does):
+(degrade gracefully and record it as a coverage note where none does).
+
+Tell each analyzer to **search narrowly, not sweep**: answer import questions from the
+shared graph (never by grepping `import` lines); scope every search to the Phase-0 file
+list (the Grep tool is ripgrep-backed — speed comes from a tight `glob`/path scope, not
+from grepping the whole tree); reach for `ast-grep` for structural/pattern queries
+(the shape a `gof`/`solid` smell has) instead of brittle regex; and read file *ranges*
+around a hit rather than whole large files. This keeps the fan-out from turning into
+five redundant full-tree scans.
+
+The analyzer brief otherwise:
 
 | Lens | Analyzer reads | Mode passed |
 |---|---|---|
@@ -111,7 +139,10 @@ report yourself before the gate.
 
 Follow the shared workflow's Phase 3 on the **consolidated** report: present counts by
 tier, the top wins across all lenses, anything High-risk, and any *Unresolved tensions*
-the consolidator surfaced (e.g. Singleton ↔ DIP). The consolidated report carries a
+the consolidator surfaced (e.g. Singleton ↔ DIP). The report's **Findings index** is
+your scannable map for this — it already lays out every finding with its principle,
+group, recommended apply order, and status, so present from it rather than
+re-summarizing by hand. The consolidated report carries a
 `## Grouped changes` section, so the shared gate presents those as units — approvable by
 title/id or by their Primary's tier, with separable `Rides along` riders individually
 vetoable. Standalone recs keep their verbatim IDs, Risk, and Status; approve by tier or
@@ -119,13 +150,25 @@ id as usual. **"None — just the report" is a first-class outcome**; stop there
 
 ### Phases 4–5 — Apply via TDD & final review (shared, opt-in)
 
-Approved recs apply through the shared Phase 4/5 (the TDD refactor engine), **unchanged
-by this skill**: a declared grouped change is one job (Primary + subsumed riders, then
-each approved separable rider, verified per the shared workflow), and ungrouped recs
-apply per-rec. Each merged finding keeps its lens origin, so the implementer applies it
-with the fix idiom that lens intended. One working branch (`code-quality/<slug>`), jobs
-ordered Critical → Major → Minor, suite green after each. Then verify the suite yourself
-and offer to commit/PR via `/ship`; never auto-publish.
+Approved recs apply through the shared Phase 4/5 (the TDD refactor engine), which this
+skill reuses verbatim — **including the behaviors that engine carries for exactly this
+umbrella's scale**: each implementer's **model is tiered by Risk** (Low→`haiku`,
+Med→`sonnet`, High→`opus`/inherit, never below `sonnet` when characterization pins are
+needed), each verified job is **checkpoint-committed** on the working branch so the next
+fresh implementer opens a clean tree, and a slow suite is run **two-tier** (scoped subset
+for inner checks, full suite as the job's end gate). A declared grouped change is one job
+(Primary + subsumed riders, then each approved separable rider, verified per the shared
+workflow); ungrouped recs apply per-rec. **Apply in the order the report's Findings index
+already computed** — it is dependency-aware, not just Critical → Major → Minor, so it *is*
+the apply plan; don't re-derive it. Each merged finding keeps its lens origin, so the
+implementer applies it with the fix idiom that lens intended. One working branch
+(`code-quality/<slug>`).
+
+At Phase 5, verify the suite yourself, then **write the `## Outcome` section into the
+consolidated report** — the persisted run summary (applied / deferred / failed, suite
+before → after, per-job verification method, checkpoint count, residuals for a next pass)
+that survives loss of this session's context, not merely a chat summary that vanishes with
+the window. Then offer to commit/PR via `/ship`; never auto-publish.
 
 ## Guardrails
 

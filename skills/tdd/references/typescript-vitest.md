@@ -34,6 +34,16 @@ npx vitest run                                                # full suite
 ```
 Always use `vitest run` (single pass) in the loop, not bare `vitest` (watch mode).
 
+**Refactor jobs on a large suite — two-tier running.** For the *inner* checks (after
+the Primary, after each rider), scope to the changed area rather than the whole suite:
+`vitest run path/to/changed.test.ts` for the affected files, or
+`vitest related <changed-source-files>` to let Vitest select the tests that import
+them (Vitest already runs test files in parallel by default). Then run the **full
+suite once as the job's end gate** — it must be green before the job is reported
+`applied`, since it is what catches a breakage in a test the subset never imported.
+When the suite is fast, just run it whole each time; the split earns its keep only on
+a slow one.
+
 ## Constructor injection is the test seam
 
 A class that takes its collaborators as constructor parameters gets a one-line

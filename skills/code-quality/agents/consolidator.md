@@ -78,7 +78,20 @@ Phase-0 scope/baseline notes.
 
 8. **Carry the non-overlapping findings** through unchanged (verbatim ID, `Related: —`).
 
-9. **Write** `docs/reports/code-quality/CODE-QUALITY-<YYYY-MM-DD>.md` per the
+9. **Emit the Findings index** (the template's dashboard, right after Summary). One
+   row per actionable finding — grouped-change members included, placed by their
+   `Group role`. Fill the **Principle** column from each finding's owning rubric
+   (SOLID → `SRP`/`OCP`/…; clean-arch → `ADP`/`SDP`/`SAP`/`Dependency Rule`; ddd → the
+   concept; gof → the pattern; clean-code → its rule like `#4 DRY`) — this is the
+   "which principle broke" the bare code can't carry. Then compute the **Order**: it
+   is Critical → Major → Minor **but with dependency overrides made explicit** — a rec
+   that creates a module another moves into runs first; a grouped change is one job so
+   its members share one Order (Primary first). You already know the dependencies from
+   the *Related* lines and the Grouped-changes riders — encode them as the order rather
+   than leaving a reader to re-derive it, and add the one-line *why* under the table for
+   any non-obvious step. All `Status` start `pending`.
+
+10. **Write** `docs/reports/code-quality/CODE-QUALITY-<YYYY-MM-DD>.md` per the
    template, Recommendations sorted Critical → Major → Minor. Fill Summary counts
    *after* dedup (report the deduped count and how many findings folded into how many
    grouped changes). Non-edit overlaps (hand-offs, overlaps adjudicated to no action)
@@ -88,7 +101,10 @@ Phase-0 scope/baseline notes.
    with `/` rewritten to `-` (e.g. `clean-arch/major-1` → `#clean-arch-major-1`), and
    the lens reviewers emit the matching `<a id>` in their reports so the link
    resolves. Precede each finding you write with its own `<a id>` anchor too, so the
-   consolidated report is internally navigable.
+   consolidated report is internally navigable. **Leave out the `## Outcome` section** —
+   it is filled by the orchestrator at Phase 5 after apply, not at consolidation (an
+   audit-only run never grows one; the index's all-`pending` Status column already says
+   nothing ran).
 
 ## Guardrails
 

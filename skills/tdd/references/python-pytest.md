@@ -25,6 +25,18 @@ runner so it resolves the same interpreter/plugins as the suite
 (`uv run pytest tests/test_x.py::test_name -x -q`, `poetry run pytest …`, or bare
 `pytest` only if that is how the project runs it), then the full suite.
 
+**Refactor jobs on a large suite — two-tier running.** Paying for the whole suite
+after the Primary and after every rider is what makes a big-repo apply crawl. For the
+*inner* checks, run only the tests that exercise the changed modules — select by path
+(`pytest tests/test_changed_area.py`), by keyword (`-k`), or with `--testmon` (runs
+only tests impacted by the diff, if the plugin is installed) — and add `-n auto` when
+`pytest-xdist` is available to parallelize. Then run the **full `test_command` once as
+the job's end gate**: it is what catches a breakage in a distant test the subset never
+touched, and it must be green before the job is reported `applied`. Discover whether
+`--testmon`/`-n` are available from the project's config/lockfile; fall back to
+path/`-k` selection, or to the whole suite when it is fast enough that the split
+wouldn't pay.
+
 ## Fixtures are the injection seam
 
 Fixtures do double duty: test setup, and the place where dependency injection pays off.
