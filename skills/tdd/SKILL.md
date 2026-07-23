@@ -17,7 +17,7 @@ description: >-
   invoke this skill in programmatic mode to get code implemented test-first.
 user-invocable: true
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 ---
 
 # TDD — Test-Driven Development
@@ -26,6 +26,12 @@ Never write production code without a failing test that demands it. Never write 
 than one test before making it pass. This discipline is what makes the result
 trustworthy: every behavior has a specification, and the specification ran red before
 it ran green.
+
+**This law governs *new behavior*.** A *refactor* adds no behavior, so it writes no new
+failing test — its safety net is the *existing* suite (or, for untested code,
+characterization pins written first). "Test-first" and "behavior-preserving refactor"
+don't conflict; they are different work modes (below). Where this document later says
+"write a failing test first," read it as the feature/legacy path, not the refactor one.
 
 ## How you were invoked
 
@@ -47,6 +53,16 @@ spec), the production code touched, and the final full-suite result.
 
 This calling contract is the interface other skills depend on. Keep it stable — callers
 should never need to know how the cycle works internally.
+
+**Two independent axes — don't conflate them.** *How* you were invoked (interactive vs
+programmatic) is separate from *what mode* the work is (feature / legacy / refactor,
+below); any combination is valid — a programmatic legacy job, an interactive refactor.
+And the acceptance-criteria handoff above is the **feature** contract. A caller
+dispatching a **refactor** — most often a lens applying an approved recommendation —
+uses the different, structured contract in
+[references/refactor-jobs.md](references/refactor-jobs.md) (`targets` / `change` /
+`coverage` / …), *not* the shape above. If you were handed a refactor job, read that
+file first.
 
 ## Work modes
 
@@ -95,25 +111,21 @@ leave a clear record of each cycle so the work is reviewable after the fact.
 
 ### Open a working branch before the first file edit
 
-This skill follows the plugin's convention for code-modifying skills
-(`../../docs/git-convention.md`; the rules below are self-contained so the skill
-also works standalone). The point: the user must be able to review, land, or discard the whole
-TDD session as one clean unit, and nothing reaches a shared branch or remote without
-their say-so.
+Follow the plugin's git convention
+([../../docs/git-convention.md](../../docs/git-convention.md)) — it is **authoritative**;
+don't restate its ruleset here (a copy drifts — it already has). In short: on a git repo's
+default branch, create and switch to `tdd/<short-slug>` (e.g. `tdd/rate-limiter-2026-07-06`)
+before the first test file; on a feature branch, stay but say so; a dirty tree that
+overlaps your targets stops you (ask interactively, flag it programmatically); no repo →
+offer `git init`, and if declined proceed only after warning there's no revert seam. The
+point: the user can review, land, or discard the whole session as one clean unit, and
+nothing reaches a shared branch or remote without their say-so. A multi-step apply may
+checkpoint-commit per verified step on the working branch (the convention sanctions this);
+`/ship` curates the checkpoints into the final commit at the end.
 
-- On a git repo's default branch (`main`/`master`) → create and switch to
-  `tdd/<short-slug>` (e.g. `tdd/rate-limiter-2026-07-06`) before writing the first
-  test file.
-- Already on a feature branch → stay on it, but say so — the user may prefer a fresh
-  branch off it.
-- Dirty working tree → list the already-modified files first; if they overlap files
-  this session must touch, stop and ask (interactive) or flag it in your report
-  (programmatic).
-- Not a git repo → say so and offer `git init`. If declined, proceed only after
-  warning that there's no revert seam.
-- **Programmatic mode**: if the caller already put you on a working branch, use it —
-  the outermost workflow owns the branch. Only create `tdd/<slug>` when you'd
-  otherwise be editing the default branch.
+**Programmatic mode**: if the caller already put you on a working branch, use it — the
+outermost workflow owns the branch and its checkpoints. Only create `tdd/<slug>` when
+you'd otherwise be editing the default branch.
 
 ### Discover conventions first
 
@@ -158,6 +170,11 @@ Per-cycle checklist (fast — run it every time):
   dependencies (database clients, HTTP sessions, clocks). Inject them through the
   constructor or parameters. This is also what keeps the *next* test easy to write: if
   a test is hard to set up, this is usually the item that was skipped.
+- **Mocking as a design signal** — mocking a true infrastructure boundary (network,
+  clock, filesystem) is fine; needing to mock *your own* code to test it is a coupling
+  smell — inject the collaborator instead of papering over it. (Hexagonal projects:
+  `references/ddd_testing.md`. Auditing a whole suite for over-mocking is the
+  `test-quality` lens's job, not this cycle's.)
 
 Escalate beyond the checklist when it's warranted:
 
@@ -169,11 +186,19 @@ Escalate beyond the checklist when it's warranted:
   specifically pattern-shaped — a missing, duplicated, or forced design pattern (a
   hand-rolled dispatch that wants Strategy, copy-pasted algorithm skeletons that want
   Template Method) — suggest a `/gof` audit instead.
+- When the *tests themselves* have decayed — no module/class structure, pervasive
+  over-mocking, or dead/duplicate tests in a suite that only grows — that's the
+  `test-quality` lens (it uses coverage and mutation checks to prove a test still earns
+  its keep). Suggest it rather than tidying the suite ad hoc mid-cycle.
 - Running standalone without those skills? The checklist above is the whole standard;
   carry on.
 
 Run the full suite after refactoring. If anything breaks, undo — you changed behavior,
-which is not refactoring.
+which is not refactoring. (The interactive cycle runs the whole suite each pass. The one
+exception is a *programmatic refactor job* on a large, slow suite, which may run a scoped
+subset for its inner per-step checks with the full suite as the end gate —
+`references/refactor-jobs.md`; that is an optimization of *when* the full suite runs, not
+a licence to skip it.)
 
 ### Test ordering
 
@@ -189,8 +214,17 @@ test first.
   isolation before adding anything.
 - **Major restructuring needed** → do it while green, in small steps, running tests
   between each.
-- **The design is wrong** → rewrite or delete tests. Tests are specifications, and
-  specifications evolve.
+- **The design is wrong** → rewrite the tests to match the corrected spec. Tests are
+  specifications and specifications evolve — but *deleting* a test silently drops the
+  coverage it carried, so delete only when the behavior it pinned is genuinely gone, not
+  when it's merely in the way. Sweeping an existing suite for tests that have outlived
+  their purpose is the `test-quality` lens's job (it coverage-gates every removal); don't
+  improvise that mid-cycle here.
+- **A test passes then fails with no code change (flaky)** → never paper over it with a
+  retry. Find the nondeterminism — shared state, a real clock, ordering, an unawaited
+  async, a live network call — and fix the cause, or quarantine the test with an explicit
+  tracking note. A flaky test destroys the suite's signal, which is the one thing this
+  whole discipline exists to protect.
 
 ## DDD / hexagonal projects
 

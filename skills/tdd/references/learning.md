@@ -19,8 +19,11 @@ outlive the session — but they go to the Mente Apex memory brain, not to ad-ho
 ## Where lessons go
 
 - **Durable lessons** (conventions, decisions, gotchas): capture into the brain with
-  `mem capture "…" --kind <convention|decision|gotcha> --scope <project>`, or the
-  `mente-apex-memory` MCP capture tool when available.
+  `mem capture "…" --kind <semantic|episodic|procedural> --scope project --project <slug>
+  --tags <convention|decision|gotcha>`, or the `mente-apex-memory` MCP capture tool when
+  available. `--kind` is the *memory type*, not the lesson label: a convention or gotcha
+  is usually `semantic`, a dated decision `episodic`, a how-to `procedural` — and
+  "convention/decision/gotcha" are `--tags`. (Passing them to `--kind` is rejected.)
 - **Project-tier knowledge in customer repos**: if the repo has a committed `memory/`
   directory (the brain's in-repo technical tier, ingested via `projects.toml`), test
   conventions for that project belong there.
