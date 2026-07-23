@@ -16,19 +16,26 @@ outlive the session — but they go to the Mente Apex memory brain, not to ad-ho
 - **Dependencies and quirks** — rate limits on external services, slow suites needing
   markers, database fixtures with special teardown.
 
-## Where lessons go
+## Where lessons go — detect a backend, degrade gracefully
 
-- **Durable lessons** (conventions, decisions, gotchas): capture into the brain with
-  `mem capture "…" --kind <semantic|episodic|procedural> --scope project --project <slug>
-  --tags <convention|decision|gotcha>`, or the `mente-apex-memory` MCP capture tool when
-  available. `--kind` is the *memory type*, not the lesson label: a convention or gotcha
-  is usually `semantic`, a dated decision `episodic`, a how-to `procedural` — and
-  "convention/decision/gotcha" are `--tags`. (Passing them to `--kind` is rejected.)
-- **Project-tier knowledge in customer repos**: if the repo has a committed `memory/`
-  directory (the brain's in-repo technical tier, ingested via `projects.toml`), test
-  conventions for that project belong there.
-- **No brain on this machine**: fall back to suggesting a short
-  `docs/testing-conventions.md` in the repo so the knowledge isn't lost.
+*Persisting* the lesson matters more than *where*. Resolve a backend by what's actually
+present, so the skill behaves the same in a bare public checkout as in a fully-wired
+Mente Apex environment — nothing here requires an external memory system. In priority
+order:
+
+1. **A committed `memory/` dir in the repo**, if the project keeps one (an in-repo
+   technical-knowledge tier) — test conventions for that project belong there. Portable:
+   it travels with the repo, no external tool needed.
+2. **The Mente Apex brain, when detected** — if `mem` is on PATH or the
+   `mente-apex-memory` MCP is available, capture with
+   `mem capture "…" --kind <semantic|episodic|procedural> --scope project --project <slug>
+   --tags <convention|decision|gotcha>` (or the MCP capture tool). `--kind` is the
+   *memory type*, not the lesson label — a convention/gotcha is usually `semantic`, a
+   dated decision `episodic`, a how-to `procedural`; "convention/decision/gotcha" are
+   `--tags` (passing them to `--kind` is rejected). Treat this as an *enhancement used
+   when present*, never a prerequisite.
+3. **Neither present** — propose a short `docs/testing-conventions.md` in the repo so the
+   knowledge isn't lost. This is the always-works default; never assume a brain exists.
 
 ## Never capture silently
 
