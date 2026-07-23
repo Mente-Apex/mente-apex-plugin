@@ -13,14 +13,18 @@ description: >-
   lenses", "everything — SOLID, patterns, architecture, clean code, tests", "how healthy
   is the architecture of this codebase", or any request for a comprehensive,
   multi-lens structural/craft assessment rather than one specific lens. When the
-  user names a single lens ("just SOLID", "check the dependency graph"), defer to
-  that lens's own skill instead — this is the all-at-once entry point. This is NOT
+  user names a single lens ("just SOLID", "check the dependency graph") — or scopes
+  the request to one concern even without naming the lens (e.g. "clean up our messy
+  test suite" → /test-quality; "any import cycles?" → /clean-architecture; "is this
+  class doing too much?" → /solid) — defer to that single lens; the umbrella is for a
+  whole-codebase audit spanning multiple concerns, not a scoped one-concern pass. This
+  is the all-at-once entry point. This is NOT
   a diff/PR bug review: for correctness findings on a change set that belongs to
   /code-review; /code-quality is the whole-codebase architecture-and-craft audit
   (design principles, patterns, dependency structure, domain model, line craft).
 user-invocable: true
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # code-quality — the six-lens umbrella audit
