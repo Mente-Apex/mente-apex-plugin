@@ -57,6 +57,43 @@ this block — pruned to the codes that actually appear — into each report:
   - **Rides along** — a distinct but adjacent fix best done in the same edit.
 ```
 
+## Findings index (the report's dashboard — emit it right after Summary)
+
+A multi-lens report is a wall of prose, and three things a reader most wants are
+the hardest to extract from it: *which principle does each code break*, *what order
+do I apply these in*, and *where does this run currently stand*. The index is one
+scannable table that answers all three at a glance, so nobody reverse-engineers the
+apply order from scattered *Related* lines or hunts a code's principle across pages.
+
+- **One row per finding**, every actionable finding listed (grouped-change members
+  included — the `Group role` column places them). Decode the Lens / Principle codes
+  via the Legend.
+- **Ordered by `Order`** — the recommended apply sequence, *not* merely tier order.
+  It is Critical → Major → Minor **with dependency overrides made explicit**: a
+  change that creates a module another moves into runs first; a grouped change is one
+  job, so its members share one `Order` number (Primary row first). Ungrouped recs
+  that must precede/follow another get ordered accordingly, not just by tier.
+- **`Principle` is the "which principle broke" column** the plain code can't carry
+  (the code encodes lens + tier + number, never SRP-vs-OCP). SOLID → `SRP`/`OCP`/…;
+  clean-arch → `ADP`/`SDP`/`SAP`/`Dependency Rule`; ddd → the concept
+  (`leaked language`, `missing port`); gof → the pattern; clean-code → its rule
+  (`#4 DRY`, `#8 few args`). All decodable in the Legend.
+- **`Status` mirrors each finding's `Status:` line** — so the index is a live progress
+  board during apply, and the persisted overview at a glance after.
+
+Follow the table with a short **Apply order** note: one line of *why* for any
+non-obvious ordering (e.g. "group-2 before ddd/minor-2 — the split gives the
+extracted function its home"). Obvious tier-order needs no note.
+
+## Outcome (the persisted run summary — filled at Phase 5, not at generation)
+
+The per-finding `Status:` lines and the Apply log are the raw ledger; the Outcome is
+the *synthesis* a human — or the next session, after this one's context is gone —
+reads first. Persisting it in the report is the whole point: the shared workflow's
+Phase 5 summary otherwise lives only in chat and dies with the context window.
+**Omit the section entirely on an audit-only run** (nothing was applied, so there is
+no outcome — the index Status column, all `pending`, already says so).
+
 ## Shape
 
 ```markdown
@@ -70,6 +107,21 @@ this block — pruned to the codes that actually appear — into each report:
   <note any that degraded or found nothing, e.g. "gof — no findings">
 - Findings after dedup: <n> Critical, <n> Major, <n> Minor  (<k> findings folded into <g> grouped changes)
 - Top wins: <the 3–5 recs a human should care about most across all lenses, one line each>
+
+## Findings index
+
+Recommended apply order top to bottom; grouped-change members share one Order (Primary first).
+Decode Lens / Principle via the Legend.
+
+| Order | Code | Tier | Lens · Principle | Group role | Title | Risk | Status |
+|---|---|---|---|---|---|---|---|
+| 1 | `solid/major-1` | Major | SOLID · SRP | group-2 · Primary | Split the 1889-line command god-module | Med | pending |
+| 1 | `clean-code/major-1` | Major | clean-code · #4 DRY | group-2 · Rides along | Extract the 4-site credential read | Low | pending |
+| 2 | `clean-arch/major-1` | Major | clean-arch · ADP | — | Break the 23-module import cycle | Low | pending |
+| 3 | `clean-code/minor-1` | Minor | clean-code · #4 DRY | — | Extract the duplicated skeleton-report dict | Low | pending |
+
+**Apply order.** <one line of *why* per non-obvious ordering; obvious tier order needs none — e.g.
+"group-2 before ddd/minor-2 — the package split gives ddd/minor-2's extracted function its home.">
 
 ## Legend
 
@@ -156,10 +208,26 @@ DIP (solid) on `Config` — the lenses disagree; decide at the gate", or "none">
   areas skipped, any lens that errored (recorded as a coverage gap, never silent).
 - Baseline: <suite status before any change>
 
+## Outcome
+
+<!-- Written by the orchestrator at Phase 5, once an apply phase has run. Omit this
+     whole section on an audit-only run. This is the persisted run summary — it must
+     survive loss of the working session's context, so it lives here, not in chat. -->
+
+- **Applied:** <group/rec ids that landed, one clause each — "group-2 (commands split + credential DRY); clean-arch/major-1 (cycle 23→14, residual left by design)">
+- **Deferred / not approved:** <ids left pending, one-line why each, or "none">
+- **Failed / reverted:** <ids that reverted + reason, or "none">
+- **Suite:** <baseline → final, e.g. "1381 → 1388 passed, green"> · **Net diffstat:** <N files, +X/-Y> · **Checkpoints:** <N commits on the working branch>
+- **Verification:** <how safety was proven, in aggregate — "all jobs on covered targets (existing suite exercised them, no pins needed)"; call out any legacy-mode job, e.g. "clean-arch/major-1 targets partly uncovered → 4 characterization pins written red-first">
+- **Residual / next pass:** <pending recs, partial applies, and any newly-noticed smell recorded for a future cycle — never silently applied>
+
 ## Apply log
 
-<!-- Appended by the implementer, one line per attempt, exactly as in the lens templates: -->
-<!-- <UTC timestamp> [clean-arch/critical-1] applied — suite green (42 passed) — diffstat: 3 files, +120/-85 -->
+<!-- Appended by the implementer, one line per attempt, exactly as in the lens templates.
+     The safety clause (existing-suite coverage source, or pins written red-first) is
+     required — it is what makes "the engine actually ran a safe refactor" observable: -->
+<!-- <UTC timestamp> [clean-arch/critical-1] applied — covered by test_boundaries.py — suite green (42 passed) — diffstat: 3 files, +120/-85 -->
+<!-- <UTC timestamp> [gof/major-2] applied — uncovered targets → 3 pins written red-first (test_legacy_billing.py) — suite green (45 passed) — diffstat: 2 files, +80/-30 -->
 ```
 
 The `Status:` vocabulary and the Apply-log line format are the shared ones defined

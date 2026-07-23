@@ -22,6 +22,18 @@ shared branch or remote without them saying so.
 - Not a git repo → say so and offer `git init`. If declined, proceed only
   after warning that there is no revert seam beyond the skill's own backups.
 
+### Checkpoint commits during a multi-step apply are fine (on the working branch)
+
+A skill that applies many changes in sequence (e.g. the refactor workflow's Phase 4,
+one job after another) may **commit each verified job on the working branch** as it
+goes. This is not publication — nothing leaves the branch — and it earns its keep: the
+next fresh agent opens a clean tree whose only diff is its own (no "confused by prior
+uncommitted changes" failure), and any single job is revertable in isolation. Use a
+plain `refactor(<lens>): <id> — <one line>` message per checkpoint. The user still
+reviews, lands, or discards the whole branch as one unit at the end — `/ship`
+squashes/curates the checkpoints into the final commit(s) it proposes. Pushing and PR
+creation remain outward-facing and still need the explicit yes below.
+
 ## After finishing: offer to commit and open a PR — never auto-publish
 
 - **Offer, don't do.** Propose a Conventional Commit summarizing the work and

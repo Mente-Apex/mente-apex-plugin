@@ -17,7 +17,7 @@ description: >-
   invoke this skill in programmatic mode to get code implemented test-first.
 user-invocable: true
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
 ---
 
 # TDD — Test-Driven Development
@@ -58,12 +58,15 @@ Pick based on what's being asked, not on how the user phrased it:
   it *actually does*. When current behavior looks wrong, flag it to the user instead of
   silently "fixing" it — that oddity may be load-bearing. Once the pins are green,
   switch to feature mode on top of that safety net.
-- **Refactor** (programmatic) — a lens skill (`solid`, `gof`) asks you to apply a
-  behavior-preserving structural change under a green safety net. Read
-  `references/refactor-jobs.md` for the calling contract. In short: pin untested
-  targets first (legacy mode), apply the smallest faithful change, keep the full
-  suite green, revert the whole job on red. Any genuinely-new behavior the change
-  introduces runs as a normal feature cycle.
+- **Refactor** (programmatic) — a lens skill (`solid`, `gof`, `clean-architecture`,
+  the `code-quality` umbrella) asks you to apply a behavior-preserving structural
+  change under a green safety net. Read `references/refactor-jobs.md` for the calling
+  contract. In short: **verify the targets are genuinely covered first** (a `covered`
+  label the suite never exercises is no net — and skipping this is how a refactor lands
+  with no real safety), pin actually-untested targets first (legacy mode), apply the
+  smallest faithful change, keep the full suite green, revert the whole job on red. A
+  lens-applied refactor is *purely* behavior-preserving: it carries no `new_behavior`;
+  a change that would alter behavior goes back to the human — it is not a refactor job.
 
 **Not this skill: bugfixes.** When the task is that existing behavior is *wrong* — an
 error, a wrong result, a regression — hand off to the debug skill rather than handling
