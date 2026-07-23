@@ -11,10 +11,10 @@ Keep the field names verbatim.
 
 Each lens already assigns a **globally-unique, self-describing** rec ID —
 `<lens>/<tier>-<n>` — so the consolidator **carries it verbatim** and never
-re-prefixes. `<lens>` ∈ `clean-arch | ddd | solid | gof | clean-code`; `<tier>` ∈
-`critical | major | minor` for **all five** lenses (clean-code grades line craft on
-the same three tiers — see its standard's Severity rubric — so nothing needs
-translating). So `solid/major-5`, `clean-arch/critical-1`, `clean-code/major-2` —
+re-prefixes. `<lens>` ∈ `clean-arch | ddd | solid | gof | clean-code | test-quality`;
+`<tier>` ∈ `critical | major | minor` for **all six** lenses (clean-code and test-quality
+grade on the same three tiers — see their standards' Severity rubrics — so nothing needs
+translating). So `solid/major-5`, `clean-arch/critical-1`, `test-quality/major-2` —
 from the code alone a reader knows the owning lens and the tier, and can open that
 lens's own report for the long-form evidence without decoding a legend. IDs are
 permanent; later cycles append, never renumber.
@@ -38,15 +38,18 @@ this block — pruned to the codes that actually appear — into each report:
   - `solid` — the five SOLID class principles.
   - `gof` — Gang-of-Four design patterns.
   - `clean-code` — line-level craft (naming, function shape, comments).
-- **Tiers** — all five lenses use `critical > major > minor` (clean-code grades line
-  craft on the same three tiers, so its findings sit at their own tier, not down-filed).
+  - `test-quality` — the test suite's own structure, craft, and stale-test tending.
+- **Tiers** — all six lenses use `critical > major > minor` (clean-code and test-quality
+  grade on the same three tiers, so their findings sit at their own tier, not down-filed).
   A code's tier word is its tier at first assignment — the section a finding sits
   under is the current truth if it was later re-tiered.
-- **Principle abbreviations** (they appear on each finding's *Lens* line):
+- **Principle / dimension abbreviations** (they appear on each finding's *Lens* line):
   SRP Single Responsibility · OCP Open/Closed · LSP Liskov Substitution ·
   ISP Interface Segregation · DIP Dependency Inversion (the five SOLID);
   ADP Acyclic Dependencies · SDP Stable Dependencies · SAP Stable Abstractions
-  (clean-architecture component principles).
+  (clean-architecture component principles); test-quality names its dimension in words
+  (structure · naming · one-behavior · no-logic · fixtures · assertions · parametrization ·
+  over-mock · isolation · speed · stale).
 - **Cross-reference labels** (used in *Grouped changes* and each finding's
   *Related* line — so "the same thing, seen twice" is never a puzzle):
   - **Primary** — owns the fix; applying it resolves the whole group.

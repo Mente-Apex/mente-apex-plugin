@@ -1,8 +1,11 @@
 # Shared refactor workflow (Phase 0–5)
 
 Shared orchestration for the plugin's refactor lenses (`solid`, `gof`,
-`clean-architecture`, and the `code-quality` umbrella that fans them out; the
-analyze-only lenses `ddd` and `clean-code` use Phases 0–3 and stop before apply). Each
+`clean-architecture`, `test-quality`, and the `code-quality` umbrella that fans them out;
+the analyze-only lenses `ddd` and `clean-code` use Phases 0–3 and stop before apply).
+`test-quality` applies through this engine too but adds its own two safety gates on top —
+a mutation gate for test refactors, a coverage-non-regression gate for deletions — since
+"suite still green" cannot vouch for a changed or deleted test. Each
 lens supplies a **rubric** (`references/<rubric>.md`) and a **report
 template** (`references/report-template.md`); this file supplies the
 workflow. The engine is TDD's refactor job

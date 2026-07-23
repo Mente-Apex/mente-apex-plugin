@@ -59,7 +59,7 @@ Pick based on what's being asked, not on how the user phrased it:
   silently "fixing" it — that oddity may be load-bearing. Once the pins are green,
   switch to feature mode on top of that safety net.
 - **Refactor** (programmatic) — a lens skill (`solid`, `gof`, `clean-architecture`,
-  the `code-quality` umbrella) asks you to apply a behavior-preserving structural
+  `test-quality`, the `code-quality` umbrella) asks you to apply a behavior-preserving structural
   change under a green safety net. Read `references/refactor-jobs.md` for the calling
   contract. In short: **verify the targets are genuinely covered first** (a `covered`
   label the suite never exercises is no net — and skipping this is how a refactor lands
