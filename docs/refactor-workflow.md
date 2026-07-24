@@ -333,9 +333,13 @@ them, so the templates point here instead of each restating it — if the vocabu
 grows, it grows in one place.
 
 - **Status values** — each rec's `Status:` line moves through
-  `pending` → `applied` | `failed (reverted)` | `skipped (not approved)`, where
+  `pending` → `applied` | `failed (reverted)` | `skipped (not approved)` |
+  `skipped (lost conflict to <winner-id>)`, where
   `applied` means the edit landed (or `applied (via <primary-id>)` for a
-  subsumed rider whose Primary's single edit resolved it). The implementer
+  subsumed rider whose Primary's single edit resolved it), and
+  `skipped (lost conflict to <winner-id>)` is the loser of a Phase-3 conflict
+  fork (distinct from `skipped (not approved)` so a later reader sees *why* it
+  was excluded). The implementer
   edits only the `Status:` line of each rec it touches and appends to the
   Apply log; it changes nothing else in the report.
 - **Apply-log lines** — the implementer appends one line per attempt under the
