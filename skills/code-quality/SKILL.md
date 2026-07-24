@@ -163,7 +163,9 @@ report yourself before the gate.
 
 Follow the shared workflow's Phase 3 on the **consolidated** report: present counts by
 tier, the top wins across all lenses, anything High-risk, and any *Unresolved tensions*
-the consolidator surfaced (e.g. Singleton ↔ DIP). The report's **Findings index** is
+the consolidator surfaced (e.g. Singleton ↔ DIP). Resolve every `## Conflicts` **fork** per the shared Phase 3 (an explicit
+either/or, before ordering, un-satisfiable by tier/blanket approval) — this is
+distinct from the softer *Unresolved tensions*, which you merely present. The report's **Findings index** is
 your scannable map for this — it already lays out every finding with its principle,
 group, recommended apply order, and status, so present from it rather than
 re-summarizing by hand. The consolidated report carries a

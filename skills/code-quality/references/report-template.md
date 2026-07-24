@@ -191,6 +191,18 @@ links (and any intra-report reference) resolve to the exact finding.
 
 #### [clean-code/minor-1] ...   <!-- every lens files at its own tier; clean-code is a peer, not down-filed -->
 
+## Conflicts
+
+Mutually-exclusive recs — applying one voids the other. The gate resolves each
+before the apply order is computed; blanket/tier approval cannot resolve a fork.
+Omit this whole section if there are no hard conflicts.
+
+### [conflict-1] <one-line axis of disagreement>
+- **Recs:** <id-A> vs <id-B>
+- **Disagree about:** <the axis — e.g. "repository owns the query cache" vs "cache belongs in the service layer">
+- **Consequence:** apply <id-A> ⟹ drop <id-B> (and vice versa)
+- **Resolution:** <filled at the gate: winner id, or "neither">
+
 ## Cross-lens notes
 
 For overlaps that did **not** collapse into a single shared edit (a hand-off to

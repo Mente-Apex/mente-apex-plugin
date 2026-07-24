@@ -137,6 +137,21 @@ the top wins, and anything marked High risk. Then ask the user (AskUserQuestion)
 which recommendations to apply — unless they already pre-authorized. **"None — I
 just wanted the doc" is a first-class outcome**, not a failure; stop there gracefully.
 
+**Resolve conflicts before computing the apply order.** If the report has a
+`## Conflicts` section, each entry is a **fork** — two mutually-exclusive recs
+where applying one voids the other. Resolve **every** conflict here, before any
+ordering, with an explicit either/or (AskUserQuestion: pick the winner, or
+"neither"). A mutual exclusion is a *branch, not a dependency* — the
+dependency-aware apply order cannot be linearized while both sides are approved,
+so resolution is upstream of Phase 4, not inside it. **Tier/blanket approval
+cannot resolve a fork:** "apply all Major" is undefined over a mutually-exclusive
+pair — intercept and force the pick **even under a pre-authorization** (a pre-auth
+covers independent recs; a fork has no "all" answer). Record the loser's
+`Status:` as `skipped (lost conflict to <winner-id>)` — not a bare
+`skipped (not approved)` — so a later reader sees *why* it was excluded and does
+not resurrect it. **Checklist: every declared conflict is resolved before the
+apply order is computed.**
+
 **Grouped changes are approved as units.** When the report has a `## Grouped changes`
 section, each group is one physical edit — present it by its **title + id** (e.g.
 `group-1`) with its members (Primary; subsumed riders, which resolve automatically;
@@ -175,6 +190,11 @@ convention ([docs/git-convention.md](git-convention.md)): on a git repo's
 default branch, create `<lens>/<short-slug>` and do all apply-phase work
 there; surface a dirty tree before mixing changes into it. This is what lets
 the human review, land, or discard the whole refactor as one unit.
+
+**A conflict must never reach here unresolved.** If a `## Conflicts` entry
+somehow arrives at apply with no gate resolution, **halt and return to Phase 3** —
+the implementer never picks a conflict's winner itself. (Phase 3's checklist
+exists to prevent this; this is the backstop.)
 
 Split the approved recommendations by their **Risk** field:
 

@@ -73,10 +73,17 @@ Phase-0 scope/baseline notes.
    `Fix mechanism in "Extract config_sync_fs.py leaf" (see Grouped changes); primary
    is clean-arch/major-1`. A standalone finding's Related line is just `—`.
 
-7. **Surface tensions, don't resolve them.** The hub marks Singleton ↔ DIP as a
-   genuine disagreement. When merged findings actually conflict (one lens wants a
-   module-level singleton, another wants injection), do **not** pick a winner — list
-   it under *Unresolved tensions* for the human to decide at the gate.
+7. **Surface tensions and forks — structurally, don't resolve them.** Two cases.
+   A *soft tension* (the hub's Singleton ↔ DIP — two philosophies, both livable)
+   goes under **Unresolved tensions** as today. A **hard conflict** — two
+   actionable recs that are **mutually exclusive**, where applying one voids the
+   other (`apply A ⟹ ¬apply B`) — is stronger: emit a **`## Conflicts`** block
+   parallel to `## Grouped changes`, one `### [conflict-<n>]` entry per fork with
+   the rec IDs, the **axis of disagreement**, and the **consequence**
+   (`apply solid/med-2 ⟹ drop ddd/med-1`). Give each a stable id (`conflict-1`,
+   …) so the gate can address it. Do **not** pick a winner — the human decides at
+   the gate. A fork is **not** a group: never fold mutually-exclusive recs into a
+   `## Grouped changes` entry.
 
 8. **Carry the non-overlapping findings** through unchanged (verbatim ID, `Related: —`).
 
