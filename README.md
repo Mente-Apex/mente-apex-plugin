@@ -40,8 +40,7 @@ section-aware merge when machines diverge (optional LLM merge via
 | Skill | Command | What it does |
 |-------|---------|-------------|
 | config-sync-setup | `/config-sync-setup` | First time, or connecting a new machine to your config-sync repo |
-| config-sync | `/config-sync` | Push/pull/merge config across machines (run whenever you switch) |
-| config-sync-manage | `/config-sync-manage` | Status, promote session notes into rules, share artifacts, sync history |
+| config-sync | `/config-sync` | Push/pull/merge config across machines (run whenever you switch); `/config-sync status` for a read-only view of machines, shared artifacts, and sync history |
 
 > **Two different systems, don't confuse them.** *Config sync* (above) moves your
 > `~/.claude` config files between machines. **Mente Apex memory** — the `mem` CLI and
