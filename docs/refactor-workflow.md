@@ -38,6 +38,13 @@ honestly*: finish the analysis pass completely, then re-read the code fresh
 for the verification pass before writing the final doc. The role separation
 is what keeps false positives out of the report — don't collapse it.
 
+**The draft is transient.** `findings-draft.md` is the analyzer→reviewer
+hand-off, not a deliverable: **written** by the analyzer (Phase 1), **consumed**
+by the reviewer (Phase 2), **deleted** by the orchestrator once the report is
+durable (end of Phase 2). Only the dated `<LENS>-REPORT-<YYYY-MM-DD>.md`
+persists. An edit that leaves the draft on disk between runs reintroduces the
+stale-collision bug this rule exists to prevent.
+
 ## Invocation
 
 `/<lens> [path]` — `path` scopes the analysis (default: repo root). The user
@@ -67,6 +74,12 @@ Before any agent runs, establish ground truth yourself:
    `.git/info/exclude` if the repo is a git repo and doesn't already ignore it.
    Reports are ephemeral working artifacts by default; the user may choose to
    commit a final report as a living doc at the end.
+   - **Pre-clear a stale draft.** A `findings-draft.md` is a transient
+     analyzer→reviewer hand-off, never a durable record, so a copy left in the
+     report dir can only be stale — from a prior run that crashed between Phase 1
+     and the end of Phase 2. Delete any pre-existing
+     `docs/reports/<lens>/findings-draft.md` now, before Phase 1 writes. Dated
+     final reports are the durable record and are left untouched.
 
 ### Language references — the detect-and-load convention
 
@@ -108,6 +121,14 @@ the sibling lens's territory so the two reports don't contradict each other —
 before writing the final report to `docs/reports/<lens>/<LENS>-REPORT-<YYYY-MM-DD>.md`
 using the lens's `references/report-template.md` **exactly**: the apply
 phase depends on its structure (IDs, Risk and Status fields).
+
+**Reap the draft.** Once you have confirmed the report exists and parses (the
+fan-in in Guardrails), delete `docs/reports/<lens>/findings-draft.md` — its only
+consumer is the reviewer, and from Phase 3 on the dated report is the single
+source of truth. **Delete only against a parseable report:** if the reviewer
+produced none (it died), keep the draft as the sole evidence of the partial run
+and record the coverage gap per the "artifacts always terminal" guardrail — never
+delete a draft you cannot replace with a report.
 
 ## Phase 3 — Decision gate (human)
 
