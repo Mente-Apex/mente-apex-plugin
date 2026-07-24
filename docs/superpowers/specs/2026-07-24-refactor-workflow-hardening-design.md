@@ -17,6 +17,14 @@ to apply time.**
 | C1 | transient `findings-draft.md` lifecycle | `docs/refactor-workflow.md` |
 | C2 | Phase-0 shared symbol index (pre-collect the greps) | `skills/code-quality/SKILL.md` |
 | C3 | conflict/exclusion resolution at the decision gate | `docs/refactor-workflow.md`, `skills/code-quality/{SKILL.md, references/report-template.md, agents/consolidator.md}` |
+| C4 | apply-phase re-derives structure fresh (counterpart to C2) | `docs/refactor-agents/implementer.md`, `docs/refactor-workflow.md`, `skills/code-quality/SKILL.md` |
+
+**C2 ↔ C4 boundary (the reconciliation).** These two are one principle split across the
+two halves of the run. **Analysis (Phases 0–2)** is read-only over a single consistent
+snapshot → build structural facts once, share them, never re-grep (C2). **Apply (Phase
+4)** *mutates* the tree → re-derive structural facts fresh, per job, never trust the
+snapshot (C4). The shared index is an analysis-time artifact; it does not cross into
+apply.
 
 ---
 
@@ -175,7 +183,55 @@ Singleton↔DIP tension the design was built around.
 
 ---
 
-## Scope & impact (all three)
+## C4 — apply-phase re-derives structure fresh (counterpart to C2)
+
+### Problem
+
+C2 pre-collects structural facts once and shares them — correct for the read-only
+analysis phase, over one consistent snapshot. But the **apply phase mutates the
+tree**, and the implementer must not inherit that snapshot. Today the implementer
+(`implementer.md`) step 1 reads "every file it cites" and step 2 sets `targets` = "the
+cited files" — a fresh read of *specific cited files*, but it trusts the **report's
+citations**, which are analysis-time. By the time job N runs, jobs 1…N-1 have applied
+and checkpoint-committed, so:
+
+- cited `file:line` have **drifted** (the reviewer fixed lines for the *report* at
+  Phase 2 — before any edits landed);
+- an earlier rec may have already **moved or split** the class this rec targets, so the
+  citation points at code no longer there;
+- the Phase-0 shared index is a **pre-refactor** picture — locating targets from it
+  would aim at stale structure.
+
+Blindly reading a stale citation can target the wrong place or a symbol already gone.
+
+### Design
+
+- **Shared index is analysis-only.** State in C2's text, `implementer.md`, and Phase 4
+  that the Phase-0 index does **not** cross into apply; the apply phase re-derives.
+- **Implementer re-derives against the live tree, per job.** Before building `targets`,
+  the implementer re-greps/re-reads to resolve the rec's symbols and locations against
+  the **current** tree (post prior checkpoints), not the report's snapshot. If a cited
+  target has drifted away, or an earlier rec already changed the structure this rec
+  assumed, it **stops and surfaces** (the rec may be moot or now conflicts) rather than
+  editing a stale citation.
+- **Per-job, not once at Phase-4 start.** A single re-index when apply begins goes
+  stale after job 1, since every checkpoint commit drifts the tree again. Fresh
+  re-derivation is **per job**, consistent with the existing "each implementer runs in
+  a fresh context / clean working tree" design.
+- **Scope: the job's targets + immediate neighborhood** (the modules the rec touches
+  and their importers), re-derived fresh each job — enough to catch drift and confirm
+  the rec still holds, without a full-repo sweep on every job in a long queue.
+
+### Rejected
+
+- **Reuse the Phase-0 index at apply** — the C2 optimization leaking across the
+  analysis/apply boundary; targets stale structure and is the bug this prevents.
+- **One full re-index at Phase-4 start** — drifts after the first checkpoint commit;
+  per-job fresh reads are both cheaper and correct.
+
+---
+
+## Scope & impact (all four)
 
 - **C1** — one file: `docs/refactor-workflow.md`. All seven lenses inherit it; the
   umbrella (merges reports, not drafts) and analyze-only lenses are safe.
@@ -185,6 +241,10 @@ Singleton↔DIP tension the design was built around.
   `consolidator.md` / `report-template.md` / `SKILL.md` Phase 3. Single-lens runs
   rarely produce cross-lens conflicts but inherit the same gate mechanics for any
   intra-lens fork.
+- **C4** — `docs/refactor-agents/implementer.md` (re-derive step + drift-stop), the C2
+  section of `code-quality/SKILL.md` (index is analysis-only), and one line in
+  `docs/refactor-workflow.md` Phase 4 stating the boundary. Applies to every apply
+  path (single-lens and umbrella), since both dispatch the same implementer.
 - No changes to lens rubrics, the TDD apply engine's contract, or the analyzer/
   reviewer role split.
 
@@ -205,3 +265,7 @@ Behavioral (the changes are orchestration prose), exercised on a real run:
   loser lands `skipped (lost conflict to <id>)`; the apply order is computed only over
   the reduced set. A conflict reaching Phase 4 unresolved makes apply **halt**, not
   choose.
+- **C4** — queue two recs where the first moves/splits a class the second cites: the
+  second job re-derives against the live tree, finds the cited target drifted, and
+  **stops and surfaces** rather than editing stale structure. Confirm the implementer
+  never reads the Phase-0 index at apply time.
