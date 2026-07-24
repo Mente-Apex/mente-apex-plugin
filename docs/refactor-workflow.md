@@ -196,6 +196,12 @@ somehow arrives at apply with no gate resolution, **halt and return to Phase 3**
 the implementer never picks a conflict's winner itself. (Phase 3's checklist
 exists to prevent this; this is the backstop.)
 
+**The Phase-0 shared index is analysis-only.** It was built once over the
+read-only analysis snapshot; the apply phase mutates the tree via checkpoint
+commits, so each implementer re-derives structural facts **fresh, per job**
+against the live tree — never from that index. See
+[docs/refactor-agents/implementer.md](refactor-agents/implementer.md).
+
 Split the approved recommendations by their **Risk** field:
 
 - **Low/Medium risk** → dispatched as described below.
