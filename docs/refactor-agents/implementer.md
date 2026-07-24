@@ -14,6 +14,10 @@ approved specific recommendations at the decision gate.
 - Report path + your rec ID (or ordered chain IDs, or group id)
 - Test command + baseline status
 - `coverage` policy from the human gate (covered / characterization-first / light)
+- **Not** the Phase-0 shared index (file list / import graph / symbol index) — it
+  is an analysis-phase snapshot of a tree the apply phase has since mutated. You
+  re-derive structure fresh against the live tree (per the per-unit loop), never
+  from that index.
 
 ## Craft standard (applies to every rec)
 
@@ -28,11 +32,24 @@ the standard through to the refactor job as part of each rec's `change` context.
 You apply exactly one unit: a standalone rec, a dependent chain, or a **grouped
 change** (a `## Grouped changes` entry — a Primary plus subsumed and separable riders).
 
-1. Read the unit and every file it cites. For a group, read the banner: the **Primary**,
+1. **Re-derive against the live tree first.** The report's `file:line` citations
+   are an *analysis-time snapshot*. By the time your job runs, earlier approved
+   jobs have applied and checkpoint-committed, so those citations have **drifted**
+   — and an earlier rec may already have moved or split the class you target.
+   Before building `targets`, re-grep/re-read the **current** tree to resolve the
+   rec's symbols and locations as they are **now** — scoped to the rec's targets
+   and their importers, not a full-repo sweep, and re-derived **per job** (a
+   single re-index at apply-start goes stale after the first checkpoint). **Never**
+   locate targets from the Phase-0 shared index — that is a pre-refactor snapshot,
+   an analysis-phase artifact. If a cited target has drifted away, or an earlier
+   rec already changed the structure this rec assumed, **stop and surface it**:
+   the rec may be moot or now conflicts — mark it `skipped` with a one-line reason
+   and hand it back, rather than editing a stale citation.
+2. Read the unit and every file it cites. For a group, read the banner: the **Primary**,
    its **subsumed** riders (`Same change` / `Fix mechanism` / `Sub-symptom` — resolved by
    the Primary's edit), and its **separable** (`Rides along`) riders (approved ones are
    their own follow-on step; vetoed ones are skipped).
-2. Build the refactor-job input (see
+3. Build the refactor-job input (see
    [skills/tdd/references/refactor-jobs.md](../../skills/tdd/references/refactor-jobs.md)):
    `targets` = the cited files; `change` = the Primary's Proposed change verbatim, plus
    each approved separable rider's change as an explicit follow-on step; `test_command`
@@ -42,9 +59,9 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
    behavior-preserving under a net. If a rec cannot be done without changing behavior, it
    is not an apply job: stop, mark it `skipped (not approved)` with a one-line reason, and
    surface it for the human — never quietly slip new behavior in through a refactor.
-3. Dispatch the TDD refactor job. For a group, it verifies after the Primary+subsumed
+4. Dispatch the TDD refactor job. For a group, it verifies after the Primary+subsumed
    edit, then after each separable rider — a failed separable rider reverts alone.
-4. Record outcomes into each finding's Status line and append Apply-log lines, using the
+5. Record outcomes into each finding's Status line and append Apply-log lines, using the
    report's exact fields — including the **safety clause** (the covering tests, or the
    pins written red-first) carried from the job's `coverage_proof`, per the canonical
    Apply-log format:
@@ -53,7 +70,7 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
      `<ts> [<rider>] applied — subsumed by <primary> (no separate edit)`.
    - **Approved separable rider** → `applied` (its own edit) or `failed (reverted)`.
    - **Vetoed separable rider** → `skipped (not approved)`.
-5. In a chain, a mid-chain revert invalidates dependents — mark them `skipped` with a
+6. In a chain, a mid-chain revert invalidates dependents — mark them `skipped` with a
    note pointing at the failed rec. A group's Primary revert fails the group; a separable
    revert leaves the Primary and other riders intact.
 
