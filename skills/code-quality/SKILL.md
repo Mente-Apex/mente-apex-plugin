@@ -105,7 +105,7 @@ stays available; it just shouldn't be the silent default when the repo is large.
 
 Dispatch **six analyzer subagents at once** (Agent tool, `general-purpose`,
 read-only), one per lens. Give each the Phase-0 scope notes, the **detected
-language set**, the test command, and **the shared index** (file list + import graph)
+language set**, the test command, and **the shared index** (file list + import graph + symbol index)
 so none of them re-scans the tree; tell it to read its
 lens's analyzer instructions **and**, per the detect-and-load convention, its
 lens's `references/<language>.md` for each detected language that has one
