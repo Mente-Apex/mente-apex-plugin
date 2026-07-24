@@ -1,5 +1,6 @@
 ---
 name: menteapex-deliverable
+version: 0.21.0
 description: >
   Produce any client-facing Mente Apex deliverable — initial offer, proposal,
   engagement agreement, IP licence, DPA, handover, update brief, or pre-production
@@ -65,6 +66,34 @@ Templates mark fill-in slots as `[bracketed prose]` (e.g. `[Client / business]`,
 **instructions to you — strip them, never render them**. Fill the copy from the inputs;
 ask the user for anything you can't source. Honour each template's guidance comment
 (tier, discount reason, consumer-vs-professional clause, etc.) as you fill.
+
+**Weave in customer-specific prose.** Content a client needs that the template has no
+`[placeholder]` for — extra scope, a bespoke clause, notes pulled from
+`Customers/<Client>/customer_input/` — is added to **the copy**, never the template. You
+supply the formatting judgement; a helper does the mechanical placement:
+
+1. **Source the text** from `customer_input/` or the user's message. Raw prose is fine —
+   no structure required from them.
+2. **Choose the section.** Propose the target heading (its exact heading line) and
+   **confirm with the user** before inserting — placement is a decision, never a silent
+   guess.
+3. **Reformat to the renderer's subset.** `render.py` supports only headings,
+   ordered/unordered lists (one level), GFM pipe tables, blockquotes, `**bold**` /
+   `*italic*`, links, and `---`. Anything outside it is silently dropped — reformat the
+   prose *to this subset*, matching the template's idiom, before inserting.
+4. **Insert mechanically** so a hand-edit can't mangle the copy — `insert_block.py`
+   places the block at the **end of that heading's section** and refuses (non-zero,
+   nothing written) if the anchor is missing or ambiguous:
+
+   ```bash
+   printf '%s\n' "<your reformatted markdown block>" | \
+     python3 "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/insert_block.py" \
+       --file "Customers/<Client>/docs/<family>-<slug>.md" --after-heading "## Scope"
+   ```
+
+5. **Show the woven block and where it landed, then confirm** before rendering. For the
+   legal families (engagement agreement, licence, DPA) this human gate is **mandatory** —
+   never insert bespoke legal prose autonomously.
 
 **The completeness gate — this is non-negotiable.** A half-filled deliverable must never
 reach the client. Verify mechanically and loop until clean:

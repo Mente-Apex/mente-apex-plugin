@@ -1,6 +1,6 @@
 {
   "name": "mente-apex",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Mente Apex private utilities \u2014 client onboarding, a brand-book-first client-deliverable generator (offers, proposals, agreements, licences, DPAs, handovers, update briefs \u2014 rendered to on-brand HTML/PDF from Markdown), an invoice generator, a one-step ship (branch/commit/push/PR) workflow, a clean-code review/writing standard, a SOLID analysis & guided-refactor workflow, a GoF design-pattern analysis & guided-refactor workflow (creational/structural/behavioral), a TDD (red-green-refactor) implementation workflow with feature and legacy-code modes, plus Claude config sync across machines via Git, plus a Domain-Driven Design modelling/build/analysis workflow (/ddd), a Clean Architecture component/dependency audit (/clean-architecture), a test-suite quality audit (/test-quality: structure, craft, mocking strategy, and stale-test tending), and an umbrella full-audit (/code-quality) that runs all six review lenses at once and merges them into one deduplicated report.",
   "author": {
     "name": "Boris Vujicic"
