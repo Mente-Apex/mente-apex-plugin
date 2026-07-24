@@ -1,6 +1,5 @@
 ---
 name: menteapex-deliverable
-version: 0.21.0
 description: >
   Produce any client-facing Mente Apex deliverable — initial offer, proposal,
   engagement agreement, IP licence, DPA, handover, update brief, or pre-production
@@ -12,6 +11,8 @@ description: >
   "/deliverable".
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
+metadata:
+  version: "0.1.0"
 ---
 
 # Client Deliverable Generator
