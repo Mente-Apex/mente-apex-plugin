@@ -81,7 +81,17 @@ So produce a small **inventory artifact** in `docs/reports/code-quality/` now an
 it to every analyzer: the scoped **file list** (source *and* tests, with rough LOC,
 vendored/generated dirs already excluded) and the **import graph** built once with the
 real tool (`grimp` for Python, `madge` for TS — clean-architecture needs it anyway, so
-build it here and share rather than have each lens re-derive imports by grep). Note in
+build it here and share rather than have each lens re-derive imports by grep). Build a **third artifact next to the file list and import graph: a symbol
+index** — every class / function / method definition with its `file:line`, name,
+and rough LOC — **once**, with a real tool when reachable and degrading exactly
+as the import graph does: **`ast-grep`** (primary; already used in Phase 1 for
+structural queries) → **`ctags`** (fallback) → **agent-read of the scoped file
+list** (last resort, recorded as a coverage note). Six analyzers each
+re-enumerating the tree's classes, functions, and call-sites is the same waste
+the import graph already removes for edges. This shared index is an
+**analysis-phase artifact** — built once over Phases 0–2's single read-only
+snapshot; it must **not** be consumed by the apply phase, which mutates the tree
+(see the implementer's re-derive rule). Note in
 each analyzer's brief that imports are answered from this graph, not re-grepped.
 
 **On a large codebase, prefer scope over a whole-repo sweep.** If the tree is big
@@ -102,7 +112,12 @@ lens's `references/<language>.md` for each detected language that has one
 (degrade gracefully and record it as a coverage note where none does).
 
 Tell each analyzer to **search narrowly, not sweep**: answer import questions from the
-shared graph (never by grepping `import` lines); scope every search to the Phase-0 file
+shared graph (never by grepping `import` lines); answer **definitional** questions — where classes/functions/methods are defined,
+their names, their call-sites — **from the shared symbol index, never by
+re-enumerating the tree** (the same rule as imports; the index is built once in
+Phase 0). A lens's remaining *semantic* search (SOLID's discriminator
+conditionals, GoF's global-state sites) still runs, but scoped to the Phase-0
+file list against that pre-built corpus, not as a fresh full-tree sweep; scope every search to the Phase-0 file
 list (the Grep tool is ripgrep-backed — speed comes from a tight `glob`/path scope, not
 from grepping the whole tree); reach for `ast-grep` for structural/pattern queries
 (the shape a `gof`/`solid` smell has) instead of brittle regex; and read file *ranges*
