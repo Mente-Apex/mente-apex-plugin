@@ -3,14 +3,16 @@ name: config-sync
 description: >
   This skill should be used when the user wants to sync their Claude config across
   machines, push local config changes to the remote, pull updates from other machines,
-  or resolve merge conflicts between machines. Trigger phrases include: "sync my Claude
-  config", "push my config", "pull config from other machines", "sync with my other
-  machines", "my config is out of date", "/config-sync".
+  or resolve merge conflicts between machines. Also handles read-only status: how many
+  machines are in the network, what's shared, and recent sync history. Trigger phrases
+  include: "sync my Claude config", "push my config", "pull config from other machines",
+  "sync with my other machines", "my config is out of date", "/config-sync", "config
+  sync status", "how many machines", "what did I sync recently".
 user-invocable: true
 disable-model-invocation: false
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.8.3"
+  version: "0.9.0"
 ---
 
 # config-sync
@@ -24,6 +26,14 @@ Conflict resolution happens inline — no separate command needed.
 > **Not the knowledge brain.** This syncs your `~/.claude` *config files* across
 > machines. For capturing/recalling facts use **Mente Apex memory** (the `mem` CLI /
 > the `mente-apex-memory` MCP server) — a different system with its own `mem sync`.
+
+## Mode select — status vs full sync
+
+If the user only wants to **see** the state of the network (e.g. "config sync status",
+"how many machines", "what did I sync recently", `/config-sync status`) and *not*
+actually push/pull, jump straight to **[Status (read-only)](#status-read-only)** at the
+bottom, run it, and stop. It has no side effects. Otherwise, run the full sync cycle
+below (Steps 0–7).
 
 ## Step 0 — Verify setup
 
@@ -301,6 +311,118 @@ If new plugins were installed, remind the user to restart Claude to activate the
 If new MCP servers were added, remind the user to restart Claude to load them.
 
 If nothing changed on either side: "✓ Already up to date — nothing to sync."
+
+## Status (read-only)
+
+A pure inventory of the network and local config-sync state — **no push, no pull, no
+apply**. This is a self-contained read-only path: it resolves the engine itself and
+never runs the mutating Step 0 setup, so asking for status can't trigger a sync.
+
+```bash
+ENGINE="${CLAUDE_PLUGIN_ROOT:-}/scripts/config_sync.py"
+if [ ! -f "$ENGINE" ]; then
+  # CLAUDE_PLUGIN_ROOT is unset outside plugin context (e.g. a standalone-copied
+  # skill) — fall back to the newest engine in the installed plugin cache.
+  # sort -V version-sorts the cached versions; tail -1 takes the highest, so an
+  # older cached version can never shadow the current one.
+  ENGINE=$(ls -d "$HOME/.claude/plugins/cache/"*/mente-apex/*/scripts/config_sync.py \
+    2>/dev/null | sort -V | tail -1)
+fi
+[ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
+REPO="$HOME/.claude/config-sync-repo"
+
+if [ ! -d "$REPO" ]; then
+  echo "config sync is not set up yet. Run /config-sync-setup first."
+  exit 0
+fi
+
+# Local inventory
+python3 "$ENGINE" status
+
+# Network: list all machines in the repo
+if [ -d "$REPO/machines" ]; then
+  echo ""
+  echo "── Network machines ────────────────────────────────"
+  for snap in "$REPO/machines/"*.json; do
+    python3 - "$snap" <<'EOF'
+import json, sys
+from pathlib import Path
+snapshot = json.loads(Path(sys.argv[1]).read_text())
+timestamp = snapshot.get("timestamp", "unknown")[:19].replace("T", " ")
+print(f"  {snapshot['machine_id']:<35} last snapshot: {timestamp}")
+EOF
+  done
+fi
+
+# Shared artifacts (with git author + date)
+if [ -d "$REPO/shared" ]; then
+  echo ""
+  echo "── Shared artifacts ─────────────────────────────────"
+  python3 - "$REPO" <<'EOF'
+import sys, subprocess
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+shared = repo / "shared"
+ENUMERATION_CAP = 20  # list this many files per type, then summarise the rest
+
+
+def last_touch(pathspec):
+    """Author/date of the most recent commit touching pathspec — one `git log`
+    for the whole type dir, so attribution costs one subprocess per type rather
+    than one per file (which made status O(files) subprocesses)."""
+    record = subprocess.run(
+        ["git", "log", "--format=%an|%ad", "--date=short", "-1", "--", pathspec],
+        cwd=repo, capture_output=True, text=True,
+    ).stdout.strip()
+    author, _, date = record.partition("|")
+    return author or "unknown", date or "unknown"
+
+
+found = False
+for type_dir in sorted(shared.iterdir()):
+    if not type_dir.is_dir():
+        continue
+    files = [path for path in sorted(type_dir.rglob("*")) if path.is_file()]
+    if not files:
+        continue
+    found = True
+    type_name = type_dir.name
+    author, date = last_touch(f"shared/{type_name}")
+    print(f"  {type_name}: {len(files)} file(s) — last updated by {author} on {date}")
+    for path in files[:ENUMERATION_CAP]:
+        print(f"      {path.relative_to(shared)}")
+    remaining = len(files) - ENUMERATION_CAP
+    if remaining > 0:
+        print(f"      … and {remaining} more")
+if not found:
+    print("  (none — shared artifacts are legacy; skills/agents auto-propagate now)")
+EOF
+fi
+
+# Recent sync log
+if [ -f "$REPO/meta/sync-log.json" ]; then
+  echo ""
+  echo "── Last 10 syncs ────────────────────────────────────"
+  python3 - "$REPO/meta/sync-log.json" <<'EOF'
+import json, sys
+from pathlib import Path
+log = json.loads(Path(sys.argv[1]).read_text()).get("syncs", [])
+for entry in reversed(log[-10:]):
+    timestamp = entry.get("timestamp", "?")[:19].replace("T", " ")
+    machine_id = entry.get("machine_id", "?")
+    action = entry.get("action", "sync")
+    summary = entry.get("summary", "")
+    line = f"  {timestamp}  [{action:<8}]  {machine_id}"
+    if summary:
+        line += f"  — {summary}"
+    print(line)
+EOF
+fi
+```
+
+Present the output cleanly. If the user asks for the **full** log (e.g. "show all my
+syncs"), read the complete `sync-log.json` and show all entries without the `-10` limit.
 
 ## Handling real conflicts
 

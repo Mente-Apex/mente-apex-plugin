@@ -230,5 +230,5 @@ Tell the user:
 - The remote URL
 - The current local inventory (output from `python3 "$ENGINE" status`)
 - If they chose **Merge** on join: "Run `/config-sync` now to merge and apply the network."
-- Next step: "Run `/config-sync` any time you want to sync. Run `/config-sync-manage`
-  to check repo status, promote notes into rules, or share skills."
+- Next step: "Run `/config-sync` any time you want to sync. Run `/config-sync status`
+  to see the machines in your network, shared artifacts, and recent sync history."
