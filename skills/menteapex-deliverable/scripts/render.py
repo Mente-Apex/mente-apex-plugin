@@ -5,6 +5,7 @@ Zero third-party dependencies (stdlib only) — the plugin is config-synced acro
 machines and must not depend on `pip install` on a fresh box. The Markdown subset is
 bounded to what our own Legal/ templates use, not arbitrary CommonMark.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -122,7 +123,9 @@ def markdown_to_html(markdown: str) -> str:
         if _UL_RE.match(line):
             items = []
             while index < total and _UL_RE.match(lines[index]):
-                items.append(f"<li>{_inline(_UL_RE.match(lines[index]).group(1).strip())}</li>")
+                items.append(
+                    f"<li>{_inline(_UL_RE.match(lines[index]).group(1).strip())}</li>"
+                )
                 index += 1
             out.append("<ul>" + "".join(items) + "</ul>")
             continue
@@ -130,7 +133,9 @@ def markdown_to_html(markdown: str) -> str:
         if _OL_RE.match(line):
             items = []
             while index < total and _OL_RE.match(lines[index]):
-                items.append(f"<li>{_inline(_OL_RE.match(lines[index]).group(1).strip())}</li>")
+                items.append(
+                    f"<li>{_inline(_OL_RE.match(lines[index]).group(1).strip())}</li>"
+                )
                 index += 1
             out.append("<ol>" + "".join(items) + "</ol>")
             continue
@@ -140,12 +145,18 @@ def markdown_to_html(markdown: str) -> str:
             while index < total and lines[index].lstrip().startswith(">"):
                 quote_lines.append(lines[index].lstrip()[1:].lstrip())
                 index += 1
-            out.append("<blockquote>" + _inline(" ".join(quote_lines)) + "</blockquote>")
+            out.append(
+                "<blockquote>" + _inline(" ".join(quote_lines)) + "</blockquote>"
+            )
             continue
 
         # Paragraph: consecutive non-blank lines that aren't another block.
         para_lines = []
-        while index < total and lines[index].strip() != "" and not _is_block_start(lines, index):
+        while (
+            index < total
+            and lines[index].strip() != ""
+            and not _is_block_start(lines, index)
+        ):
             para_lines.append(lines[index].strip())
             index += 1
         out.append("<p>" + _inline(" ".join(para_lines)) + "</p>")
@@ -153,18 +164,28 @@ def markdown_to_html(markdown: str) -> str:
     return "\n".join(out)
 
 
+def _starts_table(lines: list[str], index: int) -> bool:
+    """True if this line is a table header row followed by its separator row."""
+    return (
+        "|" in lines[index]
+        and index + 1 < len(lines)
+        and bool(_TABLE_SEP_RE.match(lines[index + 1]))
+    )
+
+
 def _is_block_start(lines: list[str], index: int) -> bool:
     """True if the line begins a non-paragraph block (stops paragraph accumulation)."""
     line = lines[index]
-    if _HEADING_RE.match(line) or _HR_RE.match(line) or _UL_RE.match(line) or _OL_RE.match(line):
+    if (
+        _HEADING_RE.match(line)
+        or _HR_RE.match(line)
+        or _UL_RE.match(line)
+        or _OL_RE.match(line)
+    ):
         return True
     if line.lstrip().startswith(">"):
         return True
-    if "|" in line and index + 1 < len(lines) and _TABLE_SEP_RE.match(lines[index + 1]):  # noqa: SIM103
-        return True
-    # Guard-clause chain, not `return <expr>`: each block type is one readable
-    # clause, and the table test already spans a full line on its own.
-    return False
+    return _starts_table(lines, index)
 
 
 # --- Completeness gate -------------------------------------------------------
@@ -233,7 +254,9 @@ def resolve_brand(brand_root: Path, fallback_dir: Path | None = None) -> Resolve
     fallback = Path(fallback_dir) if fallback_dir else None
 
     live_tokens = brand_root / "tokens" / "tokens.css"
-    tokens_path = _first_existing(live_tokens, fallback / "tokens.css" if fallback else None)
+    tokens_path = _first_existing(
+        live_tokens, fallback / "tokens.css" if fallback else None
+    )
     fonts_path = _first_existing(
         brand_root / "tokens" / "fonts.css",
         brand_root / "fonts.css",
@@ -275,7 +298,9 @@ def _default_shell() -> str:
     return (_ASSETS_DIR / "shell.html").read_text()
 
 
-def _masthead(title: str, wordmark_svg: str, meta: dict[str, str] | None, doc_kicker: str) -> str:
+def _masthead(
+    title: str, wordmark_svg: str, meta: dict[str, str] | None, doc_kicker: str
+) -> str:
     """The identity page: wordmark opens the document, then title + meta."""
     meta = meta or {}
     meta_cells = "".join(
@@ -332,7 +357,9 @@ def build_document(
 
 
 def _default_brand_root() -> Path:
-    business = os.environ.get("BUSINESS_ROOT", str(Path.home() / "Documents" / "Business"))
+    business = os.environ.get(
+        "BUSINESS_ROOT", str(Path.home() / "Documents" / "Business")
+    )
     return Path(os.environ.get("BRAND_ROOT", str(Path(business) / "Brand")))
 
 
@@ -362,28 +389,47 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
     """Render a self-contained HTML file to PDF via headless Chrome. Returns success."""
     chrome = _find_chrome()
     if not chrome:
-        print("⚠ Chrome/Chromium not found — skipping PDF; HTML written.", file=sys.stderr)
+        print(
+            "⚠ Chrome/Chromium not found — skipping PDF; HTML written.", file=sys.stderr
+        )
         return False
     pdf_path = Path(pdf_path).resolve()
     subprocess.run(
-        [chrome, "--headless=new", "--run-all-compositor-stages-before-draw",
-         f"--print-to-pdf={pdf_path}", "--no-pdf-header-footer",
-         _file_url(html_path)],
-        check=False, capture_output=True,
+        [
+            chrome,
+            "--headless=new",
+            "--run-all-compositor-stages-before-draw",
+            f"--print-to-pdf={pdf_path}",
+            "--no-pdf-header-footer",
+            _file_url(html_path),
+        ],
+        check=False,
+        capture_output=True,
     )
     return pdf_path.exists() and pdf_path.stat().st_size > 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Render a Mente Apex client deliverable.")
+    parser = argparse.ArgumentParser(
+        description="Render a Mente Apex client deliverable."
+    )
     parser.add_argument("markdown", help="Filled Legal/ Markdown template.")
-    parser.add_argument("--check", action="store_true",
-                        help="Exit 1 and list any unfilled [placeholder]; render nothing.")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit 1 and list any unfilled [placeholder]; render nothing.",
+    )
     parser.add_argument("--lang", default="en", help="en | es-ES | es-419 | hr")
-    parser.add_argument("--kind", default="letterhead", choices=["identity", "letterhead"])
+    parser.add_argument(
+        "--kind", default="letterhead", choices=["identity", "letterhead"]
+    )
     parser.add_argument("--title", default=None)
-    parser.add_argument("--out", default=None, help="Output directory (default: alongside input).")
-    parser.add_argument("--brand-root", default=None, help="Override the Brand/ source location.")
+    parser.add_argument(
+        "--out", default=None, help="Output directory (default: alongside input)."
+    )
+    parser.add_argument(
+        "--brand-root", default=None, help="Override the Brand/ source location."
+    )
     args = parser.parse_args(argv)
 
     source = Path(args.markdown)
@@ -410,7 +456,9 @@ def main(argv: list[str] | None = None) -> int:
     if brand.warning:
         print(brand.warning, file=sys.stderr)
 
-    html = build_document(markdown, brand, kind=args.kind, lang=args.lang, title=args.title)
+    html = build_document(
+        markdown, brand, kind=args.kind, lang=args.lang, title=args.title
+    )
 
     out_dir = Path(args.out) if args.out else source.parent
     out_dir.mkdir(parents=True, exist_ok=True)
