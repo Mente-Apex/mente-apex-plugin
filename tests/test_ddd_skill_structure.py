@@ -11,6 +11,8 @@ import json
 import re
 from pathlib import Path
 
+from skill_version_policy import assert_version_at_least
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DDD_SKILL_DIR = REPO_ROOT / "skills" / "ddd"
 
@@ -41,11 +43,10 @@ def test_skill_md_frontmatter_is_well_formed():
     assert fields.get("user-invocable") == "true"
     # description is a block scalar; the key line is `description: >` or `>-`
     assert "description" in fields
-    # version lives under metadata: — assert the literal line is present in body-adjacent frontmatter
+    # version lives under metadata: — floor, not equality, so a routine bump does
+    # not break a guard that has nothing to say about the bump.
     frontmatter_text = read_skill_file("SKILL.md").split("---")[1]
-    assert re.search(
-        r'version:\s*"0\.1\.0"', frontmatter_text
-    ), "metadata.version must be 0.1.0"
+    assert_version_at_least(frontmatter_text, (0, 1, 0))
 
 
 def test_skill_md_covers_both_modes_and_both_gates():
