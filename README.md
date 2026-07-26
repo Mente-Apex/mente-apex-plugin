@@ -89,3 +89,20 @@ a private Git remote you control):
   `$BUSINESS_ROOT/Brand`, holding `tokens/tokens.css`), falling back to vendored brand
   assets beside the skill if the source is unreachable. Override either to run on another machine.
 - `git` + `python3` (standard library only — no pip installs) for the config-sync skills, plus a private Git repository to hold your config
+
+## Development
+
+The environment is managed by [uv](https://docs.astral.sh/uv/); `uv.lock` is
+committed so every machine resolves identical versions. Never activate `.venv`
+by hand — `uv run` does it for you.
+
+```sh
+uv sync                  # build the environment from pyproject.toml + uv.lock
+uv run pytest            # run the test suite
+uv run black .           # format (black owns all formatting)
+uv run ruff check --fix . # lint, autofixing what it can
+```
+
+Both formatter and linter must be clean before a commit. Runtime code stays
+standard-library-only — `pytest`, `black`, and `ruff` are declared under
+`[dependency-groups] dev` and never ship to users of the plugin.
