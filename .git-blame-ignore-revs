@@ -1,6 +1,9 @@
 # Revisions to skip when running `git blame` — bulk mechanical reformats only.
 # Enable locally with:
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# NOTE: this repo rebase-merges PRs, so a commit's SHA changes when it lands.
+# Only ever record the SHA as it exists on main, after the merge.
 
 # style: format the Python sources with black (40 files, no behaviour change)
-7f504baf903278b8d1ff606d05c7b44cee57e137
+f328b80c5a155ded1325997992a9baf2d1ef304d
