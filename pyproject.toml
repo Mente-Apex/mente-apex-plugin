@@ -4,6 +4,63 @@ version = "0.21.0"  # mirrors .claude-plugin/plugin.json (canonical source of tr
 description = "Mente Apex Claude Code plugin — config-sync engine and skills"
 requires-python = ">=3.14"
 
+# A Claude Code plugin, not a distributable package: there is nothing to build or
+# install, so uv manages the environment without installing the project itself.
+[tool.uv]
+package = false
+
+# Test and tooling dependencies. pytest was present in the old pyenv venv but never
+# declared, so the environment was not reproducible. tests/conftest.py puts scripts/
+# on sys.path itself, so the suite needs no editable install — only the runner.
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "pytest>=8.0",
+    "ruff>=0.16.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+# black owns formatting; ruff owns linting. The two overlap on line length, so E501
+# is disabled below and this is the single place the limit is declared.
+[tool.black]
+line-length = 88
+target-version = ["py314"]
+# Skill eval workspaces are gitignored scratch dirs holding vendored fixture venvs.
+# Both tools honour .gitignore, but naming them here keeps the exclusion explicit
+# rather than an emergent property of another file.
+extend-exclude = '''
+/(
+    \.venv
+  | graphify-out
+  | skills/[^/]+-workspace
+)/
+'''
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+extend-exclude = [".venv", "graphify-out", "skills/*-workspace"]
+
+[tool.ruff.lint]
+select = [
+    "F",   # pyflakes — unused imports/names, real defects
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "I",   # isort — deterministic import order
+    "UP",  # pyupgrade — keep syntax current with requires-python
+    "B",   # bugbear — mutable defaults, silent except, loop-variable capture
+    "C4",  # comprehension clarity
+    "SIM", # simplifications that reduce branching
+    "N",   # pep8-naming
+]
+ignore = [
+    "E501",  # line length is black's call, not ruff's
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on behaviour through deliberately long, descriptive names and
+# frequently shadow builtins in fixtures; neither is a defect there.
+"tests/*" = ["N802", "N806"]
