@@ -10,13 +10,30 @@ import config_sync_propagators as propagators  # noqa: E402
 def _write_registry(claude_dir):
     plugins_dir = claude_dir / "plugins"
     plugins_dir.mkdir(parents=True)
-    (plugins_dir / "installed_plugins.json").write_text(json.dumps({
-        "version": 2,
-        "plugins": {"superpowers@claude-plugins-official": [
-            {"scope": "user", "installPath": "/x", "version": "6.1.1"}]},
-    }))
-    (plugins_dir / "known_marketplaces.json").write_text(json.dumps({
-        "claude-plugins-official": {"source": {"source": "github", "repo": "anthropics/claude-plugins-official"}}}))
+    (plugins_dir / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "superpowers@claude-plugins-official": [
+                        {"scope": "user", "installPath": "/x", "version": "6.1.1"}
+                    ]
+                },
+            }
+        )
+    )
+    (plugins_dir / "known_marketplaces.json").write_text(
+        json.dumps(
+            {
+                "claude-plugins-official": {
+                    "source": {
+                        "source": "github",
+                        "repo": "anthropics/claude-plugins-official",
+                    }
+                }
+            }
+        )
+    )
 
 
 def test_read_helpers_return_empty_on_missing(tmp_path):
@@ -31,5 +48,7 @@ def test_reader_flattens_installed_entries(tmp_path):
     reader = plugins_module.ClaudePluginHost(context)
 
     installed = reader.installed_plugins()
-    assert installed["superpowers@claude-plugins-official"]["version"] == "6.1.1"   # list flattened to entry
+    assert (
+        installed["superpowers@claude-plugins-official"]["version"] == "6.1.1"
+    )  # list flattened to entry
     assert "claude-plugins-official" in reader.known_marketplaces()

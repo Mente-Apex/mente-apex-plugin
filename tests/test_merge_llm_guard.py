@@ -8,7 +8,9 @@ def test_smart_merge_defaults_to_structured_no_subprocess(monkeypatch):
     monkeypatch.setattr(config_sync.subprocess, "run", _boom)
     monkeypatch.delenv(config_sync.LLM_MERGE_ENV, raising=False)
 
-    merged, strategy = config_sync._smart_merge_text("# S\n- a\n", "# S\n- b\n", context="CLAUDE.md")
+    merged, strategy = config_sync._smart_merge_text(
+        "# S\n- a\n", "# S\n- b\n", context="CLAUDE.md"
+    )
     assert strategy == "section-union"
     assert "- a" in merged and "- b" in merged
 
@@ -48,4 +50,4 @@ def test_llm_budget_caps_invocations(monkeypatch):
     files_override = {"a.md": "x2", "b.md": "y2"}
     config_sync._merge_snapshot_files(files_base, files_override, budget=budget)
 
-    assert calls["count"] == 1   # only one LLM merge allowed; the other falls back
+    assert calls["count"] == 1  # only one LLM merge allowed; the other falls back

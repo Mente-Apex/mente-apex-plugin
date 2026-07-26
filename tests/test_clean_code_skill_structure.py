@@ -6,6 +6,7 @@ sections/links the ecosystem depends on. Dependency-free on purpose: PyYAML is
 not installed, so frontmatter is parsed with string ops only (same discipline as
 test_ddd_skill_structure.py).
 """
+
 import json
 import re
 from pathlib import Path
@@ -81,18 +82,28 @@ def test_skill_md_is_thin_and_links_the_standard():
     assert fields.get("name") == "clean-code"
     assert fields.get("user-invocable") == "true"
     frontmatter_text = read_skill_file("SKILL.md").split("---")[1]
-    assert re.search(r'version:\s*"0\.2\.0"', frontmatter_text), "metadata.version must be 0.2.0"
+    assert re.search(
+        r'version:\s*"0\.2\.0"', frontmatter_text
+    ), "metadata.version must be 0.2.0"
     body = fields["_body"]
     lowered = body.lower()
     # links the single source of truth rather than restating it
-    assert "docs/clean-code-standard.md" in body, "SKILL.md must link the canonical standard"
+    assert (
+        "docs/clean-code-standard.md" in body
+    ), "SKILL.md must link the canonical standard"
     # the two gears
-    assert "quick" in lowered and "deep" in lowered, "SKILL.md must describe the two review gears"
+    assert (
+        "quick" in lowered and "deep" in lowered
+    ), "SKILL.md must describe the two review gears"
     # defers structural findings up-ladder (non-overlap contract)
     for sibling in ["solid", "gof"]:
         assert sibling in lowered, f"SKILL.md must defer up-ladder to {sibling}"
     # the substrate framing
-    assert "substrate" in lowered or "written by construction" in lowered or "by construction" in lowered
+    assert (
+        "substrate" in lowered
+        or "written by construction" in lowered
+        or "by construction" in lowered
+    )
 
 
 def test_deep_gear_agents_state_their_contracts():
@@ -100,7 +111,9 @@ def test_deep_gear_agents_state_their_contracts():
     reviewer = read_skill_file("agents/reviewer.md")
     assert "read-only" in analyzer.lower()
     assert "findings-draft.md" in analyzer
-    assert "clean-code-standard.md" in analyzer, "analyzer must judge against the standard"
+    assert (
+        "clean-code-standard.md" in analyzer
+    ), "analyzer must judge against the standard"
     assert "report-template.md" in reviewer
     assert "clean-code-standard.md" in reviewer
     assert "verify" in reviewer.lower() and "prune" in reviewer.lower()
@@ -111,8 +124,9 @@ def test_report_template_has_the_expected_structure():
     text = read_skill_file("references/report-template.md")
     # Assert the ID *shape* (clean-code/<tier>-<n>), not a literal example number, so
     # renumbering or re-tiering the template's examples never trips this guard.
-    assert re.search(r"\[clean-code/(critical|major|minor)-\d+\]", text), \
-        "report-template.md missing a clean-code/<tier>-<n> example ID"
+    assert re.search(
+        r"\[clean-code/(critical|major|minor)-\d+\]", text
+    ), "report-template.md missing a clean-code/<tier>-<n> example ID"
     for marker in ["Principle", "Severity", "Critical", "Major", "Minor", "Hand-offs"]:
         assert marker in text, f"report-template.md missing: {marker}"
 
@@ -120,13 +134,19 @@ def test_report_template_has_the_expected_structure():
 def test_substrate_consumers_link_the_standard():
     implementer = read_repo_file("docs/refactor-agents/implementer.md")
     refactor_jobs = read_repo_file("skills/tdd/references/refactor-jobs.md")
-    assert "clean-code-standard.md" in implementer, "implementer role must link the standard"
-    assert "clean-code-standard.md" in refactor_jobs, "tdd refactor step must link the standard"
+    assert (
+        "clean-code-standard.md" in implementer
+    ), "implementer role must link the standard"
+    assert (
+        "clean-code-standard.md" in refactor_jobs
+    ), "tdd refactor step must link the standard"
 
 
 def test_reports_convention_points_at_docs_reports():
     workflow = read_repo_file("docs/refactor-workflow.md")
-    assert "docs/reports/" in workflow, "refactor-workflow Phase 0 must use docs/reports/<lens>/"
+    assert (
+        "docs/reports/" in workflow
+    ), "refactor-workflow Phase 0 must use docs/reports/<lens>/"
     gitignore = read_repo_file(".gitignore")
     assert "docs/reports/" in gitignore, ".gitignore must exclude docs/reports/"
     # no lens SKILL still points at the old bare report dirs
@@ -151,6 +171,6 @@ def test_clean_code_evals_cover_substrate_and_both_gears():
             assert field in case, f"eval case {case.get('id')} missing {field}"
         assert isinstance(case["assertions"], list) and case["assertions"]
     blob = json.dumps(document).lower()
-    assert "quick" in blob and "deep" in blob            # both gears
-    assert "clean-code-standard" in blob                 # single source of truth
+    assert "quick" in blob and "deep" in blob  # both gears
+    assert "clean-code-standard" in blob  # single source of truth
     assert "defer" in blob or "hand off" in blob or "up-ladder" in blob  # non-overlap

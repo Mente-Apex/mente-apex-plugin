@@ -3,6 +3,7 @@
 Authored prose, not runtime code: assert files exist and carry the sections the
 orchestration and the plugin loader depend on. Dependency-free (no PyYAML).
 """
+
 import json
 import re
 from pathlib import Path
@@ -34,11 +35,14 @@ def parse_frontmatter(text):
 
 def test_lens_overlap_hub_replaces_pairwise_map():
     assert LENS_OVERLAP.is_file(), "docs/lens-overlap.md must exist"
-    assert not (REPO_ROOT / "docs" / "solid-gof-overlap.md").exists(), \
-        "docs/solid-gof-overlap.md must be gone (migrated to lens-overlap.md)"
+    assert not (
+        REPO_ROOT / "docs" / "solid-gof-overlap.md"
+    ).exists(), "docs/solid-gof-overlap.md must be gone (migrated to lens-overlap.md)"
     text = LENS_OVERLAP.read_text(encoding="utf-8")
     # the hub adds clean-architecture as a participating lens
-    assert "clean-architecture" in text.lower(), "hub must carry clean-architecture rows"
+    assert (
+        "clean-architecture" in text.lower()
+    ), "hub must carry clean-architecture rows"
     # the SOLID<->GoF content survives the move (spot-check canonical entries)
     for kept in ["Strategy", "Singleton", "Abstract Factory", "DIP"]:
         assert kept in text, f"hub lost SOLID/GoF content: {kept}"
@@ -46,8 +50,14 @@ def test_lens_overlap_hub_replaces_pairwise_map():
 
 def test_no_stale_overlap_references_remain():
     offenders = []
-    scan_dirs = ["skills/solid", "skills/gof", "docs/refactor-workflow.md",
-                 "docs/refactor-agents", "README.md", "tests/test_skill_integrity.py"]
+    scan_dirs = [
+        "skills/solid",
+        "skills/gof",
+        "docs/refactor-workflow.md",
+        "docs/refactor-agents",
+        "README.md",
+        "tests/test_skill_integrity.py",
+    ]
     for scan in scan_dirs:
         target = REPO_ROOT / scan
         files = target.rglob("*") if target.is_dir() else [target]
@@ -71,7 +81,9 @@ def test_skill_md_declares_tiers_tooling_and_carve():
     lowered = body.lower()
     for marker in ["headline", "secondary", "appendix", "opt-in"]:
         assert marker in lowered, f"SKILL.md missing tier marker: {marker}"
-    assert "audit" in lowered and "no build" in lowered, "must state audit-first, no build mode"
+    assert (
+        "audit" in lowered and "no build" in lowered
+    ), "must state audit-first, no build mode"
     for tool in ["grimp", "import-linter"]:
         assert tool in lowered, f"SKILL.md missing tooling reference: {tool}"
     assert "degrade" in lowered or "fallback" in lowered, "must state graceful fallback"
@@ -82,12 +94,19 @@ def test_skill_md_declares_tiers_tooling_and_carve():
 def test_principles_cover_the_tiered_rubric():
     text = read_skill_file("references/principles.md")
     required = [
-        "Dependency Rule", "ADP", "SDP", "SAP",
-        "REP", "CCP", "CRP",
-        "Screaming Architecture", "composition root",
-        "Instability", "Main Sequence",
-        "approximate",             # the metrics caveat (now language-neutral)
-        "When NOT",                # judgment block
+        "Dependency Rule",
+        "ADP",
+        "SDP",
+        "SAP",
+        "REP",
+        "CCP",
+        "CRP",
+        "Screaming Architecture",
+        "composition root",
+        "Instability",
+        "Main Sequence",
+        "approximate",  # the metrics caveat (now language-neutral)
+        "When NOT",  # judgment block
     ]
     missing = [concept for concept in required if concept.lower() not in text.lower()]
     assert not missing, f"principles.md missing: {missing}"
@@ -100,8 +119,12 @@ def test_python_reference_covers_tooling_and_degrade():
     lowered = text.lower()
     for tool in ["grimp", "import-linter", "importlinter.ini", "dependency-cruiser"]:
         assert tool in lowered, f"python.md missing tool: {tool}"
-    assert "fan-in" in lowered and "fan-out" in lowered, "must show how to compute Instability"
-    assert "degrade" in lowered or "fallback" in lowered, "must give the no-tool degrade path"
+    assert (
+        "fan-in" in lowered and "fan-out" in lowered
+    ), "must show how to compute Instability"
+    assert (
+        "degrade" in lowered or "fallback" in lowered
+    ), "must give the no-tool degrade path"
     assert "runtime_checkable" not in text  # sanity: this is CA, not the ddd port ref
 
 
@@ -110,9 +133,15 @@ def test_typescript_reference_covers_tooling_and_degrade():
     lowered = text.lower()
     for tool in ["dependency-cruiser", "madge", ".dependency-cruiser"]:
         assert tool in lowered, f"typescript.md missing tool: {tool}"
-    assert "fan-in" in lowered and "fan-out" in lowered, "must show how to compute Instability"
-    assert "degrade" in lowered or "fallback" in lowered, "must give the no-tool degrade path"
-    assert "erased" in lowered, "must state the interfaces-erased abstractness caveat for TS"
+    assert (
+        "fan-in" in lowered and "fan-out" in lowered
+    ), "must show how to compute Instability"
+    assert (
+        "degrade" in lowered or "fallback" in lowered
+    ), "must give the no-tool degrade path"
+    assert (
+        "erased" in lowered
+    ), "must state the interfaces-erased abstractness caveat for TS"
 
 
 def test_report_template_has_structure_contract_and_appendix():
@@ -120,10 +149,17 @@ def test_report_template_has_structure_contract_and_appendix():
     # Assert one example ID per tier by *shape* (clean-arch/<tier>-<n>), not literal
     # numbers, so renumbering or re-tiering the examples never trips this guard.
     for tier in ("critical", "major", "minor"):
-        assert re.search(rf"\[clean-arch/{tier}-\d+\]", text), \
-            f"report-template.md missing a clean-arch/{tier}-<n> example ID"
-    for marker in ["Tier", "Status", "pending",
-                   "Dependency-rule contract", "Analysis mode", "Structural health"]:
+        assert re.search(
+            rf"\[clean-arch/{tier}-\d+\]", text
+        ), f"report-template.md missing a clean-arch/{tier}-<n> example ID"
+    for marker in [
+        "Tier",
+        "Status",
+        "pending",
+        "Dependency-rule contract",
+        "Analysis mode",
+        "Structural health",
+    ]:
         assert marker in text, f"report-template.md missing: {marker}"
 
 
@@ -136,14 +172,16 @@ def test_agents_state_their_contracts():
     assert "principles.md" in analyzer
     # agent docs must follow the detect-and-load convention, not hardcode one language
     assert "<language>.md" in analyzer, "analyzer must load references/<language>.md"
-    assert "typescript.md" in analyzer and "python.md" in analyzer, \
-        "analyzer must not have regressed to Python-only"
+    assert (
+        "typescript.md" in analyzer and "python.md" in analyzer
+    ), "analyzer must not have regressed to Python-only"
     assert "report-template.md" in reviewer
-    assert "lens-overlap.md" in reviewer                     # cross-reference the hub
+    assert "lens-overlap.md" in reviewer  # cross-reference the hub
     assert "<language>.md" in reviewer, "reviewer must load references/<language>.md"
-    assert "dependency-rule contract" in reviewer.lower()    # language-neutral contract
-    assert "importlinter" in reviewer.lower() and "dependency-cruiser" in reviewer.lower(), \
-        "reviewer must name both the Python and JS/TS contract tools"
+    assert "dependency-rule contract" in reviewer.lower()  # language-neutral contract
+    assert (
+        "importlinter" in reviewer.lower() and "dependency-cruiser" in reviewer.lower()
+    ), "reviewer must name both the Python and JS/TS contract tools"
     assert "mechanical" in implementer.lower() and "refactor-jobs.md" in implementer
     assert "advisory" in implementer.lower() or "opt-in" in implementer.lower()
 
@@ -163,12 +201,16 @@ def test_ca_evals_cover_tiers_tooling_and_carve():
     assert "dependency rule" in blob
     assert "opt-in" in blob or "--cohesion" in blob or "--metrics" in blob
     assert "import-linter" in blob
-    assert "ddd" in blob                      # the carve
+    assert "ddd" in blob  # the carve
 
 
 def test_manifests_advertise_ca_and_versions_are_bumped():
-    plugin_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
-    marketplace_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    plugin_manifest = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text()
+    )
+    marketplace_manifest = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text()
+    )
     assert "clean-architecture" in plugin_manifest["description"].lower()
     assert "clean-architecture" in plugin_manifest["keywords"]
     marketplace_blob = json.dumps(marketplace_manifest).lower()
@@ -179,6 +221,7 @@ def test_manifests_advertise_ca_and_versions_are_bumped():
     plugin_version = plugin_manifest["version"]
     marketplace_version = marketplace_manifest["plugins"][0]["version"]
     assert plugin_version == marketplace_version
+
     def to_tuple(semver):
         return tuple(int(part) for part in semver.split("."))
 

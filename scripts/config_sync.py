@@ -106,6 +106,7 @@ MAX_LLM_MERGES = 10
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _read(path: Path) -> str:
     """Read a text file, return empty string if missing."""
     try:
@@ -148,6 +149,7 @@ def _machine_id() -> str:
     if id_file.exists():
         return id_file.read_text().strip()
     import uuid
+
     mid = f"{platform.node()}-{uuid.uuid4().hex[:8]}"
     _write(id_file, mid)
     return mid
@@ -173,7 +175,7 @@ def _installed_plugin_ids() -> set:
     try:
         data = json.loads(INSTALLED_PLUGINS_FILE.read_text(encoding="utf-8"))
         return set(data.get("plugins", {}).keys())
-    except (json.JSONDecodeError, KeyError):
+    except json.JSONDecodeError, KeyError:
         return set()
 
 
@@ -189,7 +191,7 @@ def _derive_plugin_meta(plugin_key: str, entry: dict) -> dict:
     marketplace = name = version = None
     if "cache" in parts:
         cache_index = parts.index("cache")
-        segments = parts[cache_index + 1:cache_index + 4]
+        segments = parts[cache_index + 1 : cache_index + 4]
         if len(segments) == 3:
             marketplace, name, version = segments
     if name is None or marketplace is None:
@@ -199,7 +201,12 @@ def _derive_plugin_meta(plugin_key: str, entry: dict) -> dict:
     if version is None:
         version = entry.get("version", "unknown")
 
-    meta = {"key": plugin_key, "marketplace": marketplace, "name": name, "version": version}
+    meta = {
+        "key": plugin_key,
+        "marketplace": marketplace,
+        "name": name,
+        "version": version,
+    }
     if entry.get("gitCommitSha"):
         meta["gitCommitSha"] = entry["gitCommitSha"]
     return meta
@@ -295,6 +302,7 @@ def _merge_import_settings(incoming_scrubbed: dict, existing_local: dict) -> dic
 # Commands
 # ---------------------------------------------------------------------------
 
+
 def cmd_machine_id():
     print(_machine_id())
 
@@ -316,8 +324,12 @@ def cmd_export():
         if path.exists():
             if fname == "settings.json":
                 cleaned = _clean_settings(_read(path))
-                cleaned, _orphans = _reconcile_plugins(cleaned)  # in-memory only for the snapshot
-                cleaned = _root_registry().portabilize_settings(cleaned)  # portable hook paths
+                cleaned, _orphans = _reconcile_plugins(
+                    cleaned
+                )  # in-memory only for the snapshot
+                cleaned = _root_registry().portabilize_settings(
+                    cleaned
+                )  # portable hook paths
                 files[fname] = json.dumps(cleaned)
             else:
                 files[fname] = _read(path)
@@ -328,7 +340,8 @@ def cmd_export():
 
     # Strip anything that should never leave this machine
     files = {
-        rel: content for rel, content in files.items()
+        rel: content
+        for rel, content in files.items()
         if not any(rel.startswith(prefix) for prefix in SNAPSHOT_EXCLUDE_PREFIXES)
     }
 
@@ -362,10 +375,14 @@ def cmd_reconcile():
                 json.dumps(live, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             stale_cache = _prune_stale_plugin_cache(_installed_plugin_ids())
-    print(json.dumps({
-        "orphaned_plugins_removed": orphans,
-        "stale_cache_dirs_removed": stale_cache,
-    }))
+    print(
+        json.dumps(
+            {
+                "orphaned_plugins_removed": orphans,
+                "stale_cache_dirs_removed": stale_cache,
+            }
+        )
+    )
 
 
 def _apply_snapshot_file(dest: Path, relative_path: str, content: str) -> str:
@@ -380,11 +397,16 @@ def _apply_snapshot_file(dest: Path, relative_path: str, content: str) -> str:
     """
     if relative_path == "settings.json":
         incoming = json.loads(content) if content.strip() else {}
-        incoming = _root_registry().localize_settings(incoming)  # portable -> local hook paths
+        incoming = _root_registry().localize_settings(
+            incoming
+        )  # portable -> local hook paths
         local_raw = _read(dest)
         existing_local = json.loads(local_raw) if local_raw.strip() else {}
         merged = json.dumps(
-            _merge_import_settings(incoming, existing_local), indent=2, ensure_ascii=False)
+            _merge_import_settings(incoming, existing_local),
+            indent=2,
+            ensure_ascii=False,
+        )
         if local_raw == merged:
             return "skipped"
         _write(dest, merged)
@@ -422,8 +444,10 @@ def _inventory_file_count(target, export_filter):
     virtualenv left inside a skill dir (#44). Uses the SAME filter as the bundle
     export, so the inventory count and what actually syncs agree."""
     return sum(
-        1 for path in target.rglob("*")
-        if path.is_file() and export_filter.should_include(path.relative_to(target).as_posix())
+        1
+        for path in target.rglob("*")
+        if path.is_file()
+        and export_filter.should_include(path.relative_to(target).as_posix())
     )
 
 
@@ -432,8 +456,7 @@ class RemoteResolver(Protocol):
     this port, never on git directly, so the subprocess boundary can be faked in
     tests and swapped for a different VCS without touching status-formatting."""
 
-    def resolve(self, repo_path: Path) -> str | None:
-        ...
+    def resolve(self, repo_path: Path) -> str | None: ...
 
 
 class GitRemoteResolver:
@@ -447,7 +470,8 @@ class GitRemoteResolver:
             return None
         completed = subprocess.run(
             ["git", "-C", str(repo_path), "remote", "get-url", "origin"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if completed.returncode != 0:
             return None
@@ -455,8 +479,10 @@ class GitRemoteResolver:
         return url or None
 
 
-def cmd_status(remote_resolver: RemoteResolver | None = None,
-               export_filter: BundleExportFilter | None = None):
+def cmd_status(
+    remote_resolver: RemoteResolver | None = None,
+    export_filter: BundleExportFilter | None = None,
+):
     """Print a human-readable inventory of the local config-sync state.
 
     Both collaborators are injected (defaults: git-backed remote lookup, default
@@ -468,6 +494,7 @@ def cmd_status(remote_resolver: RemoteResolver | None = None,
         # Deferred import: config_sync <-> config_sync_propagators is a two-way
         # dependency; keep it call-time (SOLID M2).
         from config_sync_propagators import DefaultBundleExportFilter
+
         export_filter = DefaultBundleExportFilter()
     lines = []
     lines.append(f"Machine : {_machine_id()}")
@@ -477,19 +504,25 @@ def cmd_status(remote_resolver: RemoteResolver | None = None,
 
     config_exists = CONFIG_FILE.exists()
     repo_exists = CONFIG_REPO.exists()
-    lines.append(f"config-sync repo : {'✓  ' + str(CONFIG_REPO) if repo_exists else '✗  not initialised'}")
+    lines.append(
+        f"config-sync repo : {'✓  ' + str(CONFIG_REPO) if repo_exists else '✗  not initialised'}"
+    )
 
     if config_exists:
         cfg = json.loads(_read(CONFIG_FILE))
         remote_url = remote_resolver.resolve(CONFIG_REPO)
-        lines.append(f"Remote           : {remote_url if remote_url else 'not configured'}")
+        lines.append(
+            f"Remote           : {remote_url if remote_url else 'not configured'}"
+        )
         lines.append(f"Last sync        : {cfg.get('last_sync', 'never')}")
 
     lines.append("")
     lines.append("── Local config inventory ─────────────────────────────")
 
     claude_md = CLAUDE_DIR / "CLAUDE.md"
-    lines.append(f"CLAUDE.md  : {'✓ ' + str(len(_read(claude_md).splitlines())) + ' lines' if claude_md.exists() else '✗ missing'}")
+    lines.append(
+        f"CLAUDE.md  : {'✓ ' + str(len(_read(claude_md).splitlines())) + ' lines' if claude_md.exists() else '✗ missing'}"
+    )
 
     for directory in SNAPSHOT_DIRS:
         target = CLAUDE_DIR / directory
@@ -550,7 +583,9 @@ def cmd_consolidate(repo_path: str):
     snapshots.sort(key=lambda snapshot: snapshot.get("timestamp", ""))
 
     if consolidated_path.exists():
-        base_files = json.loads(consolidated_path.read_text(encoding="utf-8")).get("files", {})
+        base_files = json.loads(consolidated_path.read_text(encoding="utf-8")).get(
+            "files", {}
+        )
     else:
         base_files = {}
 
@@ -570,8 +605,12 @@ def cmd_consolidate(repo_path: str):
         "files": base_files,
     }
     consolidated_path.parent.mkdir(parents=True, exist_ok=True)
-    consolidated_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps({"consolidated": str(consolidated_path), "machines": len(snapshots)}))
+    consolidated_path.write_text(
+        json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    print(
+        json.dumps({"consolidated": str(consolidated_path), "machines": len(snapshots)})
+    )
 
 
 def cmd_backup():
@@ -588,6 +627,7 @@ def cmd_backup():
     # Reuse export logic by capturing stdout
     import io
     from contextlib import redirect_stdout
+
     buf = io.StringIO()
     with redirect_stdout(buf):
         cmd_export()
@@ -654,7 +694,11 @@ def cmd_log_sync(repo_path: str, action: str = "sync", summary: str = ""):
     log_path = meta_dir / "sync-log.json"
 
     try:
-        log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {"syncs": []}
+        log = (
+            json.loads(log_path.read_text(encoding="utf-8"))
+            if log_path.exists()
+            else {"syncs": []}
+        )
     except json.JSONDecodeError:
         log = {"syncs": []}
 
@@ -686,14 +730,16 @@ def _collect_scan_warnings() -> list:
     # Broader patterns for scanning free-text content (not just key names)
     scan_patterns = [
         # High-entropy hex/base64 strings that look like tokens
-        re.compile(r'\b(sk-[A-Za-z0-9]{20,})\b'),                     # OpenAI-style keys
-        re.compile(r'\b(ghp_[A-Za-z0-9]{36})\b'),                     # GitHub tokens
-        re.compile(r'\b(xoxb-[0-9]+-[A-Za-z0-9]+)\b'),               # Slack tokens
-        re.compile(r'\b(AIza[0-9A-Za-z\-_]{35})\b'),                  # Google API keys
+        re.compile(r"\b(sk-[A-Za-z0-9]{20,})\b"),  # OpenAI-style keys
+        re.compile(r"\b(ghp_[A-Za-z0-9]{36})\b"),  # GitHub tokens
+        re.compile(r"\b(xoxb-[0-9]+-[A-Za-z0-9]+)\b"),  # Slack tokens
+        re.compile(r"\b(AIza[0-9A-Za-z\-_]{35})\b"),  # Google API keys
         # Generic: key = "long-random-string"
-        re.compile(r'(?i)(api[_\s]?key|token|secret|password)\s*[=:]\s*["\']?([A-Za-z0-9/+\-_]{20,})["\']?'),
+        re.compile(
+            r'(?i)(api[_\s]?key|token|secret|password)\s*[=:]\s*["\']?([A-Za-z0-9/+\-_]{20,})["\']?'
+        ),
         # AWS-style
-        re.compile(r'\b(AKIA[0-9A-Z]{16})\b'),
+        re.compile(r"\b(AKIA[0-9A-Z]{16})\b"),
     ]
 
     files_to_scan = {}
@@ -713,12 +759,15 @@ def _collect_scan_warnings() -> list:
             for pattern in scan_patterns:
                 if pattern.search(line):
                     # Redact the actual matched value in output
-                    warnings.append({
-                        "file": rel,
-                        "line": lineno,
-                        "match": pattern.pattern[:40] + "…",
-                        "preview": line.strip()[:80] + ("…" if len(line.strip()) > 80 else ""),
-                    })
+                    warnings.append(
+                        {
+                            "file": rel,
+                            "line": lineno,
+                            "match": pattern.pattern[:40] + "…",
+                            "preview": line.strip()[:80]
+                            + ("…" if len(line.strip()) > 80 else ""),
+                        }
+                    )
                     break  # one warning per line is enough
 
     return warnings
@@ -735,7 +784,9 @@ def cmd_scan(*flags):
 
     if "--gate" in flags:
         if warnings:
-            print(f"⚠ Secret scan found {len(warnings)} potential issue(s) in your config files:")
+            print(
+                f"⚠ Secret scan found {len(warnings)} potential issue(s) in your config files:"
+            )
             for warning in warnings:
                 print(f"  {warning['file']}:{warning['line']} — {warning['preview']}")
             print("")
@@ -773,11 +824,25 @@ def cmd_promote():
         return
 
     if os.environ.get(LLM_MERGE_ENV) != "1":
-        print(json.dumps({"suggestions": [], "note": "LLM promotion disabled — set CONFIG_SYNC_LLM_MERGE=1 to enable nested claude -p analysis"}))
+        print(
+            json.dumps(
+                {
+                    "suggestions": [],
+                    "note": "LLM promotion disabled — set CONFIG_SYNC_LLM_MERGE=1 to enable nested claude -p analysis",
+                }
+            )
+        )
         return
 
     if not shutil.which("claude"):
-        print(json.dumps({"suggestions": [], "note": "claude CLI not available — LLM promotion analysis skipped"}))
+        print(
+            json.dumps(
+                {
+                    "suggestions": [],
+                    "note": "claude CLI not available — LLM promotion analysis skipped",
+                }
+            )
+        )
         return
 
     all_memory = "\n\n---\n\n".join(
@@ -806,17 +871,16 @@ def cmd_promote():
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True, text=True, timeout=120
+            ["claude", "-p", prompt], capture_output=True, text=True, timeout=120
         )
         if result.returncode == 0:
             # Extract JSON from output (model may add surrounding text)
             output = result.stdout.strip()
-            match = re.search(r'\{.*\}', output, re.DOTALL)
+            match = re.search(r"\{.*\}", output, re.DOTALL)
             if match:
                 print(match.group(0))
                 return
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except subprocess.TimeoutExpired, FileNotFoundError:
         pass
 
     print(json.dumps({"suggestions": [], "note": "LLM analysis failed — try again"}))
@@ -864,8 +928,13 @@ def cmd_migrate():
         # Stage the rename so the next sync commits it (best-effort).
         if (CONFIG_REPO / ".git").exists():
             with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError):
-                subprocess.run(["git", "add", "-A"], cwd=CONFIG_REPO,
-                               capture_output=True, text=True, timeout=30)
+                subprocess.run(
+                    ["git", "add", "-A"],
+                    cwd=CONFIG_REPO,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
 
     print(json.dumps({"migrated": migrated, "skipped": skipped}))
 
@@ -874,24 +943,38 @@ def cmd_migrate():
 # Propagator seam — thin CLI wrappers (logic lives in config_sync_propagators)
 # ---------------------------------------------------------------------------
 
+
 def _sync_context(repo_path):
     """Build a SyncContext injecting the live CLAUDE_DIR + the repo path."""
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     # Deferred import: config_sync <-> config_sync_propagators is a two-way dependency;
     # keep this call-time so hoisting can't form a circular import (SOLID report M2).
     import config_sync_propagators as propagators
-    return propagators, propagators.SyncContext(claude_dir=CLAUDE_DIR, repo_dir=Path(repo_path))
+
+    return propagators, propagators.SyncContext(
+        claude_dir=CLAUDE_DIR, repo_dir=Path(repo_path)
+    )
 
 
 def cmd_propagate_export(repo_path):
     propagators, context = _sync_context(repo_path)
     import config_sync_plugins as plugins_module
+
     results = propagators.run_export(context, plugins_module.export_propagators())
-    print(json.dumps({result.propagator: {"written": result.written,
-                                           "skipped": result.skipped,
-                                           "warnings": result.warnings,
-                                           "tombstoned": result.tombstoned}
-                      for result in results}, indent=2))
+    print(
+        json.dumps(
+            {
+                result.propagator: {
+                    "written": result.written,
+                    "skipped": result.skipped,
+                    "warnings": result.warnings,
+                    "tombstoned": result.tombstoned,
+                }
+                for result in results
+            },
+            indent=2,
+        )
+    )
 
 
 def cmd_propagate_apply(repo_path):
@@ -923,27 +1006,51 @@ def cmd_resolve_deletion(repo_path, kind, name, decision):
 def cmd_plugins_plan(repo_path, host=None):
     propagators, context = _sync_context(repo_path)
     import config_sync_plugins as plugins_module
+
     reader = host if host is not None else plugins_module.ClaudePluginHost(context)
     plan = plugins_module.plan_convergence(context, reader)
-    print(json.dumps({
-        "actions": [{"verb": action.verb, "target": action.target, "detail": action.detail}
-                    for action in plan.actions],
-        "skipped": plan.skipped,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "verb": action.verb,
+                        "target": action.target,
+                        "detail": action.detail,
+                    }
+                    for action in plan.actions
+                ],
+                "skipped": plan.skipped,
+            },
+            indent=2,
+        )
+    )
 
 
 def cmd_plugins_apply(repo_path, host=None):
     propagators, context = _sync_context(repo_path)
     import config_sync_plugins as plugins_module
+
     plugin_host = host if host is not None else plugins_module.ClaudePluginHost(context)
     plan = plugins_module.plan_convergence(context, plugin_host)
     result = plugins_module.execute_plan(context, plan, plugin_host)
-    print(json.dumps({
-        "outcomes": [{"verb": outcome.verb, "target": outcome.target,
-                      "ok": outcome.ok, "message": outcome.message}
-                     for outcome in result.outcomes],
-        "skipped": result.skipped,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "outcomes": [
+                    {
+                        "verb": outcome.verb,
+                        "target": outcome.target,
+                        "ok": outcome.ok,
+                        "message": outcome.message,
+                    }
+                    for outcome in result.outcomes
+                ],
+                "skipped": result.skipped,
+            },
+            indent=2,
+        )
+    )
 
 
 def cmd_hooks_plan():
@@ -952,11 +1059,22 @@ def cmd_hooks_plan():
     declarations = config_sync_hooks.discover_declarations(registry)
     host = config_sync_hooks.ClaudeSettingsHost(CLAUDE_DIR)
     plan = config_sync_hooks.plan_hook_wiring(declarations, host.read_settings())
-    print(json.dumps({
-        "actions": [{"verb": action.verb, "hook_id": action.hook_id, "detail": action.detail}
-                    for action in plan.actions],
-        "skipped": plan.skipped,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "verb": action.verb,
+                        "hook_id": action.hook_id,
+                        "detail": action.detail,
+                    }
+                    for action in plan.actions
+                ],
+                "skipped": plan.skipped,
+            },
+            indent=2,
+        )
+    )
 
 
 def cmd_hooks_apply():
@@ -971,11 +1089,22 @@ def cmd_hooks_apply():
         # only the exported snapshot carries ${TOKEN} form. The executor wrote the
         # portable token; expand it to this machine's real paths so the hook runs.
         host.write_settings(registry.localize_settings(host.read_settings()))
-    print(json.dumps({
-        "outcomes": [{"hook_id": outcome.hook_id, "ok": outcome.ok, "message": outcome.message}
-                     for outcome in result.outcomes],
-        "skipped": result.skipped,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "outcomes": [
+                    {
+                        "hook_id": outcome.hook_id,
+                        "ok": outcome.ok,
+                        "message": outcome.message,
+                    }
+                    for outcome in result.outcomes
+                ],
+                "skipped": result.skipped,
+            },
+            indent=2,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -999,8 +1128,8 @@ COMMANDS = {
     "hooks-plan": (cmd_hooks_plan, 0),
     "hooks-apply": (cmd_hooks_apply, 0),
     "apply-shared": (cmd_apply_shared, 1),
-    "log-sync": (cmd_log_sync, None),   # variadic: repo [action] [summary]
-    "scan": (cmd_scan, None),   # variadic: optional --gate flag
+    "log-sync": (cmd_log_sync, None),  # variadic: repo [action] [summary]
+    "scan": (cmd_scan, None),  # variadic: optional --gate flag
     "promote": (cmd_promote, 0),
     "machine-id": (cmd_machine_id, 0),
     "clean-settings": (cmd_clean_settings, 1),
@@ -1011,7 +1140,10 @@ COMMANDS = {
 def main():
     args = sys.argv[1:]
     if not args or args[0] not in COMMANDS:
-        print(f"Usage: config_sync.py <command> [args]\nCommands: {', '.join(COMMANDS)}", file=sys.stderr)
+        print(
+            f"Usage: config_sync.py <command> [args]\nCommands: {', '.join(COMMANDS)}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     cmd_name = args[0]
@@ -1019,7 +1151,10 @@ def main():
     provided = len(args) - 1
 
     if expected_args is not None and provided != expected_args:
-        print(f"Error: '{cmd_name}' expects {expected_args} argument(s), got {provided}", file=sys.stderr)
+        print(
+            f"Error: '{cmd_name}' expects {expected_args} argument(s), got {provided}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     fn(*args[1:])

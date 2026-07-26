@@ -22,4 +22,4 @@ def test_derive_plugin_meta_falls_back_when_no_cache_segment():
     assert meta["marketplace"] == "local"
     assert meta["name"] == "my-plugin"
     assert meta["version"] == "9.9"
-    assert "gitCommitSha" not in meta   # omitted when absent
+    assert "gitCommitSha" not in meta  # omitted when absent

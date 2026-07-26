@@ -6,6 +6,7 @@ docs/refactor-workflow.md must not dangle) and keep the three version mirrors
 in lockstep. Narrative docs under docs/superpowers/ (plans, specs) are out of
 scope — they carry intentional forward-references and fenced example links.
 """
+
 import json
 import re
 import tomllib
@@ -21,10 +22,29 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 REQUIRED_FRONTMATTER_KEYS = ("name", "description")
 
 GOF_PATTERNS = [
-    "Abstract Factory", "Builder", "Factory Method", "Prototype", "Singleton",
-    "Adapter", "Bridge", "Composite", "Decorator", "Facade", "Flyweight", "Proxy",
-    "Chain of Responsibility", "Command", "Interpreter", "Iterator", "Mediator",
-    "Memento", "Observer", "State", "Strategy", "Template Method", "Visitor",
+    "Abstract Factory",
+    "Builder",
+    "Factory Method",
+    "Prototype",
+    "Singleton",
+    "Adapter",
+    "Bridge",
+    "Composite",
+    "Decorator",
+    "Facade",
+    "Flyweight",
+    "Proxy",
+    "Chain of Responsibility",
+    "Command",
+    "Interpreter",
+    "Iterator",
+    "Mediator",
+    "Memento",
+    "Observer",
+    "State",
+    "Strategy",
+    "Template Method",
+    "Visitor",
 ]
 
 # The cross-references this guard protects: every refactor lens's skill files
@@ -109,7 +129,9 @@ def test_every_skill_has_required_frontmatter():
             continue
         for required_key in REQUIRED_FRONTMATTER_KEYS:
             if not re.search(rf"^{required_key}:", frontmatter, re.MULTILINE):
-                offenders.append(f"{skill_file.relative_to(REPO_ROOT)}: missing '{required_key}'")
+                offenders.append(
+                    f"{skill_file.relative_to(REPO_ROOT)}: missing '{required_key}'"
+                )
     assert not offenders, "Frontmatter problems:\n" + "\n".join(offenders)
 
 
@@ -132,15 +154,19 @@ def test_relative_link_targets_include_inline_code_paths():
         "`../../../docs/lens-overlap.md`; ignore `some_var` and `pkg.method`."
     )
     found = set(_relative_link_targets(sample))
-    assert "../docs/refactor-workflow.md" in found        # []() link
-    assert "../../../docs/lens-overlap.md" in found        # backtick relative .md path
-    assert "some_var" not in found and "pkg.method" not in found  # non-path code spans ignored
+    assert "../docs/refactor-workflow.md" in found  # []() link
+    assert "../../../docs/lens-overlap.md" in found  # backtick relative .md path
+    assert (
+        "some_var" not in found and "pkg.method" not in found
+    )  # non-path code spans ignored
 
 
 def test_version_mirrors_match():
     plugin_version = json.loads(PLUGIN_JSON.read_text())["version"]
     pyproject_version = tomllib.loads(PYPROJECT.read_text())["project"]["version"]
-    marketplace_version = json.loads(MARKETPLACE_JSON.read_text())["plugins"][0]["version"]
+    marketplace_version = json.loads(MARKETPLACE_JSON.read_text())["plugins"][0][
+        "version"
+    ]
     assert plugin_version == pyproject_version == marketplace_version, (
         f"version drift — plugin.json={plugin_version} "
         f"pyproject={pyproject_version} marketplace={marketplace_version}"
@@ -158,8 +184,12 @@ def test_overlap_map_covers_all_23_patterns():
 
 PATTERNS_MD = SKILLS_DIR / "gof" / "references" / "patterns.md"
 REQUIRED_PATTERN_SUBSECTIONS = (
-    "**Intent**", "**Detect by**", "**Grade A**",
-    "**Grade C/D issues**", "**Suggest when**", "**Don't suggest when**",
+    "**Intent**",
+    "**Detect by**",
+    "**Grade A**",
+    "**Grade C/D issues**",
+    "**Suggest when**",
+    "**Don't suggest when**",
 )
 
 
@@ -214,5 +244,7 @@ def test_gof_evals_valid_schema():
     assert data["skill_name"] == "gof"
     assert isinstance(data["evals"], list) and data["evals"], "no eval cases"
     for eval_case in data["evals"]:
-        assert eval_case.keys() >= EVAL_CASE_KEYS, f"case {eval_case.get('id')} missing keys"
+        assert (
+            eval_case.keys() >= EVAL_CASE_KEYS
+        ), f"case {eval_case.get('id')} missing keys"
         assert isinstance(eval_case["assertions"], list) and eval_case["assertions"]

@@ -6,6 +6,7 @@ ClaudePluginHost is the injected concretion implementing both; tests fake them.
 Dependency direction is one-way: this module imports config_sync_propagators,
 never the reverse.
 """
+
 from __future__ import annotations
 
 import json
@@ -22,7 +23,7 @@ def _read_installed_plugins(claude_dir: Path) -> dict:
     path = claude_dir / "plugins" / "installed_plugins.json"
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError, json.JSONDecodeError:
         return {}
 
 
@@ -30,7 +31,7 @@ def _read_known_marketplaces(claude_dir: Path) -> dict:
     path = claude_dir / "plugins" / "known_marketplaces.json"
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError, json.JSONDecodeError:
         return {}
 
 
@@ -52,9 +53,9 @@ def _is_shareable_marketplace(marketplace_meta) -> bool:
 
 @runtime_checkable
 class PluginRegistryReader(Protocol):
-    def installed_plugins(self) -> dict: ...      # {key: entry_dict}
+    def installed_plugins(self) -> dict: ...  # {key: entry_dict}
 
-    def known_marketplaces(self) -> dict: ...     # {name: {"source": {...}}}
+    def known_marketplaces(self) -> dict: ...  # {name: {"source": {...}}}
 
 
 def _first_entry(entries):
@@ -87,7 +88,9 @@ class ClaudePluginHost:
         try:
             completed = subprocess.run(
                 ["claude", "plugin", *arguments],
-                capture_output=True, text=True, timeout=180,
+                capture_output=True,
+                text=True,
+                timeout=180,
             )
             ok = completed.returncode == 0
             message = (completed.stderr or completed.stdout or "").strip()[-500:]
@@ -99,9 +102,15 @@ class ClaudePluginHost:
 
     def add_marketplace(self, name: str, source: dict) -> ActionOutcome:
         source = source or {}
-        spec = source.get("repo") if source.get("source") == "github" else source.get("url")
+        spec = (
+            source.get("repo")
+            if source.get("source") == "github"
+            else source.get("url")
+        )
         if not spec:
-            return ActionOutcome("add_marketplace", name, ok=False, message="no source spec")
+            return ActionOutcome(
+                "add_marketplace", name, ok=False, message="no source spec"
+            )
         ok, message = self._run(["marketplace", "add", spec])
         return ActionOutcome("add_marketplace", name, ok=ok, message=message)
 
@@ -143,31 +152,57 @@ class MarketplacePropagator:
             if marketplace_name not in known:
                 warnings.append(
                     f"{plugin_key}: no known marketplace — won't sync to your other "
-                    f"machines; publish it to a GitHub marketplace")
+                    f"machines; publish it to a GitHub marketplace"
+                )
                 continue
             if not _is_shareable_marketplace(marketplace_meta):
-                source_value = marketplace_meta.get("source") if isinstance(marketplace_meta, dict) else None
-                source_kind = source_value.get("source") if isinstance(source_value, dict) else None
+                source_value = (
+                    marketplace_meta.get("source")
+                    if isinstance(marketplace_meta, dict)
+                    else None
+                )
+                source_kind = (
+                    source_value.get("source")
+                    if isinstance(source_value, dict)
+                    else None
+                )
                 warnings.append(
                     f"{plugin_key}: marketplace '{marketplace_name}' source is "
                     f"'{source_kind}' (not a shareable git/GitHub remote) — won't sync "
-                    f"to your other machines; publish it to GitHub")
+                    f"to your other machines; publish it to GitHub"
+                )
                 continue
             entry = _first_entry(entries)
-            version = entry.get("version", "unknown") if isinstance(entry, dict) else "unknown"
+            version = (
+                entry.get("version", "unknown")
+                if isinstance(entry, dict)
+                else "unknown"
+            )
             plugin_name = plugin_key.split("@", 1)[0]
-            plugins[plugin_key] = {"marketplace": marketplace_name, "name": plugin_name, "version": version}
-            marketplaces[marketplace_name] = {"source": known[marketplace_name].get("source")}
+            plugins[plugin_key] = {
+                "marketplace": marketplace_name,
+                "name": plugin_name,
+                "version": version,
+            }
+            marketplaces[marketplace_name] = {
+                "source": known[marketplace_name].get("source")
+            }
 
         machine_id = propagators._machine_id(context)
         manifest_path = context.repo_dir / "plugins" / f"{machine_id}.json"
         if manifest_path.exists():
             try:
                 existing = json.loads(manifest_path.read_text(encoding="utf-8"))
-                if existing.get("marketplaces") == marketplaces and existing.get("plugins") == plugins:
+                if (
+                    existing.get("marketplaces") == marketplaces
+                    and existing.get("plugins") == plugins
+                ):
                     return propagators.ExportResult(
-                        self.name, skipped=[f"plugins/{machine_id}.json (unchanged)"], warnings=warnings)
-            except (json.JSONDecodeError, OSError):
+                        self.name,
+                        skipped=[f"plugins/{machine_id}.json (unchanged)"],
+                        warnings=warnings,
+                    )
+            except json.JSONDecodeError, OSError:
                 pass
 
         record = {
@@ -177,46 +212,57 @@ class MarketplacePropagator:
             "plugins": plugins,
         }
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         return propagators.ExportResult(
-            self.name, written=[f"plugins/{machine_id}.json"], warnings=warnings)
+            self.name, written=[f"plugins/{machine_id}.json"], warnings=warnings
+        )
 
 
 @dataclass
 class PlannedAction:
-    verb: str            # add_marketplace | update_marketplace | install_plugin | update_plugin
-    target: str          # marketplace name or plugin key
+    verb: str  # add_marketplace | update_marketplace | install_plugin | update_plugin
+    target: str  # marketplace name or plugin key
     detail: dict = field(default_factory=dict)
 
 
 @dataclass
 class MarketplacePlan:
-    actions: list = field(default_factory=list)     # list[PlannedAction]
-    skipped: list = field(default_factory=list)     # list[str] human reasons
+    actions: list = field(default_factory=list)  # list[PlannedAction]
+    skipped: list = field(default_factory=list)  # list[str] human reasons
 
 
-def plan_convergence(context: propagators.SyncContext, reader: PluginRegistryReader) -> MarketplacePlan:
+def plan_convergence(
+    context: propagators.SyncContext, reader: PluginRegistryReader
+) -> MarketplacePlan:
     """Pure planner: union all repo manifests, diff against the live registry,
     emit ordered actions (marketplaces first). Never emits an uninstall."""
-    desired_marketplaces: dict = {}    # name -> source (or None)
-    desired_plugins: dict = {}         # key -> meta
+    desired_marketplaces: dict = {}  # name -> source (or None)
+    desired_plugins: dict = {}  # key -> meta
     manifests_dir = context.repo_dir / "plugins"
     if manifests_dir.exists():
         for manifest_path in sorted(manifests_dir.glob("*.json")):
             try:
                 data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
+            except json.JSONDecodeError, OSError:
                 continue
             if not isinstance(data, dict):
                 continue
             marketplaces_section = data.get("marketplaces", {})
             plugins_section = data.get("plugins", {})
-            if not isinstance(marketplaces_section, dict) or not isinstance(plugins_section, dict):
+            if not isinstance(marketplaces_section, dict) or not isinstance(
+                plugins_section, dict
+            ):
                 continue
             for marketplace_name, marketplace_meta in marketplaces_section.items():
-                if marketplace_meta is not None and not isinstance(marketplace_meta, dict):
+                if marketplace_meta is not None and not isinstance(
+                    marketplace_meta, dict
+                ):
                     continue
-                desired_marketplaces.setdefault(marketplace_name, (marketplace_meta or {}).get("source"))
+                desired_marketplaces.setdefault(
+                    marketplace_name, (marketplace_meta or {}).get("source")
+                )
             for plugin_key, plugin_meta in plugins_section.items():
                 desired_plugins[plugin_key] = plugin_meta
 
@@ -229,9 +275,15 @@ def plan_convergence(context: propagators.SyncContext, reader: PluginRegistryRea
         source = desired_marketplaces[marketplace_name]
         if marketplace_name not in local_marketplaces:
             if source:
-                plan.actions.append(PlannedAction("add_marketplace", marketplace_name, {"source": source}))
+                plan.actions.append(
+                    PlannedAction(
+                        "add_marketplace", marketplace_name, {"source": source}
+                    )
+                )
             else:
-                plan.skipped.append(f"marketplace {marketplace_name}: not registered and source unknown")
+                plan.skipped.append(
+                    f"marketplace {marketplace_name}: not registered and source unknown"
+                )
                 unresolved_marketplaces.add(marketplace_name)
                 continue
         plan.actions.append(PlannedAction("update_marketplace", marketplace_name))
@@ -239,11 +291,17 @@ def plan_convergence(context: propagators.SyncContext, reader: PluginRegistryRea
     for plugin_key in sorted(desired_plugins):
         marketplace_name = plugin_key.split("@", 1)[1] if "@" in plugin_key else ""
         if marketplace_name in unresolved_marketplaces:
-            plan.skipped.append(f"plugin {plugin_key}: marketplace {marketplace_name} unavailable")
+            plan.skipped.append(
+                f"plugin {plugin_key}: marketplace {marketplace_name} unavailable"
+            )
             continue
         if plugin_key in installed:
             current_version = installed[plugin_key].get("version", "unknown")
-            plan.actions.append(PlannedAction("update_plugin", plugin_key, {"current_version": current_version}))
+            plan.actions.append(
+                PlannedAction(
+                    "update_plugin", plugin_key, {"current_version": current_version}
+                )
+            )
         else:
             plan.actions.append(PlannedAction("install_plugin", plugin_key))
     return plan
@@ -259,7 +317,7 @@ class ActionOutcome:
 
 @dataclass
 class MarketplaceResult:
-    outcomes: list = field(default_factory=list)    # list[ActionOutcome]
+    outcomes: list = field(default_factory=list)  # list[ActionOutcome]
     skipped: list = field(default_factory=list)
 
 
@@ -274,14 +332,17 @@ class PluginInstaller(Protocol):
     def update_plugin(self, key: str) -> ActionOutcome: ...
 
 
-def execute_plan(context: propagators.SyncContext, plan: MarketplacePlan,
-                 installer: PluginInstaller) -> MarketplaceResult:
+def execute_plan(
+    context: propagators.SyncContext, plan: MarketplacePlan, installer: PluginInstaller
+) -> MarketplaceResult:
     """Run each planned action via the injected installer; capture per-action
     outcomes and never abort the batch on a single failure."""
     result = MarketplaceResult(skipped=list(plan.skipped))
     for action in plan.actions:
         if action.verb == "add_marketplace":
-            outcome = installer.add_marketplace(action.target, action.detail.get("source", {}))
+            outcome = installer.add_marketplace(
+                action.target, action.detail.get("source", {})
+            )
         elif action.verb == "update_marketplace":
             outcome = installer.update_marketplace(action.target)
         elif action.verb == "install_plugin":
@@ -289,7 +350,9 @@ def execute_plan(context: propagators.SyncContext, plan: MarketplacePlan,
         elif action.verb == "update_plugin":
             outcome = installer.update_plugin(action.target)
         else:
-            outcome = ActionOutcome(action.verb, action.target, ok=False, message="unknown verb")
+            outcome = ActionOutcome(
+                action.verb, action.target, ok=False, message="unknown verb"
+            )
         result.outcomes.append(outcome)
     return result
 

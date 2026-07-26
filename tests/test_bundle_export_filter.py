@@ -4,6 +4,7 @@ Bundles must carry a skill/agent's authored content, never vendored/build/scratc
 artefacts (virtualenvs, bytecode caches, node_modules). The filter is an injected
 collaborator so the policy is substitutable and the propagator stays open/closed.
 """
+
 import sys
 from pathlib import Path
 
@@ -34,6 +35,7 @@ def _write_skill(claude_dir, name, files):
 
 # --- DefaultBundleExportFilter unit behaviour ------------------------------
 
+
 def test_default_filter_excludes_scratch_keeps_authored_content():
     export_filter = propagators.DefaultBundleExportFilter()
     # authored content travels
@@ -52,15 +54,20 @@ def test_default_filter_excludes_scratch_keeps_authored_content():
 
 # --- Export excludes scratch ------------------------------------------------
 
+
 def test_export_omits_venv_and_pycache_from_bundle(tmp_path):
     claude_dir = tmp_path / "c"
     repo_dir = tmp_path / "r"
-    _write_skill(claude_dir, "tdd", {
-        "SKILL.md": "# tdd",
-        "references/guide.md": "do the thing",
-        "venv/bin/python": "ELF-junk",
-        "iteration-1/__pycache__/x.cpython-314.pyc": "bytecode",
-    })
+    _write_skill(
+        claude_dir,
+        "tdd",
+        {
+            "SKILL.md": "# tdd",
+            "references/guide.md": "do the thing",
+            "venv/bin/python": "ELF-junk",
+            "iteration-1/__pycache__/x.cpython-314.pyc": "bytecode",
+        },
+    )
     context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
 
     result = propagators.ContentBundlePropagator().export(context)
@@ -68,12 +75,15 @@ def test_export_omits_venv_and_pycache_from_bundle(tmp_path):
     bundle = repo_dir / "bundles" / "skills" / "tdd"
     assert (bundle / "SKILL.md").exists()
     assert (bundle / "references" / "guide.md").exists()
-    assert not (bundle / "venv").exists()                       # venv never travels
-    assert not (bundle / "iteration-1" / "__pycache__").exists()  # bytecode never travels
+    assert not (bundle / "venv").exists()  # venv never travels
+    assert not (
+        bundle / "iteration-1" / "__pycache__"
+    ).exists()  # bytecode never travels
     assert "skill/tdd" in result.written
 
 
 # --- The injected-filter seam (DIP) ----------------------------------------
+
 
 def test_export_honours_injected_filter(tmp_path):
     claude_dir = tmp_path / "c"
@@ -81,15 +91,18 @@ def test_export_honours_injected_filter(tmp_path):
     _write_skill(claude_dir, "demo", {"SKILL.md": "keep", "secret/data.txt": "drop"})
     context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
 
-    propagator = propagators.ContentBundlePropagator(export_filter=_ExcludeByName("secret"))
+    propagator = propagators.ContentBundlePropagator(
+        export_filter=_ExcludeByName("secret")
+    )
     propagator.export(context)
 
     bundle = repo_dir / "bundles" / "skills" / "demo"
     assert (bundle / "SKILL.md").exists()
-    assert not (bundle / "secret").exists()   # the INJECTED policy decided this
+    assert not (bundle / "secret").exists()  # the INJECTED policy decided this
 
 
 # --- Apply must not raise a false conflict from local scratch --------------
+
 
 def test_apply_skips_when_only_local_scratch_differs(tmp_path):
     """Export hashes filtered content; apply must hash the local destination the
@@ -102,27 +115,39 @@ def test_apply_skips_when_only_local_scratch_differs(tmp_path):
     bundle = repo_dir / "bundles" / "skills" / "tdd"
     bundle.mkdir(parents=True)
     (bundle / "SKILL.md").write_text("# tdd")
-    (bundle / propagators.MANIFEST_NAME).write_text(propagators.json.dumps({
-        "name": "tdd", "kind": "skill", "is_dir": True,
-        "content_hash": propagators._content_hash({"SKILL.md": b"# tdd"}),
-        "exported_at": "2026-01-01T00:00:00+00:00", "machine_id": "m",
-    }))
+    (bundle / propagators.MANIFEST_NAME).write_text(
+        propagators.json.dumps(
+            {
+                "name": "tdd",
+                "kind": "skill",
+                "is_dir": True,
+                "content_hash": propagators._content_hash({"SKILL.md": b"# tdd"}),
+                "exported_at": "2026-01-01T00:00:00+00:00",
+                "machine_id": "m",
+            }
+        )
+    )
 
     # local destination: identical authored content PLUS local-only scratch
-    _write_skill(claude_dir, "tdd", {
-        "SKILL.md": "# tdd",
-        "venv/bin/python": "machine-specific junk",
-        "__pycache__/x.pyc": "bytecode",
-    })
+    _write_skill(
+        claude_dir,
+        "tdd",
+        {
+            "SKILL.md": "# tdd",
+            "venv/bin/python": "machine-specific junk",
+            "__pycache__/x.pyc": "bytecode",
+        },
+    )
     context = propagators.SyncContext(claude_dir=claude_dir, repo_dir=repo_dir)
 
     result = propagators.ContentBundlePropagator().apply(context)
 
     assert "skill/tdd" in result.skipped
-    assert result.conflicts == []   # scratch alone must NOT look like a change
+    assert result.conflicts == []  # scratch alone must NOT look like a change
 
 
 # --- Status inventory counts authored files only ---------------------------
+
 
 def test_inventory_file_count_excludes_scratch(tmp_path):
     skills = tmp_path / "skills"
@@ -133,6 +158,8 @@ def test_inventory_file_count_excludes_scratch(tmp_path):
     (skills / "tdd-workspace" / "__pycache__").mkdir(parents=True)
     (skills / "tdd-workspace" / "__pycache__" / "m.pyc").write_text("bc")
 
-    count = config_sync._inventory_file_count(skills, propagators.DefaultBundleExportFilter())
+    count = config_sync._inventory_file_count(
+        skills, propagators.DefaultBundleExportFilter()
+    )
 
-    assert count == 1   # only real/SKILL.md, not the venv/pyc scratch
+    assert count == 1  # only real/SKILL.md, not the venv/pyc scratch
