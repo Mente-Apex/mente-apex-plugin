@@ -8,6 +8,8 @@ import json
 import re
 from pathlib import Path
 
+from skill_version_policy import assert_version_at_least
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CA_SKILL_DIR = REPO_ROOT / "skills" / "clean-architecture"
 LENS_OVERLAP = REPO_ROOT / "docs" / "lens-overlap.md"
@@ -76,7 +78,7 @@ def test_skill_md_declares_tiers_tooling_and_carve():
     assert fields.get("name") == "clean-architecture"
     assert fields.get("user-invocable") == "true"
     frontmatter_text = read_skill_file("SKILL.md").split("---")[1]
-    assert re.search(r'version:\s*"0\.1\.0"', frontmatter_text)
+    assert_version_at_least(frontmatter_text, (0, 1, 0))
     body = read_skill_file("SKILL.md")
     lowered = body.lower()
     for marker in ["headline", "secondary", "appendix", "opt-in"]:

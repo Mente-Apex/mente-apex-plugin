@@ -11,6 +11,8 @@ import json
 import re
 from pathlib import Path
 
+from skill_version_policy import assert_version_at_least
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLEAN_CODE_SKILL_DIR = REPO_ROOT / "skills" / "clean-code"
 CLEAN_CODE_STANDARD = REPO_ROOT / "docs" / "clean-code-standard.md"
@@ -82,9 +84,7 @@ def test_skill_md_is_thin_and_links_the_standard():
     assert fields.get("name") == "clean-code"
     assert fields.get("user-invocable") == "true"
     frontmatter_text = read_skill_file("SKILL.md").split("---")[1]
-    assert re.search(
-        r'version:\s*"0\.2\.0"', frontmatter_text
-    ), "metadata.version must be 0.2.0"
+    assert_version_at_least(frontmatter_text, (0, 2, 0))
     body = fields["_body"]
     lowered = body.lower()
     # links the single source of truth rather than restating it
