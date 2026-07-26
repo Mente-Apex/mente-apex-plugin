@@ -52,9 +52,12 @@ def test_no_stale_overlap_references_remain():
         target = REPO_ROOT / scan
         files = target.rglob("*") if target.is_dir() else [target]
         for candidate in files:
-            if candidate.is_file() and candidate.suffix in {".md", ".py"}:
-                if "solid-gof-overlap" in candidate.read_text(encoding="utf-8"):
-                    offenders.append(str(candidate.relative_to(REPO_ROOT)))
+            if (
+                candidate.is_file()
+                and candidate.suffix in {".md", ".py"}
+                and "solid-gof-overlap" in candidate.read_text(encoding="utf-8")
+            ):
+                offenders.append(str(candidate.relative_to(REPO_ROOT)))
     assert not offenders, f"stale solid-gof-overlap references remain: {offenders}"
 
 
@@ -176,5 +179,7 @@ def test_manifests_advertise_ca_and_versions_are_bumped():
     plugin_version = plugin_manifest["version"]
     marketplace_version = marketplace_manifest["plugins"][0]["version"]
     assert plugin_version == marketplace_version
-    to_tuple = lambda semver: tuple(int(part) for part in semver.split("."))
+    def to_tuple(semver):
+        return tuple(int(part) for part in semver.split("."))
+
     assert to_tuple(plugin_version) >= (0, 13, 0)

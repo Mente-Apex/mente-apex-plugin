@@ -110,7 +110,8 @@ def _brand(tmp_path):
 class TestBrandFreshness:
     def test_not_stale_when_tokens_newer_than_book(self, tmp_path):
         brand = _brand(tmp_path)
-        import os, time
+        import os
+        import time
         now = time.time()
         os.utime(brand / "brand-book.html", (now - 100, now - 100))
         os.utime(brand / "tokens" / "tokens.css", (now, now))
@@ -118,7 +119,8 @@ class TestBrandFreshness:
 
     def test_stale_when_book_newer_than_tokens(self, tmp_path):
         brand = _brand(tmp_path)
-        import os, time
+        import os
+        import time
         now = time.time()
         os.utime(brand / "tokens" / "tokens.css", (now - 100, now - 100))
         os.utime(brand / "brand-book.html", (now, now))

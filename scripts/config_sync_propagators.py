@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -108,6 +108,7 @@ def resolve_deletion(context: SyncContext, kind: str, name: str, decision: str) 
     if kind not in BUNDLE_KINDS:
         raise ValueError(f"unknown bundle kind: {kind!r}")
     import shutil
+
     # Deferred import: config_sync <-> config_sync_propagators is a two-way dep (SOLID M2).
     import config_sync
     destination = context.claude_dir / BUNDLE_KINDS[kind] / name
@@ -155,8 +156,11 @@ class DefaultBundleExportFilter:
             return False
         if any(segment.endswith(self.EXCLUDED_SEGMENT_SUFFIXES) for segment in segments):
             return False
-        if relative_path.endswith(self.EXCLUDED_FILE_SUFFIXES):
+        if relative_path.endswith(self.EXCLUDED_FILE_SUFFIXES):  # noqa: SIM103
             return False
+        # Kept as a guard-clause chain rather than `return not ...`: each exclusion
+        # rule is one symmetric clause, so adding a fourth is a new line, not a
+        # rewrite of the return expression.
         return True
 
 
@@ -177,7 +181,7 @@ def _machine_id(context: SyncContext) -> str:
     return machine_id
 
 
-def _payload_files(entry: Path, export_filter: "BundleExportFilter | None" = None) -> dict:
+def _payload_files(entry: Path, export_filter: BundleExportFilter | None = None) -> dict:
     """Map {relative_posix_path: bytes} for a bundle source (file or dir).
 
     When an export_filter is supplied, files it rejects (vendored venvs, bytecode,
@@ -290,7 +294,7 @@ class BundleDeletionLedger:
         index_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "machine_id": machine_id,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "bundles": sorted(current),
         }
         index_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -319,7 +323,9 @@ class BundleDeletionLedger:
         collected = []
         if not root.exists():
             return collected
-        for kind, subdir in BUNDLE_KINDS.items():
+        # The kind is read back from each tombstone's own payload, so only the
+        # directory name is needed to walk them.
+        for subdir in BUNDLE_KINDS.values():
             subdir_path = root / subdir
             if not subdir_path.exists():
                 continue
@@ -346,7 +352,7 @@ class ContentBundlePropagator:
 
     name = "content-bundle"
 
-    def __init__(self, export_filter: "BundleExportFilter | None" = None, ledger=None):
+    def __init__(self, export_filter: BundleExportFilter | None = None, ledger=None):
         # DIP: both the exclusion policy and the deletion ledger are injected
         # collaborators. Defaults are the production implementations; the
         # constructor is the seam tests substitute through.
@@ -368,7 +374,7 @@ class ContentBundlePropagator:
         machine_id = _machine_id(context)
         current = {f"{kind}/{entry.name}" for kind, entry in self._sources(context)}
         previously_exported = self._ledger.previously_exported(context.repo_dir, machine_id)
-        deleted_at = datetime.now(timezone.utc).isoformat()
+        deleted_at = datetime.now(UTC).isoformat()
 
         # Deletions: bundles this machine used to have and no longer does.
         import shutil
@@ -424,7 +430,7 @@ class ContentBundlePropagator:
             "kind": kind,
             "is_dir": is_dir,
             "content_hash": content_hash,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "exported_at": datetime.now(UTC).isoformat(),
             "machine_id": _machine_id(context),
         }
         bundle_dir.mkdir(parents=True, exist_ok=True)
@@ -532,6 +538,7 @@ class SnapshotPropagator:
 
     def export(self, context: SyncContext) -> ExportResult:
         import platform
+
         # Deferred: two-way dep with config_sync; call-time keeps it acyclic (SOLID M2).
         import config_sync
         files = {}
@@ -551,7 +558,7 @@ class SnapshotPropagator:
             "machine_id": machine_id,
             "hostname": platform.node(),
             "platform": platform.system(),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "files": files,
         }
         machines_dir = context.repo_dir / "machines"

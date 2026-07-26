@@ -60,6 +60,11 @@ ignore = [
     "E501",  # line length is black's call, not ruff's
 ]
 
+[tool.ruff.lint.isort]
+# Keep `from x import (a as a, b as b)` re-export blocks as one statement instead
+# of exploding them into one import line per name.
+combine-as-imports = true
+
 [tool.ruff.lint.per-file-ignores]
 # Tests assert on behaviour through deliberately long, descriptive names and
 # frequently shadow builtins in fixtures; neither is a defect there.

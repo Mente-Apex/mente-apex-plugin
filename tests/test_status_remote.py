@@ -8,10 +8,10 @@ The resolver is an injected collaborator so the `git remote get-url` subprocess
 boundary is substitutable: the high-level status-formatting policy depends on the
 `resolve` abstraction, not on git.
 """
-from pathlib import Path
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import config_sync  # noqa: E402

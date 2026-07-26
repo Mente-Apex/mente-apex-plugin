@@ -25,7 +25,7 @@ Usage:
   python3 config_sync.py migrate              -> rename legacy open-memory-* paths to config-sync-* (idempotent)
 """
 
-import hashlib
+import contextlib
 import json
 import os
 import platform
@@ -33,30 +33,34 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Protocol
 
-# The text/JSON merge engine lives in its own module (SRP extraction). Re-exported
-# here so cmd_merge/cmd_consolidate and existing callers keep using the config_sync.*
-# names while the algorithm is read and maintained in one focused place.
-from config_sync_merge import (
-    LLM_MERGE_ENV,
-    _merge_snapshot_files,
-    _deep_merge_json,
-    _LlmMergeBudget,
-    _smart_merge_text,
-    _line_key,
-    _section_union,
-)
+# Pure hook-provisioning core (issue #68): discovers hooks/hooks.json
+# declarations under the named roots and diffs/wires them into settings.json.
+import config_sync_hooks
 
 # Portable hook-command paths (issue #65): rewrites machine-absolute paths in
 # settings.json hook commands to ${TOKEN} sentinels on export and back on import.
 import config_sync_roots
 
-# Pure hook-provisioning core (issue #68): discovers hooks/hooks.json
-# declarations under the named roots and diffs/wires them into settings.json.
-import config_sync_hooks
+# The text/JSON merge engine lives in its own module (SRP extraction). Re-exported
+# here so cmd_merge/cmd_consolidate and existing callers keep using the config_sync.*
+# names while the algorithm is read and maintained in one focused place.
+#
+# The `X as X` redundant-alias form is PEP 484's explicit re-export marker: it tells
+# ruff these names are this module's public surface rather than dead imports, so
+# F401 leaves alone the ones no line in this file happens to reference.
+from config_sync_merge import (
+    LLM_MERGE_ENV as LLM_MERGE_ENV,
+    _deep_merge_json as _deep_merge_json,
+    _line_key as _line_key,
+    _LlmMergeBudget as _LlmMergeBudget,
+    _merge_snapshot_files as _merge_snapshot_files,
+    _section_union as _section_union,
+    _smart_merge_text as _smart_merge_text,
+)
 
 if TYPE_CHECKING:
     # Runtime-free import (TYPE_CHECKING is False at import time) so cmd_status can
@@ -132,7 +136,7 @@ def _safe_dest(rel: str):
     return candidate if _is_within(candidate, CLAUDE_DIR) else None
 
 
-def _root_registry() -> "config_sync_roots.RootRegistry":
+def _root_registry() -> config_sync_roots.RootRegistry:
     """This machine's root registry: HOME plus CONFIG_SYNC_ROOT_* declarations.
     Built from the live globals so tests that monkeypatch HOME are honoured."""
     return config_sync_roots.default_registry(HOME, os.environ)
@@ -332,7 +336,7 @@ def cmd_export():
         "machine_id": _machine_id(),
         "hostname": platform.node(),
         "platform": platform.system(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "files": files,
     }
     print(json.dumps(snapshot, indent=2, ensure_ascii=False))
@@ -428,7 +432,7 @@ class RemoteResolver(Protocol):
     this port, never on git directly, so the subprocess boundary can be faked in
     tests and swapped for a different VCS without touching status-formatting."""
 
-    def resolve(self, repo_path: Path) -> Optional[str]:
+    def resolve(self, repo_path: Path) -> str | None:
         ...
 
 
@@ -438,7 +442,7 @@ class GitRemoteResolver:
     that made status print `unknown` for every user (#48). Returns None when the
     repo is absent or has no origin, so callers render 'not configured'."""
 
-    def resolve(self, repo_path: Path) -> Optional[str]:
+    def resolve(self, repo_path: Path) -> str | None:
         if not repo_path.exists():
             return None
         completed = subprocess.run(
@@ -451,8 +455,8 @@ class GitRemoteResolver:
         return url or None
 
 
-def cmd_status(remote_resolver: Optional[RemoteResolver] = None,
-               export_filter: "Optional[BundleExportFilter]" = None):
+def cmd_status(remote_resolver: RemoteResolver | None = None,
+               export_filter: BundleExportFilter | None = None):
     """Print a human-readable inventory of the local config-sync state.
 
     Both collaborators are injected (defaults: git-backed remote lookup, default
@@ -521,7 +525,7 @@ def cmd_merge(path_a: str, path_b: str):
         "machine_id": f"merged-{snap_a['machine_id']}-{snap_b['machine_id']}",
         "hostname": "merged",
         "platform": platform.system(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "files": merged_files,
         "merge_log": merge_log,
     }
@@ -562,7 +566,7 @@ def cmd_consolidate(repo_path: str):
         "machine_id": "consolidated",
         "hostname": "consolidated",
         "platform": platform.system(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "files": base_files,
     }
     consolidated_path.parent.mkdir(parents=True, exist_ok=True)
@@ -578,7 +582,7 @@ def cmd_backup():
     """
     backup_dir = CLAUDE_DIR / "config-sync-backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     backup_path = backup_dir / f"snapshot-{ts}.json"
 
     # Reuse export logic by capturing stdout
@@ -657,7 +661,7 @@ def cmd_log_sync(repo_path: str, action: str = "sync", summary: str = ""):
     entry = {
         "machine_id": _machine_id(),
         "hostname": platform.node(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "action": action,
     }
     if summary:
@@ -859,11 +863,9 @@ def cmd_migrate():
         migrated.append("consolidated/brain.json -> consolidated/snapshot.json")
         # Stage the rename so the next sync commits it (best-effort).
         if (CONFIG_REPO / ".git").exists():
-            try:
+            with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError):
                 subprocess.run(["git", "add", "-A"], cwd=CONFIG_REPO,
                                capture_output=True, text=True, timeout=30)
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass
 
     print(json.dumps({"migrated": migrated, "skipped": skipped}))
 

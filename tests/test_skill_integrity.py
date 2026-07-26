@@ -214,5 +214,5 @@ def test_gof_evals_valid_schema():
     assert data["skill_name"] == "gof"
     assert isinstance(data["evals"], list) and data["evals"], "no eval cases"
     for eval_case in data["evals"]:
-        assert EVAL_CASE_KEYS <= eval_case.keys(), f"case {eval_case.get('id')} missing keys"
+        assert eval_case.keys() >= EVAL_CASE_KEYS, f"case {eval_case.get('id')} missing keys"
         assert isinstance(eval_case["assertions"], list) and eval_case["assertions"]

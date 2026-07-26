@@ -12,8 +12,8 @@ are declared per-machine via env vars `CONFIG_SYNC_ROOT_<TOKEN>=<abs path>`
 """
 import copy
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Callable, List, Mapping
 
 # Env vars of the form CONFIG_SYNC_ROOT_<TOKEN>=<abs path> declare a named repo
 # root on this machine. Machine-local (never synced), so each machine can map the
@@ -30,7 +30,7 @@ class Root:
 
 
 class RootRegistry:
-    def __init__(self, roots: List[Root]):
+    def __init__(self, roots: list[Root]):
         self._roots = list(roots)
 
     def portabilize(self, command: str) -> str:
@@ -61,10 +61,10 @@ class RootRegistry:
         """Return a copy of `settings` with every hook command localized."""
         return _map_hook_commands(settings, self.localize)
 
-    def _roots_longest_first(self) -> List[Root]:
+    def _roots_longest_first(self) -> list[Root]:
         return sorted(self._roots, key=lambda root: len(root.path), reverse=True)
 
-    def named_roots(self) -> List[Root]:
+    def named_roots(self) -> list[Root]:
         """Declared repo roots (everything except the HOME catch-all) — the
         places wire-hooks scans for hook declarations."""
         return [root for root in self._roots if root.token != "HOME"]

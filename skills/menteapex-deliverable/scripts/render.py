@@ -160,8 +160,10 @@ def _is_block_start(lines: list[str], index: int) -> bool:
         return True
     if line.lstrip().startswith(">"):
         return True
-    if "|" in line and index + 1 < len(lines) and _TABLE_SEP_RE.match(lines[index + 1]):
+    if "|" in line and index + 1 < len(lines) and _TABLE_SEP_RE.match(lines[index + 1]):  # noqa: SIM103
         return True
+    # Guard-clause chain, not `return <expr>`: each block type is one readable
+    # clause, and the table test already spans a full line on its own.
     return False
 
 
