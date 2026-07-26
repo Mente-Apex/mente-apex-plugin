@@ -45,21 +45,13 @@ import config_sync_hooks
 # settings.json hook commands to ${TOKEN} sentinels on export and back on import.
 import config_sync_roots
 
-# The text/JSON merge engine lives in its own module (SRP extraction). Re-exported
-# here so cmd_merge/cmd_consolidate and existing callers keep using the config_sync.*
-# names while the algorithm is read and maintained in one focused place.
-#
-# The `X as X` redundant-alias form is PEP 484's explicit re-export marker: it tells
-# ruff these names are this module's public surface rather than dead imports, so
-# F401 leaves alone the ones no line in this file happens to reference.
+# The text/JSON merge engine lives in its own module (SRP extraction). Only the
+# three names cmd_merge/cmd_consolidate actually call are imported — anything else
+# is reached at config_sync_merge, where the algorithm lives.
 from config_sync_merge import (
-    LLM_MERGE_ENV as LLM_MERGE_ENV,
-    _deep_merge_json as _deep_merge_json,
-    _line_key as _line_key,
-    _LlmMergeBudget as _LlmMergeBudget,
-    _merge_snapshot_files as _merge_snapshot_files,
-    _section_union as _section_union,
-    _smart_merge_text as _smart_merge_text,
+    LLM_MERGE_ENV,
+    _LlmMergeBudget,
+    _merge_snapshot_files,
 )
 
 if TYPE_CHECKING:
