@@ -6,6 +6,7 @@ skill guards that depend on it cannot quietly become no-ops.
 """
 
 import pytest
+
 from skill_version_policy import assert_version_at_least, parse_metadata_version
 
 FRONTMATTER = '\nname: example\nmetadata:\n  version: "1.4.2"\n'

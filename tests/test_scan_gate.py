@@ -1,5 +1,6 @@
-import config_sync
 import pytest
+
+import config_sync
 
 
 def test_collect_scan_warnings_flags_secrets(claude_home):
