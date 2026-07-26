@@ -1,4 +1,5 @@
 import json
+
 import config_sync
 import config_sync_hooks
 

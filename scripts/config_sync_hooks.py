@@ -15,7 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 PLUGIN_ROOT_PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
 MARKER_PREFIX = "# config-sync:"
@@ -60,7 +60,7 @@ class DeclaredHook:
     event: str
     matcher: str
     command: str            # tokenised (${TOKEN}/...), pre-marker
-    timeout: Optional[int]
+    timeout: int | None
 
 
 @dataclass
@@ -96,10 +96,10 @@ class HookResult:
     skipped: list = field(default_factory=list)
 
 
-def discover_declarations(registry) -> List[DeclaredHook]:
+def discover_declarations(registry) -> list[DeclaredHook]:
     """Read each named root's hooks/hooks.json and flatten it into DeclaredHooks
     with resolved tokens and stable ids. Missing/malformed files are skipped."""
-    declarations: List[DeclaredHook] = []
+    declarations: list[DeclaredHook] = []
     for root in registry.named_roots():
         declaration_path = Path(root.path) / "hooks" / "hooks.json"
         try:
@@ -135,7 +135,7 @@ def discover_declarations(registry) -> List[DeclaredHook]:
     return declarations
 
 
-def plan_hook_wiring(declarations: List[DeclaredHook], settings: dict) -> HookPlan:
+def plan_hook_wiring(declarations: list[DeclaredHook], settings: dict) -> HookPlan:
     """Pure planner: emit a register action for every declared hook whose id is
     not already marked in settings. Never unregisters; unmarked hooks are ignored."""
     already_registered = registered_hook_ids(settings)

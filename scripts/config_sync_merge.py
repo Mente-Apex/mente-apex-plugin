@@ -127,7 +127,7 @@ class _LlmMergeBudget:
         return True
 
 
-def _smart_merge_text(version_a: str, version_b: str, context: str = "", budget: "_LlmMergeBudget | None" = None) -> tuple:
+def _smart_merge_text(version_a: str, version_b: str, context: str = "", budget: _LlmMergeBudget | None = None) -> tuple:
     """
     Merge two text blobs. Returns (merged_text, strategy_name).
 

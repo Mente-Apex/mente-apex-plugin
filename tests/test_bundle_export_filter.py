@@ -4,8 +4,8 @@ Bundles must carry a skill/agent's authored content, never vendored/build/scratc
 artefacts (virtualenvs, bytecode caches, node_modules). The filter is an injected
 collaborator so the policy is substitutable and the propagator stays open/closed.
 """
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import config_sync  # noqa: E402

@@ -53,12 +53,12 @@ class TestInsertAfterHeading:
 class TestHeadingResolutionErrors:
     def test_raises_heading_not_found_when_absent(self):
         document = "## Scope\n\nScope line.\n"
-        with pytest.raises(insert_block.HeadingNotFound):
+        with pytest.raises(insert_block.HeadingNotFoundError):
             insert_block.insert_after_heading(document, "## Missing", "Block.")
 
     def test_raises_ambiguous_heading_when_two_match(self):
         document = "## Scope\n\nFirst.\n\n## Scope\n\nSecond.\n"
-        with pytest.raises(insert_block.AmbiguousHeading):
+        with pytest.raises(insert_block.AmbiguousHeadingError):
             insert_block.insert_after_heading(document, "## Scope", "Block.")
 
 

@@ -1,4 +1,7 @@
-import urllib.request, re, base64, sys
+import base64
+import re
+import sys
+import urllib.request
 
 CSS_URL = ("https://fonts.googleapis.com/css2?"
            "family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&"

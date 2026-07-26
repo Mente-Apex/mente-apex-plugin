@@ -18,11 +18,11 @@ from typing import TextIO
 _HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
 
 
-class HeadingNotFound(LookupError):
+class HeadingNotFoundError(LookupError):
     """No heading in the document matched the requested anchor."""
 
 
-class AmbiguousHeading(LookupError):
+class AmbiguousHeadingError(LookupError):
     """More than one heading matched the anchor — placement would be a guess."""
 
 
@@ -46,9 +46,9 @@ def insert_after_heading(document_text: str, heading: str, block: str) -> str:
         index for index, line in enumerate(lines) if line.strip() == target
     ]
     if not matching_indices:
-        raise HeadingNotFound(target)
+        raise HeadingNotFoundError(target)
     if len(matching_indices) > 1:
-        raise AmbiguousHeading(target)
+        raise AmbiguousHeadingError(target)
     heading_index = matching_indices[0]
     target_level = _heading_level(lines[heading_index])
 
@@ -89,11 +89,11 @@ def main(argv: list[str] | None = None, *, block_reader: TextIO = sys.stdin) -> 
     block = block_reader.read()
     try:
         updated = insert_after_heading(document_path.read_text(), args.after_heading, block)
-    except AmbiguousHeading as ambiguous:
+    except AmbiguousHeadingError as ambiguous:
         print(f"✗ ambiguous heading {ambiguous} — more than one match; nothing written.",
               file=sys.stderr)
         return 1
-    except HeadingNotFound as missing:
+    except HeadingNotFoundError as missing:
         print(f"✗ heading not found: {missing} — nothing written.", file=sys.stderr)
         return 1
 

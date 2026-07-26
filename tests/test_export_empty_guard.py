@@ -7,8 +7,8 @@ payload that clobbered the last-good repo bundle and entered the export ledger,
 silently propagating a broken skill network-wide. Export must skip-and-warn such
 sources and leave any existing bundle intact — without tombstoning it.
 """
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import config_sync_propagators as propagators  # noqa: E402
