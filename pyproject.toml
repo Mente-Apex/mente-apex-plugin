@@ -43,6 +43,13 @@ extend-exclude = '''
 line-length = 88
 target-version = "py314"
 extend-exclude = [".venv", "graphify-out", "skills/*-workspace"]
+# Where this project's own modules live. There is no importable package — each
+# directory is put on sys.path by the thing that runs it (conftest.py for scripts/,
+# the deliverable tests for the skill's scripts) — so without this ruff reads
+# `import config_sync` as a third-party package and sorts it among the installed
+# dependencies. Declaring the roots (rather than listing modules in
+# known-first-party) means a new module is classified correctly on creation.
+src = [".", "scripts", "tests", "skills/menteapex-deliverable/scripts"]
 
 [tool.ruff.lint]
 select = [
