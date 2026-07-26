@@ -4,11 +4,14 @@ The renderer is deterministic: Markdown template (source of truth) → on-brand 
 These tests pin the pure transforms — comment stripping, placeholder detection,
 the Markdown subset our Legal/ templates use, and the brand-book-first token wiring.
 """
+
 import sys
 from pathlib import Path
 
 # render.py lives beside the skill, not in the repo-level scripts/ dir.
-_SKILL_SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "menteapex-deliverable" / "scripts"
+_SKILL_SCRIPTS = (
+    Path(__file__).resolve().parents[1] / "skills" / "menteapex-deliverable" / "scripts"
+)
 sys.path.insert(0, str(_SKILL_SCRIPTS))
 
 import render  # noqa: E402
@@ -112,6 +115,7 @@ class TestBrandFreshness:
         brand = _brand(tmp_path)
         import os
         import time
+
         now = time.time()
         os.utime(brand / "brand-book.html", (now - 100, now - 100))
         os.utime(brand / "tokens" / "tokens.css", (now, now))
@@ -121,6 +125,7 @@ class TestBrandFreshness:
         brand = _brand(tmp_path)
         import os
         import time
+
         now = time.time()
         os.utime(brand / "tokens" / "tokens.css", (now - 100, now - 100))
         os.utime(brand / "brand-book.html", (now, now))
@@ -161,14 +166,19 @@ class TestBuildDocument:
 
     def test_embeds_live_tokens_and_body(self):
         html = render.build_document(
-            "# Your offer\n\nA clear outcome.", self._brand(), kind="letterhead", lang="en"
+            "# Your offer\n\nA clear outcome.",
+            self._brand(),
+            kind="letterhead",
+            lang="en",
         )
         assert "--abyssal-navy:#0B1E3F" in html  # live tokens inlined
         assert "<h1>Your offer</h1>" in html
         assert "A clear outcome." in html
 
     def test_sets_language_attribute(self):
-        html = render.build_document("Hola", self._brand(), kind="letterhead", lang="es-ES")
+        html = render.build_document(
+            "Hola", self._brand(), kind="letterhead", lang="es-ES"
+        )
         assert '<html lang="es-ES"' in html
 
     def test_identity_kind_includes_masthead_with_wordmark(self):
@@ -179,11 +189,17 @@ class TestBuildDocument:
         assert "<svg id='wm'></svg>" in html  # wordmark opens the document
 
     def test_letterhead_kind_has_no_full_bleed_masthead(self):
-        html = render.build_document("# Invoice", self._brand(), kind="letterhead", lang="en")
-        assert '<section class="masthead">' not in html  # element, not the CSS class def
+        html = render.build_document(
+            "# Invoice", self._brand(), kind="letterhead", lang="en"
+        )
+        assert (
+            '<section class="masthead">' not in html
+        )  # element, not the CSS class def
 
     def test_multipage_flow_css_present(self):
-        html = render.build_document("Body", self._brand(), kind="letterhead", lang="en")
+        html = render.build_document(
+            "Body", self._brand(), kind="letterhead", lang="en"
+        )
         # the brand book's Multi-page Documents law, encoded as print CSS
         assert "orphans: 2" in html and "widows: 2" in html
         assert "break-inside: avoid" in html

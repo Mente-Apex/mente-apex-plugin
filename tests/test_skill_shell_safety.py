@@ -6,6 +6,7 @@ corrupted into a raw control character that strict `json.loads` rejects. Engine
 JSON must be emitted with `printf '%s\\n'`, which passes the operand through
 verbatim. These tests lock that in so the pattern cannot silently return.
 """
+
 import re
 from pathlib import Path
 
@@ -36,5 +37,9 @@ def test_no_skill_pipes_echoed_var_into_python():
     for skill_file in sorted(SKILLS_DIR.rglob("SKILL.md")):
         for line_number, line in enumerate(skill_file.read_text().splitlines(), 1):
             if unsafe.search(line):
-                offenders.append(f"  {skill_file.relative_to(SKILLS_DIR)}:{line_number}: {line.strip()}")
-    assert not offenders, "echo|python3 JSON parse (use printf '%s\\n'):\n" + "\n".join(offenders)
+                offenders.append(
+                    f"  {skill_file.relative_to(SKILLS_DIR)}:{line_number}: {line.strip()}"
+                )
+    assert not offenders, "echo|python3 JSON parse (use printf '%s\\n'):\n" + "\n".join(
+        offenders
+    )

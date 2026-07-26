@@ -10,6 +10,7 @@ HOME is always present and needs no configuration. Additional named repo roots
 are declared per-machine via env vars `CONFIG_SYNC_ROOT_<TOKEN>=<abs path>`
 (machine-local, never synced — same philosophy as the scrubbed `env` block).
 """
+
 import copy
 import re
 from collections.abc import Callable, Mapping
@@ -25,6 +26,7 @@ ROOT_ENV_PREFIX = "CONFIG_SYNC_ROOT_"
 class Root:
     """A named local root: `token` is the portable sentinel name, `path` the
     machine-absolute directory it maps to on this machine."""
+
     token: str
     path: str
 
@@ -90,5 +92,5 @@ def default_registry(home, environ: Mapping[str, str]) -> RootRegistry:
     roots = [Root("HOME", str(home))]
     for env_key, path in environ.items():
         if env_key.startswith(ROOT_ENV_PREFIX) and path:
-            roots.append(Root(env_key[len(ROOT_ENV_PREFIX):], path))
+            roots.append(Root(env_key[len(ROOT_ENV_PREFIX) :], path))
     return RootRegistry(roots)

@@ -7,6 +7,7 @@ edit that could mangle the file. It does NOT reformat prose into Markdown; that 
 semantic judgement the agent makes before calling this. Stdlib-only, to match render.py
 (the plugin is config-synced and must not need `pip install` on a fresh box).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -76,7 +77,9 @@ def main(argv: list[str] | None = None, *, block_reader: TextIO = sys.stdin) -> 
     parser = argparse.ArgumentParser(
         description="Insert a Markdown block at the end of a named heading's section."
     )
-    parser.add_argument("--file", required=True, help="The deliverable copy to edit in place.")
+    parser.add_argument(
+        "--file", required=True, help="The deliverable copy to edit in place."
+    )
     parser.add_argument(
         "--after-heading",
         required=True,
@@ -88,10 +91,14 @@ def main(argv: list[str] | None = None, *, block_reader: TextIO = sys.stdin) -> 
     document_path = Path(args.file)
     block = block_reader.read()
     try:
-        updated = insert_after_heading(document_path.read_text(), args.after_heading, block)
+        updated = insert_after_heading(
+            document_path.read_text(), args.after_heading, block
+        )
     except AmbiguousHeadingError as ambiguous:
-        print(f"✗ ambiguous heading {ambiguous} — more than one match; nothing written.",
-              file=sys.stderr)
+        print(
+            f"✗ ambiguous heading {ambiguous} — more than one match; nothing written.",
+            file=sys.stderr,
+        )
         return 1
     except HeadingNotFoundError as missing:
         print(f"✗ heading not found: {missing} — nothing written.", file=sys.stderr)

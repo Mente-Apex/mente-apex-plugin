@@ -15,7 +15,9 @@ def test_collect_scan_warnings_flags_secrets(claude_home):
 
 
 def test_scan_gate_exits_2_and_prints_when_dirty(claude_home, capsys):
-    (claude_home / "CLAUDE.md").write_text("token: ghp_012345678901234567890123456789012345\n")
+    (claude_home / "CLAUDE.md").write_text(
+        "token: ghp_012345678901234567890123456789012345\n"
+    )
 
     with pytest.raises(SystemExit) as excinfo:
         config_sync.cmd_scan("--gate")

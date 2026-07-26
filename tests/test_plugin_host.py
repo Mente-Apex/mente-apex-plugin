@@ -8,7 +8,9 @@ import config_sync_propagators as propagators  # noqa: E402
 
 
 def _host(tmp_path):
-    context = propagators.SyncContext(claude_dir=tmp_path / ".claude", repo_dir=tmp_path / "repo")
+    context = propagators.SyncContext(
+        claude_dir=tmp_path / ".claude", repo_dir=tmp_path / "repo"
+    )
     return plugins_module.ClaudePluginHost(context)
 
 
@@ -27,9 +29,17 @@ def test_add_marketplace_github_source_uses_repo_spec(tmp_path, monkeypatch):
         return _Completed(returncode=0)
 
     monkeypatch.setattr(plugins_module.subprocess, "run", fake_run)
-    outcome = _host(tmp_path).add_marketplace("official", {"source": "github", "repo": "anthropics/x"})
+    outcome = _host(tmp_path).add_marketplace(
+        "official", {"source": "github", "repo": "anthropics/x"}
+    )
     assert outcome.ok is True
-    assert seen["arguments"] == ["claude", "plugin", "marketplace", "add", "anthropics/x"]
+    assert seen["arguments"] == [
+        "claude",
+        "plugin",
+        "marketplace",
+        "add",
+        "anthropics/x",
+    ]
 
 
 def test_add_marketplace_git_source_uses_url_spec(tmp_path, monkeypatch):
@@ -40,7 +50,9 @@ def test_add_marketplace_git_source_uses_url_spec(tmp_path, monkeypatch):
         return _Completed(returncode=0)
 
     monkeypatch.setattr(plugins_module.subprocess, "run", fake_run)
-    outcome = _host(tmp_path).add_marketplace("m", {"source": "git", "url": "https://h/r.git"})
+    outcome = _host(tmp_path).add_marketplace(
+        "m", {"source": "git", "url": "https://h/r.git"}
+    )
     assert outcome.ok is True
     assert seen["arguments"][-1] == "https://h/r.git"
 
@@ -53,9 +65,9 @@ def test_add_marketplace_missing_spec_does_not_shell_out(tmp_path, monkeypatch):
         return _Completed(returncode=0)
 
     monkeypatch.setattr(plugins_module.subprocess, "run", fake_run)
-    outcome = _host(tmp_path).add_marketplace("m", {"source": "github"})   # no repo key
+    outcome = _host(tmp_path).add_marketplace("m", {"source": "github"})  # no repo key
     assert outcome.ok is False and outcome.message == "no source spec"
-    assert called["ran"] is False   # never shelled out
+    assert called["ran"] is False  # never shelled out
 
 
 def test_run_reports_missing_cli(tmp_path, monkeypatch):

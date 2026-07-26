@@ -7,6 +7,7 @@ payload that clobbered the last-good repo bundle and entered the export ledger,
 silently propagating a broken skill network-wide. Export must skip-and-warn such
 sources and leave any existing bundle intact — without tombstoning it.
 """
+
 import sys
 from pathlib import Path
 
@@ -34,10 +35,10 @@ def test_export_skips_and_warns_skill_with_only_scratch(tmp_path):
     result = propagators.ContentBundlePropagator().export(context)
 
     bundle = repo_dir / "bundles" / "skills" / "memory"
-    assert not bundle.exists()                  # nothing empty written
+    assert not bundle.exists()  # nothing empty written
     assert "skill/memory" not in result.written
     assert any("memory" in warning for warning in result.warnings)
-    assert "skill/memory" not in result.tombstoned   # not a deletion
+    assert "skill/memory" not in result.tombstoned  # not a deletion
 
 
 def test_export_skips_skill_missing_entrypoint(tmp_path):
@@ -64,11 +65,18 @@ def test_export_does_not_clobber_good_bundle_with_empty_payload(tmp_path):
     good_bundle = repo_dir / "bundles" / "skills" / "memory"
     good_bundle.mkdir(parents=True)
     (good_bundle / "SKILL.md").write_text("# memory")
-    (good_bundle / propagators.MANIFEST_NAME).write_text(propagators.json.dumps({
-        "name": "memory", "kind": "skill", "is_dir": True,
-        "content_hash": propagators._content_hash({"SKILL.md": b"# memory"}),
-        "exported_at": "2026-01-01T00:00:00+00:00", "machine_id": "m",
-    }))
+    (good_bundle / propagators.MANIFEST_NAME).write_text(
+        propagators.json.dumps(
+            {
+                "name": "memory",
+                "kind": "skill",
+                "is_dir": True,
+                "content_hash": propagators._content_hash({"SKILL.md": b"# memory"}),
+                "exported_at": "2026-01-01T00:00:00+00:00",
+                "machine_id": "m",
+            }
+        )
+    )
 
     # The local source is now broken (SKILL.md gone, only scratch remains).
     _write_skill(claude_dir, "memory", {"__pycache__/x.pyc": "bytecode"})
@@ -76,4 +84,4 @@ def test_export_does_not_clobber_good_bundle_with_empty_payload(tmp_path):
 
     propagators.ContentBundlePropagator().export(context)
 
-    assert (good_bundle / "SKILL.md").read_text() == "# memory"   # untouched
+    assert (good_bundle / "SKILL.md").read_text() == "# memory"  # untouched

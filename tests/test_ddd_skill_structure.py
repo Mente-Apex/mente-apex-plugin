@@ -6,6 +6,7 @@ plugin loader depend on. Dependency-free on purpose: PyYAML is not installed, so
 frontmatter is parsed with string ops only (same discipline as
 test_skill_shell_safety.py).
 """
+
 import json
 import re
 from pathlib import Path
@@ -42,19 +43,21 @@ def test_skill_md_frontmatter_is_well_formed():
     assert "description" in fields
     # version lives under metadata: — assert the literal line is present in body-adjacent frontmatter
     frontmatter_text = read_skill_file("SKILL.md").split("---")[1]
-    assert re.search(r'version:\s*"0\.1\.0"', frontmatter_text), "metadata.version must be 0.1.0"
+    assert re.search(
+        r'version:\s*"0\.1\.0"', frontmatter_text
+    ), "metadata.version must be 0.1.0"
 
 
 def test_skill_md_covers_both_modes_and_both_gates():
     body = parse_frontmatter(read_skill_file("SKILL.md"))["_body"]
     required_markers = [
-        "design",            # design mode
-        "analyze",           # analyze mode
-        "MODELING GATE",     # design-mode hard gate
+        "design",  # design mode
+        "analyze",  # analyze mode
+        "MODELING GATE",  # design-mode hard gate
         "MODEL REVIEW GATE",  # analyze-mode keep/discard gate
-        "docs/domain",       # durable model artifacts
+        "docs/domain",  # durable model artifacts
         "docs/reports/ddd",  # analyze report dir
-        "programmatic",      # tdd handoff contract
+        "programmatic",  # tdd handoff contract
     ]
     missing = [marker for marker in required_markers if marker not in body]
     assert not missing, f"SKILL.md missing required content: {missing}"
@@ -76,10 +79,12 @@ def test_ddd_core_covers_the_tactical_spine():
         "Application service",
         "Repository",
         "Unit of work",
-        "inward",            # dependency direction
-        "Do NOT",            # a when-not-to block exists
+        "inward",  # dependency direction
+        "Do NOT",  # a when-not-to block exists
     ]
-    missing = [concept for concept in required_concepts if concept.lower() not in text.lower()]
+    missing = [
+        concept for concept in required_concepts if concept.lower() not in text.lower()
+    ]
     assert not missing, f"ddd-core.md missing: {missing}"
 
 
@@ -128,8 +133,9 @@ def test_typescript_reference_gives_the_interface_vs_abstract_class_decision():
     # ports are interfaces, domain base classes are abstract classes
     assert "interface" in lowered and "port" in lowered, "ports are interfaces"
     assert "abstract class" in lowered, "domain base classes use abstract class"
-    assert re.search(r"abstract\s+class\s+AggregateRoot", text), \
-        "need an AggregateRoot abstract-class example to contrast with interface ports"
+    assert re.search(
+        r"abstract\s+class\s+AggregateRoot", text
+    ), "need an AggregateRoot abstract-class example to contrast with interface ports"
     assert "promise" in lowered, "TS persistence ports are async (return Promises)"
 
 
@@ -137,12 +143,15 @@ def test_python_reference_gives_the_protocol_vs_abc_decision():
     text = read_skill_file("references/python.md")
     lowered = text.lower()
     # the explicit rule: ports -> Protocol, domain base classes -> ABC
-    assert "ports → protocol" in lowered or "ports —> protocol" in lowered \
-        or ("port" in lowered and "protocol" in lowered and "base class" in lowered), \
-        "need the ports-vs-base-classes rule of thumb"
+    assert (
+        "ports → protocol" in lowered
+        or "ports —> protocol" in lowered
+        or ("port" in lowered and "protocol" in lowered and "base class" in lowered)
+    ), "need the ports-vs-base-classes rule of thumb"
     assert "abc" in lowered, "need the ABC side of the decision"
-    assert re.search(r"class\s+AggregateRoot\(ABC\)", text), \
-        "need an AggregateRoot ABC example to contrast with Protocol ports"
+    assert re.search(
+        r"class\s+AggregateRoot\(ABC\)", text
+    ), "need an AggregateRoot ABC example to contrast with Protocol ports"
     assert "runtime_checkable" in text, "must warn about @runtime_checkable's limits"
 
 
@@ -151,8 +160,9 @@ def test_report_template_has_the_parsed_structure():
     # Assert one example ID per tier by *shape* (ddd/<tier>-<n>), not literal numbers,
     # so renumbering or re-tiering the template's examples never trips this guard.
     for tier in ("critical", "major", "minor"):
-        assert re.search(rf"\[ddd/{tier}-\d+\]", text), \
-            f"report-template.md missing a ddd/{tier}-<n> example ID"
+        assert re.search(
+            rf"\[ddd/{tier}-\d+\]", text
+        ), f"report-template.md missing a ddd/{tier}-<n> example ID"
     for marker in ["Tier", "Impact", "Status", "pending"]:
         assert marker in text, f"report-template.md missing: {marker}"
     assert "Target architecture sketch" in text
@@ -164,17 +174,26 @@ def test_analyze_agents_exist_and_state_their_contracts():
     assert "read-only" in analyzer.lower()
     assert "findings-draft.md" in analyzer
     for signature in ["anemic", "controller", "missing port", "aggregate"]:
-        assert signature.lower() in analyzer.lower(), f"analyzer missing signature: {signature}"
+        assert (
+            signature.lower() in analyzer.lower()
+        ), f"analyzer missing signature: {signature}"
     assert "report-template.md" in reviewer
-    assert "docs/domain" in reviewer                      # reverse-engineered proposal
-    assert "discard" in reviewer.lower()                  # keep/discard gate
+    assert "docs/domain" in reviewer  # reverse-engineered proposal
+    assert "discard" in reviewer.lower()  # keep/discard gate
     assert "edit no code" in reviewer.lower() or "no code" in reviewer.lower()
 
 
 def test_plugin_manifests_advertise_ddd():
-    plugin_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
-    marketplace_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
-    assert "ddd" in plugin_manifest["description"].lower() or "domain-driven" in plugin_manifest["description"].lower()
+    plugin_manifest = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text()
+    )
+    marketplace_manifest = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text()
+    )
+    assert (
+        "ddd" in plugin_manifest["description"].lower()
+        or "domain-driven" in plugin_manifest["description"].lower()
+    )
     marketplace_blob = json.dumps(marketplace_manifest).lower()
     assert "ddd" in marketplace_blob or "domain-driven" in marketplace_blob
 
@@ -192,5 +211,5 @@ def test_ddd_evals_cover_modes_and_gates():
         assert isinstance(case["assertions"], list) and case["assertions"]
     blob = json.dumps(document).lower()
     assert "modeling gate" in blob or "modelling gate" in blob
-    assert "report-only" in blob or "no code" in blob        # analyze mode
-    assert "programmatic" in blob                            # tdd handoff
+    assert "report-only" in blob or "no code" in blob  # analyze mode
+    assert "programmatic" in blob  # tdd handoff

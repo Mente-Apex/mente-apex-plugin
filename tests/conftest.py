@@ -1,4 +1,5 @@
 """Shared fixtures. Isolates the engine from the real ~/.claude."""
+
 import sys
 from pathlib import Path
 
@@ -18,10 +19,14 @@ def claude_home(tmp_path, monkeypatch):
     claude_dir.mkdir(parents=True)
     monkeypatch.setattr(config_sync, "HOME", home)
     monkeypatch.setattr(config_sync, "CLAUDE_DIR", claude_dir)
-    monkeypatch.setattr(config_sync, "CONFIG_FILE", claude_dir / "config-sync-config.json")
+    monkeypatch.setattr(
+        config_sync, "CONFIG_FILE", claude_dir / "config-sync-config.json"
+    )
     monkeypatch.setattr(config_sync, "CONFIG_REPO", claude_dir / "config-sync-repo")
     monkeypatch.setattr(config_sync, "PLUGINS_DIR", claude_dir / "plugins")
     monkeypatch.setattr(
-        config_sync, "INSTALLED_PLUGINS_FILE", claude_dir / "plugins" / "installed_plugins.json"
+        config_sync,
+        "INSTALLED_PLUGINS_FILE",
+        claude_dir / "plugins" / "installed_plugins.json",
     )
     return claude_dir

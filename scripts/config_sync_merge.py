@@ -72,6 +72,7 @@ def _deep_merge_json(version_a: str, version_b: str) -> tuple:
     version_b's scalar values win on conflict; lists are unioned; dicts recurse.
     Returns (merged_json_string, strategy_name).
     """
+
     def _merge(base, override):
         if isinstance(base, dict) and isinstance(override, dict):
             result = dict(base)
@@ -127,7 +128,12 @@ class _LlmMergeBudget:
         return True
 
 
-def _smart_merge_text(version_a: str, version_b: str, context: str = "", budget: _LlmMergeBudget | None = None) -> tuple:
+def _smart_merge_text(
+    version_a: str,
+    version_b: str,
+    context: str = "",
+    budget: _LlmMergeBudget | None = None,
+) -> tuple:
     """
     Merge two text blobs. Returns (merged_text, strategy_name).
 
@@ -137,7 +143,11 @@ def _smart_merge_text(version_a: str, version_b: str, context: str = "", budget:
     Claude per differing file is a cost/latency dead-end left off by default.
     """
     llm_enabled = os.environ.get(LLM_MERGE_ENV) == "1"
-    if llm_enabled and shutil.which("claude") and (budget is None or budget.try_consume()):
+    if (
+        llm_enabled
+        and shutil.which("claude")
+        and (budget is None or budget.try_consume())
+    ):
         prompt = (
             f"Merge these two versions of '{context}' into one coherent document.\n"
             "Rules:\n"
@@ -151,12 +161,11 @@ def _smart_merge_text(version_a: str, version_b: str, context: str = "", budget:
         )
         try:
             result = subprocess.run(
-                ["claude", "-p", prompt],
-                capture_output=True, text=True, timeout=90
+                ["claude", "-p", prompt], capture_output=True, text=True, timeout=90
             )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip(), "llm-merge"
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except subprocess.TimeoutExpired, FileNotFoundError:
             pass
 
     # Default / fallback: section-aware union
@@ -188,9 +197,11 @@ def _section_union(version_a: str, version_b: str) -> str:
       If there are outright contradictions (same-prefix lines with different values),
       emit <<<<<< conflict markers so the skill's conflict-resolution UX fires.
     """
+
     def _parse_sections(text: str) -> dict:
         """Return OrderedDict of {heading: content} preserving order."""
         from collections import OrderedDict
+
         sections: dict = OrderedDict()
         current_heading: str | None = "__preamble__"
         current_lines: list = []
@@ -242,7 +253,11 @@ def _section_union(version_a: str, version_b: str) -> str:
                 if not line_b.strip() or line_b.strip() in lines_a_stripped:
                     continue
                 key_b = _line_key(line_b)
-                if key_b is not None and key_b in keys_a and keys_a[key_b].strip() != line_b.strip():
+                if (
+                    key_b is not None
+                    and key_b in keys_a
+                    and keys_a[key_b].strip() != line_b.strip()
+                ):
                     conflicts.append((keys_a[key_b], line_b))
                 else:
                     merged_lines.append(line_b)

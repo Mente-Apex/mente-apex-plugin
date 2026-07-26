@@ -8,6 +8,7 @@ DIP: the planner is pure (data in, plan out); the executor depends only on the
 SettingsHost Protocol. Union-only — config-sync only ever adds hooks it marks as
 its own, and never touches hand-added or unmarked hooks.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -59,13 +60,13 @@ class DeclaredHook:
     hook_id: str
     event: str
     matcher: str
-    command: str            # tokenised (${TOKEN}/...), pre-marker
+    command: str  # tokenised (${TOKEN}/...), pre-marker
     timeout: int | None
 
 
 @dataclass
 class HookAction:
-    verb: str                       # always "register" (union-only)
+    verb: str  # always "register" (union-only)
     hook_id: str
     detail: dict = field(default_factory=dict)
 
@@ -104,7 +105,7 @@ def discover_declarations(registry) -> list[DeclaredHook]:
         declaration_path = Path(root.path) / "hooks" / "hooks.json"
         try:
             data = json.loads(declaration_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
+        except FileNotFoundError, json.JSONDecodeError, OSError:
             continue
         if not isinstance(data, dict):
             continue
@@ -125,13 +126,15 @@ def discover_declarations(registry) -> list[DeclaredHook]:
                     if not isinstance(raw_command, str):
                         continue
                     command = resolve_command(raw_command, root.token)
-                    declarations.append(DeclaredHook(
-                        hook_id=hook_id_of(root.token, event, matcher, command),
-                        event=event,
-                        matcher=matcher,
-                        command=command,
-                        timeout=hook.get("timeout"),
-                    ))
+                    declarations.append(
+                        DeclaredHook(
+                            hook_id=hook_id_of(root.token, event, matcher, command),
+                            event=event,
+                            matcher=matcher,
+                            command=command,
+                            timeout=hook.get("timeout"),
+                        )
+                    )
     return declarations
 
 
@@ -144,12 +147,18 @@ def plan_hook_wiring(declarations: list[DeclaredHook], settings: dict) -> HookPl
         if declaration.hook_id in already_registered:
             plan.skipped.append(f"{declaration.hook_id}: already registered")
             continue
-        plan.actions.append(HookAction("register", declaration.hook_id, {
-            "event": declaration.event,
-            "matcher": declaration.matcher,
-            "command": declaration.command,
-            "timeout": declaration.timeout,
-        }))
+        plan.actions.append(
+            HookAction(
+                "register",
+                declaration.hook_id,
+                {
+                    "event": declaration.event,
+                    "matcher": declaration.matcher,
+                    "command": declaration.command,
+                    "timeout": declaration.timeout,
+                },
+            )
+        )
     return plan
 
 
@@ -167,7 +176,9 @@ def execute_hook_plan(plan: HookPlan, host: SettingsHost) -> HookResult:
         hook_entry = {"type": "command", "command": marked_command}
         if action.detail.get("timeout") is not None:
             hook_entry["timeout"] = action.detail["timeout"]
-        event_groups.append({"matcher": action.detail["matcher"], "hooks": [hook_entry]})
+        event_groups.append(
+            {"matcher": action.detail["matcher"], "hooks": [hook_entry]}
+        )
         result.outcomes.append(HookOutcome(action.hook_id, ok=True))
     host.write_settings(settings)
     return result
@@ -183,9 +194,10 @@ class ClaudeSettingsHost:
     def read_settings(self) -> dict:
         try:
             return json.loads(self._settings_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
+        except FileNotFoundError, json.JSONDecodeError:
             return {}
 
     def write_settings(self, settings: dict) -> None:
         self._settings_path.write_text(
-            json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
+            json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8"
+        )

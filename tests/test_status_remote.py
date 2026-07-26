@@ -8,6 +8,7 @@ The resolver is an injected collaborator so the `git remote get-url` subprocess
 boundary is substitutable: the high-level status-formatting policy depends on the
 `resolve` abstraction, not on git.
 """
+
 import json
 import subprocess
 import sys
@@ -33,14 +34,19 @@ class _StubResolver:
 def _write_config(claude_dir):
     """A minimal config-sync-config.json — the same shape setup writes, with NO
     `remote` key — so cmd_status reaches the remote line the way it does live."""
-    (claude_dir / "config-sync-config.json").write_text(json.dumps({
-        "machine_id": "test-machine",
-        "last_sync": "2026-07-07T00:00:00+00:00",
-        "repos": {},
-    }))
+    (claude_dir / "config-sync-config.json").write_text(
+        json.dumps(
+            {
+                "machine_id": "test-machine",
+                "last_sync": "2026-07-07T00:00:00+00:00",
+                "repos": {},
+            }
+        )
+    )
 
 
 # --- cmd_status uses the injected resolver ---------------------------------
+
 
 def test_status_reports_injected_remote_url(claude_home, capsys):
     _write_config(claude_home)
@@ -50,7 +56,7 @@ def test_status_reports_injected_remote_url(claude_home, capsys):
 
     output = capsys.readouterr().out
     assert "git@github-menteapex:menteapex/mente-apex-config.git" in output
-    assert "unknown" not in output               # the dead-field fallback is gone
+    assert "unknown" not in output  # the dead-field fallback is gone
     assert resolver.asked_for == config_sync.CONFIG_REPO  # queried the repo, not config
 
 
@@ -66,13 +72,21 @@ def test_status_reports_not_configured_when_no_remote(claude_home, capsys):
 
 # --- GitRemoteResolver against a real repo ---------------------------------
 
+
 def test_git_remote_resolver_reads_origin(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(
-        ["git", "remote", "add", "origin", "git@github-menteapex:menteapex/mente-apex-config.git"],
-        cwd=repo, check=True,
+        [
+            "git",
+            "remote",
+            "add",
+            "origin",
+            "git@github-menteapex:menteapex/mente-apex-config.git",
+        ],
+        cwd=repo,
+        check=True,
     )
 
     resolved = config_sync.GitRemoteResolver().resolve(repo)
