@@ -1,6 +1,18 @@
 ---
 name: release
-description: "Use when the user wants a new version cut and published — the gate → stamp → build → tag → publish → verify-install pipeline. Invoke on \"cut a release,\" \"release this,\" \"release 1.2.0,\" \"tag and publish,\" \"bump and release,\" \"publish the new version,\" \"ship a release,\" or \"/release.\" This skill OWNS versioning: it is the only place a version literal is bumped, derived manifests are stamped, artifacts are built and verified, a tag is created, and the installed tool is checked against what was just cut. Do NOT use for turning working changes into a commit and a pull request — that is /ship, which never touches versions. This skill never opens, reviews, or merges a pull request, and never runs a code review. It requires an up-to-date default branch: if a release PR is still open, merge it first, then invoke this."
+description: >
+  Use when the user wants a new version cut and published — the gate → stamp →
+  build → tag → publish → verify-install pipeline. Invoke on "cut a release,"
+  "release this," "release 1.2.0," "tag and publish," "bump and release,"
+  "publish the new version," "ship a release," or "/release." This skill OWNS
+  versioning: it is the only place a version literal is bumped, derived
+  manifests are stamped, artifacts are built and verified, a tag is created,
+  and the installed tool is checked against what was just cut. Do NOT use for
+  turning working changes into a commit and a pull request — that is /ship,
+  which never touches versions. This skill never opens, reviews, or merges a
+  pull request, and never runs a code review. It requires an up-to-date
+  default branch: if a release PR is still open, merge it first, then invoke
+  this.
 user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Edit, AskUserQuestion
@@ -129,13 +141,12 @@ Derive the proposed bump from Conventional Commits since the last tag:
 With no tags, fall back to commits since the last `chore(release):` commit; failing that,
 the full history.
 
-**If a tag for the derived version already exists, refuse.** Publishing over an existing
-tag rewrites history a downstream consumer may have already pulled; the user must choose a
-different version explicitly rather than have this workflow silently pick one for them.
-
 Show the reasoning, then let the user override — the derivation is a proposal, not a
 ruling:
 
 ```
 Version : 0.21.0 → 0.22.0   (minor: 4 feat, 2 fix since v0.21.0)
 ```
+
+Once the version is settled — derived or user-chosen — refuse if its tag already exists;
+Step 8 carries the rationale.

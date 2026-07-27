@@ -32,16 +32,46 @@ CONTRACT_FIELDS = (
 )
 
 
+_FRONTMATTER_KEY_VALUE = re.compile(r"^([A-Za-z0-9_-]+):\s?(.*)$")
+_BLOCK_SCALAR_INDICATORS = (">", ">-", "|", "|-")
+
+
 def parse_frontmatter(text):
-    """Parse leading --- frontmatter into {key: value, '_body': rest}. No PyYAML."""
+    """Parse leading --- frontmatter into {key: value, '_body': rest}. No PyYAML.
+
+    A key whose value is a block-scalar indicator (`>`, `>-`, `|`, `|-`) folds its
+    indented continuation lines into the value, space-joined — this is the only
+    multi-line shape this parser understands, matching the repo's house style for
+    skill descriptions. Every other key (including a YAML list like
+    `derived_manifests:` followed by `  - item` lines) is read as a single
+    physical line, exactly as before; its continuation lines are simply not
+    key: value lines and are skipped.
+    """
     match = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
     assert match, "file does not start with a --- frontmatter block"
     raw_frontmatter, body = match.group(1), match.group(2)
     fields = {"_body": body}
-    for line in raw_frontmatter.splitlines():
-        key_value = re.match(r"^([A-Za-z0-9_-]+):\s?(.*)$", line)
-        if key_value:
-            fields[key_value.group(1)] = key_value.group(2)
+    lines = raw_frontmatter.splitlines()
+    index = 0
+    while index < len(lines):
+        key_value = _FRONTMATTER_KEY_VALUE.match(lines[index])
+        if not key_value:
+            index += 1
+            continue
+        key, value = key_value.group(1), key_value.group(2)
+        index += 1
+        if value.strip() in _BLOCK_SCALAR_INDICATORS:
+            continuation_lines = []
+            while (
+                index < len(lines)
+                and lines[index].strip()
+                and not _FRONTMATTER_KEY_VALUE.match(lines[index])
+            ):
+                continuation_lines.append(lines[index].strip())
+                index += 1
+            fields[key] = " ".join(continuation_lines)
+        else:
+            fields[key] = value
     return fields
 
 
