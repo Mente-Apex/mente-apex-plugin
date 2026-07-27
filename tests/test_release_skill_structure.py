@@ -393,3 +393,29 @@ def test_release_evals_cover_every_required_scenario():
     present = {eval_case.get("eval_name") for eval_case in data["evals"]}
     missing = REQUIRED_EVAL_NAMES - present
     assert not missing, f"eval coverage gaps: {sorted(missing)}"
+
+
+README = REPO_ROOT / "README.md"
+PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
+MARKETPLACE_JSON = REPO_ROOT / ".claude-plugin" / "marketplace.json"
+
+
+def test_release_is_registered_everywhere_a_skill_must_be():
+    assert "/release" in README.read_text(encoding="utf-8"), "README omits /release"
+    plugin = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
+    assert "release" in plugin["keywords"], "plugin.json keywords omit release"
+    assert "/release" in plugin["description"], "plugin.json description omits /release"
+    marketplace = json.loads(MARKETPLACE_JSON.read_text(encoding="utf-8"))
+    assert (
+        "/release" in marketplace["plugins"][0]["description"]
+    ), "marketplace.json description omits /release"
+
+
+def test_ship_description_disclaims_release_territory():
+    fields = parse_frontmatter(
+        (REPO_ROOT / "skills" / "ship" / "SKILL.md").read_text(encoding="utf-8")
+    )
+    description = fields.get("description", "")
+    assert (
+        "version" in description.lower()
+    ), "/ship must disclaim versioning so /release's territory is unambiguous"
