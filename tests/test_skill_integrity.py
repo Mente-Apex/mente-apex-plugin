@@ -60,10 +60,13 @@ INTEGRITY_SCAN_GLOBS = (
     "skills/gof/**/*.md",
     "skills/solid/**/*.md",
     "skills/tdd/**/*.md",
+    "skills/ship/SKILL.md",
+    "skills/release/**/*.md",
     "docs/refactor-workflow.md",
     "docs/refactor-agents/*.md",
     "docs/lens-overlap.md",
     "docs/git-convention.md",
+    "docs/git-remote-resolution.md",
 )
 
 MARKDOWN_LINK = re.compile(r"\]\(([^)]+)\)")
