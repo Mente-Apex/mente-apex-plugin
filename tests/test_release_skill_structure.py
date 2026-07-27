@@ -132,3 +132,31 @@ def test_git_tag_only_adapter_stamps_all_three_version_mirrors():
         fields.get("artifact_pattern") == "null"
     ), "no build means no artifact pattern"
     assert "status" not in fields, "the dogfooded adapter is not a stub"
+
+
+def test_uv_adapter_verifies_a_real_artifact_pattern():
+    """The wheel-name check is the whole point of artifact_pattern."""
+    adapter = TARGETS_DIR / "python" / "uv.md"
+    assert adapter.is_file(), "the uv adapter must exist"
+    fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+    assert fields.get("build_command") == "uv build", "uv projects build with uv build"
+    assert "dist/" in fields.get(
+        "artifact_pattern", ""
+    ), "artifact_pattern must name the real build output directory"
+    assert fields.get("build_command") != "null", "a uv package target does build"
+
+
+def test_no_adapter_recommends_a_forbidden_python_toolchain():
+    """uv is canonical: pip/pipx/pyenv must never appear as an instruction."""
+    offenders = []
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        if fields.get("technology") != "python":
+            continue
+        commands = " ".join(str(fields.get(field, "")) for field in CONTRACT_FIELDS)
+        for forbidden in ("pip install", "pipx", "pyenv", "python -m build"):
+            if forbidden in commands:
+                offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {forbidden}")
+    assert not offenders, "adapters use forbidden Python tooling:\n" + "\n".join(
+        offenders
+    )
