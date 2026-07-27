@@ -81,3 +81,54 @@ def test_adapter_contract_declares_detection_precedence():
     for technology in ("python", "typescript", "java"):
         assert technology in text, f"detection omits technology: {technology}"
     assert "status: stub" in text, "contract must define the stub marker"
+
+
+def adapter_files():
+    """Every adapter under references/targets/, recursively, sorted."""
+    return sorted(TARGETS_DIR.rglob("*.md"))
+
+
+def test_every_adapter_declares_all_contract_fields():
+    adapters = adapter_files()
+    assert adapters, "no adapters found under references/targets/"
+    offenders = []
+    for adapter in adapters:
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        missing = [field for field in CONTRACT_FIELDS if field not in fields]
+        if missing:
+            offenders.append(f"{adapter.relative_to(REPO_ROOT)}: missing {missing}")
+    assert not offenders, "adapters violate the contract:\n" + "\n".join(offenders)
+
+
+def test_every_adapter_matches_its_location():
+    """technology is the parent directory; toolchain is the filename stem."""
+    offenders = []
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        if fields.get("technology") != adapter.parent.name:
+            offenders.append(
+                f"{adapter.relative_to(REPO_ROOT)}: technology "
+                f"{fields.get('technology')!r} != directory {adapter.parent.name!r}"
+            )
+        if fields.get("toolchain") != adapter.stem:
+            offenders.append(
+                f"{adapter.relative_to(REPO_ROOT)}: toolchain "
+                f"{fields.get('toolchain')!r} != filename {adapter.stem!r}"
+            )
+    assert not offenders, "adapter location mismatch:\n" + "\n".join(offenders)
+
+
+def test_git_tag_only_adapter_stamps_all_three_version_mirrors():
+    """This repo's own adapter must name every manifest the lockstep guard checks."""
+    adapter = TARGETS_DIR / "python" / "git-tag-only.md"
+    assert adapter.is_file(), "the dogfooded adapter must exist"
+    text = adapter.read_text(encoding="utf-8")
+    assert ".claude-plugin/plugin.json" in text, "canonical version source missing"
+    for stamped in (".claude-plugin/marketplace.json", "pyproject.toml"):
+        assert stamped in text, f"derived manifest not declared: {stamped}"
+    fields = parse_frontmatter(text)
+    assert fields.get("build_command") == "null", "a plugin builds no artifact"
+    assert (
+        fields.get("artifact_pattern") == "null"
+    ), "no build means no artifact pattern"
+    assert "status" not in fields, "the dogfooded adapter is not a stub"
