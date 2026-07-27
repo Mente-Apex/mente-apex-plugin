@@ -59,6 +59,20 @@ the contact points so nobody later assumes a clean separation that does not exis
 | Ordering in the lifecycle | sequential: `/ship` → human merges → `/release`. A workflow dependency, not a code one |
 | Trigger space | adjacent ("ship the new version", "push it up and tag it") — covered by eval 7 |
 
+### `/release` never needs to be told a PR was merged
+
+The workflow depends on the default branch being current, but it does not depend on the
+operator announcing a merge. Step 1 fetches and compares; a merged PR is visible locally
+as `git merge-base --is-ancestor HEAD <remote>/<default>`. If the merge happened,
+`/release` sees it. If it did not, `/release` refuses. It never asks and never trusts a
+claim.
+
+Automating the *general* case — the agent noticing a merge in any session, not just a
+release — is a `SessionStart` hook and a separate concern (harness ergonomics, not the
+release pipeline). Tracked as [#94](https://github.com/menteapex/mente-apex-plugin/issues/94);
+deliberately out of scope here. It depends on this spec only for
+`docs/git-remote-resolution.md`.
+
 ### Shared remote/default-branch resolution
 
 `/ship` Step 1 resolves the remote and the default branch through a four-layer fallback
