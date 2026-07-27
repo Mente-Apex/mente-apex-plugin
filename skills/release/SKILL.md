@@ -150,3 +150,152 @@ Version : 0.21.0 → 0.22.0   (minor: 4 feat, 2 fix since v0.21.0)
 
 Once the version is settled — derived or user-chosen — refuse if its tag already exists;
 Step 8 carries the rationale.
+
+## Step 5 — Stamp
+
+Write the new version to the adapter's `version_source`, then to every entry in
+`derived_manifests`. All of them or none — a partial stamp leaves the manifests
+inconsistent, which in a repo with a lockstep guard is a red suite and in a repo without
+one is a silent wrong release.
+
+Show the resulting diff explicitly:
+
+```bash
+git --no-pager diff
+```
+
+The tree is now dirty. That is expected and temporary — Step 7 commits it, and nothing is
+tagged until it is committed. This ordering is the point of Steps 5 → 7 → 8.
+
+## Step 6 — Build and verify the artifacts
+
+Skip this step entirely when the adapter's `build_command` is `null`.
+
+Otherwise run it, then **expand `artifact_pattern` and check what actually landed**:
+
+```bash
+ls -1 <expanded artifact_pattern>
+```
+
+No match → **refuse**. Report the pattern and what the build actually emitted.
+
+This is not defensive padding. In the reference repo the install documentation named a
+wheel the build had never produced, and it stayed wrong for a long time because no step
+ever compared the documented artifact against a real one. Assuming the artifact name is
+how that happens; verifying it is how it stops.
+
+## Step 7 — Commit
+
+One commit, on the default branch, containing only the stamp:
+
+```bash
+git add <version_source> <each derived manifest>
+git commit -F - <<'MSG'
+chore(release): v<version>
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+MSG
+```
+
+Use the co-author trailer the harness prescribes for the active model this session.
+
+This is the one commit this skill makes, and it is the one commit `/ship` is structurally
+forbidden to make — `/ship` never commits to the default branch. That is the whole reason
+the work is not delegated.
+
+## Step 8 — Tag
+
+Annotated, never lightweight — an annotated tag carries an author, a date, and a message:
+
+```bash
+git tag -a "v<version>" -m "v<version>"
+```
+
+**The tag already exists** → refuse. Re-tagging a released version is how two different
+commits end up claiming to be the same release. If the user genuinely means to re-cut,
+they delete the tag deliberately, first.
+
+Everything up to here is local. Nothing has left the machine.
+
+---
+
+## ⚠ CONFIRMATION CHECKPOINT
+
+The single stop in this workflow. Everything above was local and reversible; everything
+below is not.
+
+Show exactly what will leave the machine:
+
+```
+Release plan
+  Target    : <technology> / <toolchain>
+  Version   : <old> → <new>
+  Stamped   : <version_source>, <derived manifests>
+  Artifacts : <verified artifact names, or "none — no build for this target">
+  Tag       : v<new>  (created locally)
+  Will push : <publish_command>
+  Then      : gh release create v<new>
+
+  Not yet pushed. To abandon:
+    git tag -d v<new>
+    git reset --hard <remote>/<default>
+```
+
+Ask via **AskUserQuestion**. Anything other than a clear yes → stop and print the rollback
+commands. Do not proceed on ambiguity.
+
+---
+
+## Step 9 — Publish
+
+Run the adapter's `publish_command`, substituting the resolved `<remote>` and `<default>`.
+Stop and report on any failure — never paper over a failed push, and never retry blindly.
+
+Then create the GitHub release, with notes grouped from the Conventional Commits since the
+previous tag:
+
+```bash
+gh release create "v<version>" --title "v<version>" --notes "<grouped notes>"
+```
+
+**`gh` missing or unauthenticated** → this is not a failed release. The tag is pushed and
+the release is real. Report the tag, skip the GitHub release, give the user the
+`releases/new` URL, and suggest `gh auth login` for next time.
+
+## Step 10 — Verify the install
+
+Run the adapter's `install_verify_command` and confirm two things:
+
+1. The reported version is the one just cut.
+2. The resolved binary lives **outside** the development checkout.
+
+Point 2 is the one people skip. A shim whose path or shebang points into the working tree
+means the "installed" tool is your checkout: it works perfectly for you and is broken for
+everyone else. Building an artifact proves nothing about what a user ends up running.
+
+A failure here does not un-publish anything — the tag is out. Report it plainly as a
+release that shipped with an install problem, and say what is wrong.
+
+## Step 11 — Report
+
+```
+✓ Released <version>
+  Target    : <technology> / <toolchain>
+  Commit    : <sha>  chore(release): v<version>
+  Tag       : v<version>  (pushed)
+  Artifacts : <names, or "none">
+  Release   : <url>
+  Installed : <verified version>  → <resolved path>
+```
+
+If anything stopped early, say exactly where and what the user must do to finish. A
+partially completed release is worse than a refused one *only* if nobody says so.
+
+## Scope — what /release does not do
+
+- It does **not** commit or push ordinary work, and does **not** open a pull request. That
+  is `/ship`.
+- It does **not** merge pull requests, and does **not** run a code review.
+- It does **not** fix a red gate. A failing suite refuses the release; repairing it is a
+  separate job with separate review.
+- It does **not** write adapters. Authoring one is deliberate — see the contract.

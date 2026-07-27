@@ -319,3 +319,43 @@ def test_core_links_the_shared_git_resolution():
     assert (
         "gh repo view --json defaultBranchRef" not in text
     ), "core restates the resolution inline — link the shared doc instead"
+
+
+def test_stamp_precedes_commit_which_precedes_tag():
+    """The stamp-before-tag trap: tagging a tree whose manifests still carry the
+    old version produces a tag that is wrong at the commit it points to."""
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    stamp_position = text.index("## Step 5 — Stamp")
+    commit_position = text.index("## Step 7 — Commit")
+    tag_position = text.index("## Step 8 — Tag")
+    assert (
+        stamp_position < commit_position < tag_position
+    ), "stamp must precede commit, which must precede tag"
+
+
+def test_exactly_one_confirmation_checkpoint_before_publishing():
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    assert (
+        text.count("CONFIRMATION CHECKPOINT") == 1
+    ), "there must be exactly one confirmation checkpoint"
+    checkpoint_position = text.index("CONFIRMATION CHECKPOINT")
+    assert checkpoint_position < text.index(
+        "## Step 9 — Publish"
+    ), "the checkpoint must precede the first outward-facing action"
+    assert checkpoint_position > text.index(
+        "## Step 8 — Tag"
+    ), "the checkpoint must follow the local, reversible work"
+
+
+def test_core_documents_the_rollback():
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    assert "git tag -d" in text, "rollback must show how to delete the local tag"
+    assert "git reset --hard" in text, "rollback must show how to undo the commit"
+
+
+def test_core_verifies_the_install_not_just_the_build():
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
+    assert "install_verify_command" in text
+    assert (
+        "outside" in text and "checkout" in text
+    ), "the install check must require the shim to resolve outside the checkout"
