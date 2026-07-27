@@ -1,0 +1,112 @@
+{
+  "skill_name": "release",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "happy-path",
+      "skill": "release",
+      "prompt": "/release — cut a release for this repo. The tree is clean, we're on main and up to date with origin, and the last tag was v1.2.0 with two feat commits and one fix commit since. This is a fixture project with a fixture adapter at references/targets/fixture/echo.md whose gate_command, build_command, and publish_command are all harmless echo/no-op commands (no real network calls, no real git push). version_source is a VERSION file currently reading 1.2.0, derived_manifests lists package.json's \"version\" field, artifact_pattern is dist/fixture-*.tar.gz (the fixture build_command actually writes a matching file), and install_verify_command is another echo.",
+      "expected_output": "The workflow resolves the fixture adapter (Step 0), runs Step 1's inspection finding a clean, up-to-date, non-ahead main branch, runs the gate (Step 2, passes), verifies exactly one version literal (Step 3), proposes 1.3.0 as a minor bump from the two feat commits (Step 4), stamps VERSION and package.json and shows the diff (Step 5), builds and confirms dist/fixture-1.3.0.tar.gz matches artifact_pattern (Step 6), commits the stamp as chore(release): v1.3.0 (Step 7), tags v1.3.0 locally (Step 8), then stops at the single CONFIRMATION CHECKPOINT showing the full release plan and rollback commands, asking via AskUserQuestion. It does not run Step 9 (publish) or Step 10 (verify install) until the user confirms.",
+      "files": [],
+      "assertions": [
+        "Step 0 reports the resolved target as fixture / echo (or equivalent fixture identity) before any other action",
+        "The gate_command runs and its success is reported before any stamping happens",
+        "The version bump is derived as minor (1.2.0 to 1.3.0) with reasoning citing the two feat commits since v1.2.0, and the derivation is shown as a proposal the user could override",
+        "A git diff (or equivalent stamp diff) showing VERSION and package.json changing to 1.3.0 is shown before the commit step",
+        "The built artifact dist/fixture-1.3.0.tar.gz is checked against artifact_pattern and confirmed present",
+        "The workflow reaches the CONFIRMATION CHECKPOINT and asks via AskUserQuestion, showing the release plan (target, version, stamped files, artifacts, tag, will-push command) and the rollback commands",
+        "Nothing is pushed and no GitHub release is created before the checkpoint is answered — Step 9 and Step 10 do not run until confirmation"
+      ]
+    },
+    {
+      "id": 1,
+      "eval_name": "dirty-tree-refusal",
+      "skill": "release",
+      "prompt": "/release — cut a release. We're on main, up to date with origin, but I have some work in progress: src/parser.py and tests/test_parser.py both show modified in git status, uncommitted.",
+      "expected_output": "Step 1's hard refusals fire on the dirty working tree. The skill refuses immediately, lists the modified paths (src/parser.py, tests/test_parser.py), and explains that a release must be reproducible from what is committed. It does not proceed to Step 2 or beyond, and nothing is stamped, staged, or committed.",
+      "files": [],
+      "assertions": [
+        "The workflow stops at Step 1 with a hard refusal — this is not offered as something a confirmation can override",
+        "The refusal explicitly lists the modified paths src/parser.py and tests/test_parser.py",
+        "No version literal is written to any file (VERSION, package.json, or any manifest) — nothing is stamped",
+        "No commit, tag, build, or gate command runs after the refusal",
+        "The refusal states or implies what would fix it (commit, stash, or discard the changes) rather than just saying no"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "failing-gate-refusal",
+      "skill": "release",
+      "prompt": "/release — cut a release. Clean tree, on main, up to date with origin. The adapter's gate_command is `pytest`, and running it fails: 3 tests in tests/test_billing.py error out with `ImportError: No module named 'stripe'` because the lockfile doesn't declare that dependency.",
+      "expected_output": "Step 2 runs the gate, gets a non-zero exit, and refuses. The failing output (the ImportError and which tests failed) is shown verbatim. The skill does not offer to fix the missing dependency or the failing tests — it treats that as a separate job requiring separate review, and stops before Step 3.",
+      "files": [],
+      "assertions": [
+        "The gate_command is actually run (Step 2) before any refusal is issued — the refusal is a consequence of its non-zero exit, not a static check",
+        "The refusal shows the failing output verbatim, including the ImportError: No module named 'stripe' detail and that it originates in tests/test_billing.py",
+        "The skill does NOT offer to add the missing dependency, patch the test, or otherwise fix the gate itself",
+        "No version literal search (Step 3), stamping (Step 5), or later step runs after the gate failure",
+        "The refusal is stated as unconditional (not something the checkpoint or a user override can waive)"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "stamp-before-tag-ordering",
+      "skill": "release",
+      "prompt": "/release — cut a release for the fixture project (clean tree, on main, up to date, fixture adapter with echo commands, VERSION file at 2.0.0, no tags yet so derive from full history which is all fix: commits). Walk through the whole workflow and be explicit about the order operations happen in, especially around the version stamp and the git tag.",
+      "expected_output": "The transcript makes explicit that the stamp (Step 5, writing 2.0.1 to VERSION and derived manifests) happens, then Step 7 commits that stamp as its own commit on the default branch, and only after that commit exists does Step 8 create the annotated tag v2.0.1. At no point is `git tag` run while the working tree is still dirty from the stamp — the commit always lands first. The confirmation checkpoint appears only after the tag, with everything up to and including the tag already local.",
+      "files": [],
+      "assertions": [
+        "The stamp (writing the new version into VERSION and any derived manifests) is shown happening strictly before the commit step",
+        "A commit (chore(release): v2.0.1 or equivalent) is created and shown as completed before `git tag` is invoked",
+        "git tag is never run while `git status` would show a dirty tree — the commit from Step 7 always precedes the git tag command from Step 8",
+        "The tag created is annotated (git tag -a, not a lightweight tag)",
+        "The confirmation checkpoint is shown only after the tag already exists locally, not before"
+      ]
+    },
+    {
+      "id": 4,
+      "eval_name": "second-version-literal-refusal",
+      "skill": "release",
+      "prompt": "/release — cut a release. Clean tree, on main, up to date. The adapter's version_source is pyproject.toml (currently version = \"3.4.0\") and derived_manifests only lists .claude-plugin/marketplace.json. But a grep for \"3.4.0\" across the repo also turns up docs/install.md line 12, which hardcodes `pip install mypkg==3.4.0` in an install example — that file isn't declared anywhere in the adapter.",
+      "expected_output": "Step 3's search for the current version string finds the undeclared occurrence in docs/install.md line 12 and refuses, naming the exact file and line number, and explaining that this means either the adapter is out of date or docs/install.md needs to be added to derived_manifests. The workflow does not proceed to Step 4 (version decision) or Step 5 (stamp).",
+      "files": [],
+      "assertions": [
+        "The refusal explicitly names docs/install.md as the offending file",
+        "The refusal names or points to line 12 (or otherwise unambiguously identifies the specific occurrence) rather than just naming the file",
+        "The refusal explains this is an undeclared occurrence — neither the adapter's version_source nor its derived_manifests cover it",
+        "The workflow stops before Step 4 (deciding the new version) and before any stamping happens",
+        "The refusal frames this as a one-line fix (add the file to derived_manifests, or confirm the adapter is stale) rather than an unfixable dead end"
+      ]
+    },
+    {
+      "id": 5,
+      "eval_name": "artifact-pattern-mismatch-refusal",
+      "skill": "release",
+      "prompt": "/release — cut a release for the fixture project. Clean tree, on main, up to date, gate passes, exactly one version literal, version bumping from 0.9.0 to 0.9.1. The adapter declares artifact_pattern as dist/fixture-*.whl, but the fixture build_command actually produces dist/fixture-0.9.1.tar.gz (a tarball, not a wheel) — nothing matching *.whl lands in dist/.",
+      "expected_output": "Step 6 runs the build, then expands artifact_pattern and finds no match. It refuses, explicitly comparing the expected pattern (dist/fixture-*.whl) against what the build actually produced (dist/fixture-0.9.1.tar.gz), and does not proceed to Step 7 (commit) or beyond. The stamp from Step 5 is already on disk but not yet committed, and the refusal does not silently accept the tarball as close enough.",
+      "files": [],
+      "assertions": [
+        "The build_command is actually run before the refusal — the refusal is a consequence of comparing real build output to the pattern, not a guess",
+        "The refusal states the expected artifact_pattern (dist/fixture-*.whl) and explicitly names what the build actually emitted (dist/fixture-0.9.1.tar.gz)",
+        "The skill does not treat the tarball as an acceptable substitute for the declared wheel pattern",
+        "The workflow does not reach Step 7 (commit), Step 8 (tag), or the confirmation checkpoint after this refusal",
+        "The uncommitted stamp from Step 5 is not rolled back automatically or committed anyway — the refusal simply stops forward progress"
+      ]
+    },
+    {
+      "id": 6,
+      "eval_name": "ship-release-trigger-boundary",
+      "skill": "release",
+      "prompt": "Two separate user requests to check against the installed skill set: (1) \"ship my changes and open a PR\" and (2) \"cut a 0.22.0 release and publish it\".",
+      "expected_output": "For request (1), only /ship's commit-push-open-PR pipeline fires; /release does not activate, since /ship never touches versions and this request never mentions a version, a tag, or a build/publish step. For request (2), only /release's gate-stamp-build-tag-publish pipeline fires; /ship does not activate, since /ship is structurally forbidden from committing to the default branch or touching version literals, and this request explicitly asks for a version cut and publish.",
+      "files": [],
+      "assertions": [
+        "For \"ship my changes and open a PR\", /release is not invoked — no version literal is inspected, stamped, or tagged",
+        "For \"ship my changes and open a PR\", /ship is the skill that activates, ending at an open pull request without touching any version file",
+        "For \"cut a 0.22.0 release and publish it\", /ship is not invoked — no commit is made to the default branch by /ship, and no PR is opened",
+        "For \"cut a 0.22.0 release and publish it\", /release is the skill that activates, running its gate/stamp/build/tag/publish pipeline",
+        "Neither skill fires for both prompts simultaneously — the two pipelines never both run for the same single request in this pair"
+      ]
+    }
+  ]
+}

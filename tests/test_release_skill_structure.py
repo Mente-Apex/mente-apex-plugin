@@ -5,6 +5,7 @@ the workflow depends on. Dependency-free (no PyYAML), matching the other
 test_<skill>_skill_structure modules.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -359,3 +360,36 @@ def test_core_verifies_the_install_not_just_the_build():
     assert (
         "outside" in text and "checkout" in text
     ), "the install check must require the shim to resolve outside the checkout"
+
+
+RELEASE_EVALS = REPO_ROOT / "evals" / "release-evals.json"
+EVAL_CASE_KEYS = {"id", "skill", "prompt", "expected_output", "assertions"}
+
+REQUIRED_EVAL_NAMES = {
+    "happy-path",
+    "dirty-tree-refusal",
+    "failing-gate-refusal",
+    "stamp-before-tag-ordering",
+    "second-version-literal-refusal",
+    "artifact-pattern-mismatch-refusal",
+    "ship-release-trigger-boundary",
+}
+
+
+def test_release_evals_valid_schema():
+    assert RELEASE_EVALS.is_file(), "evals/release-evals.json must exist"
+    data = json.loads(RELEASE_EVALS.read_text(encoding="utf-8"))
+    assert data["skill_name"] == "release"
+    assert isinstance(data["evals"], list) and data["evals"], "no eval cases"
+    for eval_case in data["evals"]:
+        assert (
+            eval_case.keys() >= EVAL_CASE_KEYS
+        ), f"case {eval_case.get('id')} missing keys"
+        assert isinstance(eval_case["assertions"], list) and eval_case["assertions"]
+
+
+def test_release_evals_cover_every_required_scenario():
+    data = json.loads(RELEASE_EVALS.read_text(encoding="utf-8"))
+    present = {eval_case.get("eval_name") for eval_case in data["evals"]}
+    missing = REQUIRED_EVAL_NAMES - present
+    assert not missing, f"eval coverage gaps: {sorted(missing)}"
