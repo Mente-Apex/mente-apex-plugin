@@ -304,7 +304,7 @@ Show exactly what will leave the machine:
 Release plan
   Target    : <technology> / <toolchain>
   Version   : <old> → <new>
-  Stamped   : <version_source>, <derived manifests>
+  Stamped   : <version_source>, <derived manifests>, or "nothing to stamp"
   Artifacts : <verified artifact names, or "none — no build for this target">
   Tag       : v<new>  (created locally)
   Will push : <publish_command>
@@ -314,6 +314,8 @@ Release plan
     git tag -d v<new>
     git reset --hard HEAD~1
 ```
+
+Drop the second command if Step 7 made no commit.
 
 Ask via **AskUserQuestion**. Anything other than a clear yes → stop and print the rollback
 commands. Do not proceed on ambiguity.
@@ -375,7 +377,7 @@ release that shipped with an install problem, and say what is wrong.
 ```
 ✓ Released <version>
   Target    : <technology> / <toolchain>
-  Commit    : <sha>  chore(release): v<version>
+  Commit    : <sha>  chore(release): v<version>, or "none — no manifest for this target"
   Tag       : v<version>  (pushed)
   Artifacts : <names, or "none">
   Release   : <url>
