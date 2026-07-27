@@ -9,6 +9,19 @@ is set only by a fresh `git clone`. Any repo created with `git init` + `git remo
 has no such ref, so `git symbolic-ref` alone returns nothing and a skill that trusts it
 targets the wrong base branch. Restating this per skill is how the copies drift.
 
+## Run it in the same shell as its consumers
+
+`REMOTE` and `DEFAULT` are shell variables, and every tool call starts a **fresh shell**.
+They do not survive from one Bash call to the next. Run the two blocks below and the
+commands that read their values in **one invocation**, or re-run the resolution at the top
+of each later block that needs them.
+
+Getting this wrong fails silently in the worst way: `git fetch "$REMOTE" "$DEFAULT"` in a
+second call becomes `git fetch "" ""`, and the calling skill carries on believing it
+fetched. Guarding uses with `[ -n "$REMOTE" ] && [ -n "$DEFAULT" ]` turns that silence
+into something visible; it does not remove the need to keep the resolution in the same
+shell.
+
 ## Resolve the remote
 
 Prefer `origin`; otherwise take the first configured remote. Never hardcode `origin` —

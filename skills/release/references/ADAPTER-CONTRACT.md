@@ -22,20 +22,27 @@ levels.
 
 ## The ten fields
 
-Declared as YAML frontmatter. Every field is required; three may be `null`.
+Declared as YAML frontmatter. Every field is required; four may be `null`.
 
 | Field | Meaning | `null` allowed |
 |---|---|---|
 | `technology` | Must equal the parent directory name. | no |
 | `toolchain` | Must equal the filename stem. | no |
 | `fingerprint` | The file whose presence selects this adapter. | no |
-| `version_source` | `path/to/file#selector` — the one canonical version literal. | no |
+| `version_source` | `path/to/file#selector` — the one canonical version literal. | yes — targets where the tag itself is the version and no manifest carries it |
 | `derived_manifests` | List of `path#selector` stamped *from* the source. | yes — empty list |
 | `gate_command` | Clean rebuild from the lockfile, then the red/green check. | no |
 | `build_command` | Produce distributable artifacts. | yes — no-build targets |
 | `artifact_pattern` | Glob the build must emit. Verified, never assumed. | yes — iff no build |
 | `publish_command` | The outward-facing step. | no |
 | `install_verify_command` | Proves the installed thing is what was just cut. | no |
+
+A `null` `version_source` is not a shortcut for "we have not filled this in yet" — it is a
+positive claim that the repository stores the version nowhere, because the git tag *is*
+the version. Some ecosystems work this way: no manifest exists to stamp. The core skips
+its single-literal check, its stamp, and its release commit for such a target; the tag is
+created on the existing `HEAD` and nothing else changes. `derived_manifests` must then be
+the empty list, since there is no source for anything to be derived from.
 
 `<remote>` and `<default>` appearing in a command are substituted from the resolution in
 [../../../docs/git-remote-resolution.md](../../../docs/git-remote-resolution.md).
@@ -108,7 +115,13 @@ deliberate act.
 2. Declare `status: stub` until you have cut a real release with it.
 3. Add its fingerprint row to the Level 2 table above, positioned so its precedence
    against existing adapters is explicit.
-4. Run `uv run pytest tests/test_release_skill_structure.py` — the guard checks the field
+4. **If the technology is new** — the first adapter under that directory — add a Level 1
+   row for it as well, again positioned deliberately. A Level 2 row alone is unreachable:
+   detection resolves the technology first, so an adapter whose technology no Level 1
+   fingerprint selects is never considered, and the run refuses with "nothing matches"
+   while the adapter sits right there. Adding a toolchain to an *existing* technology
+   needs Level 2 only.
+5. Run `uv run pytest tests/test_release_skill_structure.py` — the guard checks the field
    set, the directory/filename agreement, and fingerprint disjointness.
 
 You do not touch `SKILL.md`. If you find yourself wanting to, the contract is missing a
