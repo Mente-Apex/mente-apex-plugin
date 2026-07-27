@@ -160,3 +160,49 @@ def test_no_adapter_recommends_a_forbidden_python_toolchain():
     assert not offenders, "adapters use forbidden Python tooling:\n" + "\n".join(
         offenders
     )
+
+
+def test_three_technologies_are_represented():
+    """The seam must be proven across a technology boundary, not just within one."""
+    technologies = {adapter.parent.name for adapter in adapter_files()}
+    assert {
+        "python",
+        "typescript",
+        "java",
+    } <= technologies, (
+        f"expected python, typescript and java adapters; found {sorted(technologies)}"
+    )
+
+
+def test_stub_adapters_are_marked_and_working_ones_are_not():
+    expected_stubs = {"typescript/npm", "java/maven"}
+    expected_working = {"python/git-tag-only", "python/uv"}
+    for adapter in adapter_files():
+        identity = f"{adapter.parent.name}/{adapter.stem}"
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        is_stub = fields.get("status") == "stub"
+        if identity in expected_stubs:
+            assert is_stub, f"{identity} must declare status: stub"
+        elif identity in expected_working:
+            assert not is_stub, f"{identity} is exercised and must not be a stub"
+
+
+def test_fingerprints_within_a_technology_are_disjoint_or_ranked():
+    """Two adapters in one technology may share a fingerprint only if the contract
+    ranks them explicitly — otherwise a new adapter silently shadows an old one."""
+    contract = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    by_technology = {}
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        by_technology.setdefault(adapter.parent.name, []).append(
+            (adapter.stem, fields.get("fingerprint"))
+        )
+    for technology, entries in by_technology.items():
+        fingerprints = [fingerprint for _stem, fingerprint in entries]
+        if len(fingerprints) == len(set(fingerprints)):
+            continue
+        for toolchain_name, _fingerprint in entries:
+            assert f"`{toolchain_name}`" in contract, (
+                f"{technology}/{toolchain_name} shares a fingerprint but the "
+                "contract does not rank it"
+            )
