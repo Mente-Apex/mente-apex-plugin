@@ -43,6 +43,42 @@ rely on the operator remembering.
 **The boundary in one line:** `/ship` never touches versions; `/release` never opens or
 merges pull requests.
 
+### Are they orthogonal? Not entirely — and the overlap is handled
+
+The two skills are disjoint in **responsibility** but adjacent in **mechanism**. Recording
+the contact points so nobody later assumes a clean separation that does not exist:
+
+| Contact point | Status |
+|---|---|
+| Version handling | `/release` only — disjoint |
+| PR lifecycle | `/ship` only — disjoint |
+| Branch derivation, collision guards, worktree handling, upstream setting | `/ship` only — `/release` commits to an already-verified default branch |
+| Gate / build / tag / publish / install-verify | `/release` only — disjoint |
+| `git commit` + `git push` as primitives | **shared** — accepted; a shared primitive, not shared logic |
+| Resolving `<remote>` and `<default>` | **shared** — extracted, see below |
+| Ordering in the lifecycle | sequential: `/ship` → human merges → `/release`. A workflow dependency, not a code one |
+| Trigger space | adjacent ("ship the new version", "push it up and tag it") — covered by eval 7 |
+
+### Shared remote/default-branch resolution
+
+`/ship` Step 1 resolves the remote and the default branch through a four-layer fallback
+(local `symbolic-ref` → `git remote show` → `gh` → guess `main`/`master`), because
+`origin/HEAD` is unset on any repo that was not freshly cloned. `/release` needs exactly
+that resolution twice: to verify it is on an up-to-date default branch, and to run
+`publish_command`.
+
+Restating it inline would reproduce **failure mode 1 from the issue** — procedure drift
+across N places — inside the very skill written to prevent it.
+
+Resolution: extract it to `docs/git-remote-resolution.md` as the single canonical version,
+linked from both `skills/ship/SKILL.md` Step 1 and `skills/release/SKILL.md` Step 1. This
+follows the existing `docs/git-convention.md` precedent (a shared doc linked from `/tdd`
+and `/ddd`), and `test_skill_integrity.py` already guards those links from dangling.
+
+The extraction edits `/ship`'s working body, not just its description. It therefore lands
+as **its own commit, before any `/release` work begins**, so a regression in `/ship` stays
+bisectable and is not entangled with a new skill.
+
 ### Deviation from the issue, recorded deliberately
 
 The issue proposes that `/release` hand its version-bump commit to `/ship`. That is not
@@ -75,6 +111,7 @@ Everything before the confirmation is local and reversible with two commands.
 ## Architecture
 
 ```
+docs/git-remote-resolution.md       # shared with /ship — extracted first, own commit
 skills/release/
   SKILL.md                          # target-agnostic core. No technology-specific commands.
   references/
@@ -178,7 +215,8 @@ adapters interactively; that is a separate concern.
 
 ```
 0.  Detect      adapter by two-level fingerprint; ask if ambiguous; refuse if unmatched
-1.  Inspect     branch is default & up to date · tree clean · remote · tags · current version
+1.  Inspect     resolve remote + default per docs/git-remote-resolution.md, then:
+                on that default branch & up to date · tree clean · tags · current version
 2.  Preflight   clean rebuild from lockfile → gate_command          ← latent-dep detector
 3.  Single-lit  scan repo for the current version string; every hit must be
                 version_source or a declared derived manifest
@@ -255,6 +293,8 @@ Follows the existing `test_<skill>_skill_structure.py` convention.
 - stub adapters declare `status: stub`
 - **the core `SKILL.md` contains no technology-specific literal** outside fenced blocks
 - the description disclaims `/ship`'s territory and vice versa
+- both `/ship` and `/release` link `docs/git-remote-resolution.md`, and neither restates
+  the four-layer fallback inline — the duplication cannot silently return
 
 ### `evals/release-evals.json`
 
@@ -273,6 +313,8 @@ Evals and the description-triggering optimization are authored via `/skill-creat
 
 ## Integration checklist
 
+- `docs/git-remote-resolution.md` extracted and `/ship` relinked — **first commit, before
+  any `/release` work**
 - `README.md` skills table gains a `/release` row
 - `.claude-plugin/plugin.json` description + keywords updated
 - `.claude-plugin/marketplace.json` description updated (stays in lockstep — the very
