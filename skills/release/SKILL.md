@@ -99,6 +99,8 @@ These are not confirmable. Say what is wrong and what would fix it, then stop.
 - **Dirty working tree.** List the modified paths. A release must be reproducible from
   what is committed; uncommitted work would either be swept into the release commit or
   silently excluded.
+- **Local commits not on the remote** (`ahead` is non-zero). A release must not carry work
+  the plan never listed — push them with `/ship` first, then re-run.
 - **No remote.** There is nowhere to publish.
 
 **A merged pull request is not something the user has to announce.** After the fetch, a
@@ -213,7 +215,8 @@ git tag -a "v<version>" -m "v<version>"
 
 **The tag already exists** → refuse. Re-tagging a released version is how two different
 commits end up claiming to be the same release. If the user genuinely means to re-cut,
-they delete the tag deliberately, first.
+they delete the tag deliberately, first. The stamp from Step 7 is already committed at
+this point — undo it with `git reset --hard HEAD~1` before doing anything else.
 
 Everything up to here is local. Nothing has left the machine.
 
@@ -238,7 +241,7 @@ Release plan
 
   Not yet pushed. To abandon:
     git tag -d v<new>
-    git reset --hard <remote>/<default>
+    git reset --hard HEAD~1
 ```
 
 Ask via **AskUserQuestion**. Anything other than a clear yes → stop and print the rollback
