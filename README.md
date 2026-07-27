@@ -17,6 +17,7 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 | Skill | Command | What it does |
 |-------|---------|-------------|
 | ship | `/ship` | Branch (if on main) → commit (Conventional Commits) → push → open PR, with one confirmation before anything goes public |
+| release | `/release` | Cut and publish a version: gate → stamp → build → tag → publish → verify-install. Technology/toolchain adapters (`python/uv`, `python/git-tag-only`, plus `typescript/npm` and `java/maven` stubs) supply the commands; the core names none, so a new target is a new file. Refuses a dirty tree, a red gate, a second hardcoded version literal, or an artifact that does not match the declared pattern. Exactly one confirmation, immediately before anything leaves the machine |
 | **code-quality** | `/code-quality [path]` | **Umbrella full audit** — runs all five review lenses (clean-architecture, ddd-analyze, solid, gof, clean-code) in one parallel pass and merges them into a single deduplicated Critical/Major/Minor report (a smell two lenses both see is filed once, at the right altitude), then hands that report to the same human decision-gate and TDD apply engine each lens uses. Scopes and baselines the tree once instead of five times. Each lens still runs standalone |
 | clean-code | `/clean-code` | Clean-code standard for the repo — ranked principles (with the places they should bend) that guide Claude when writing code here, and drive read-only reviews with `file:line` + severity when checking a diff or PR |
 | solid | `/solid [path]` | SOLID analysis & guided refactor: analyzer drafts findings → independent reviewer verifies and writes a tiered refactor plan (Critical/Major/Minor) → after human sign-off, an implementer applies recs one at a time with the full test suite run after each change |
@@ -29,6 +30,11 @@ Private Claude Code plugin — Mente Apex business utilities **and** Claude conf
 > skill *offers* — never auto-runs — a commit + PR (typically by handing off to `/ship`).
 > `/solid`, `/gof`, and `/clean-architecture` apply their changes through `/tdd`'s programmatic refactor job and cross-reference each other via `docs/lens-overlap.md`.
 > `/code-quality` is the umbrella that runs all five lenses at once and consolidates their reports; the five remain individually invokable.
+
+> `/ship` and `/release` are complementary and never overlap: `/ship` owns commit → push →
+> open PR and never touches a version; `/release` owns the version, the tag, and everything
+> outward-facing, and never opens or merges a PR. Both resolve the remote and default
+> branch through [docs/git-remote-resolution.md](docs/git-remote-resolution.md).
 
 ### Config sync
 

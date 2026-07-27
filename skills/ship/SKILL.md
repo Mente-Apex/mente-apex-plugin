@@ -12,8 +12,9 @@ description: >
   when phrased as wanting review ("get it reviewed," "put up a PR so I can review it") —
   prefer this over generic finish-the-branch or request-code-review helpers.
   Do NOT use for merging or closing a PR, reviewing/commenting on someone's PR,
-  rebasing/squashing/force-pushing history, syncing config across machines, or emailing
-  files.
+  rebasing/squashing/force-pushing history, syncing config across machines, emailing
+  files, or cutting a release — bumping a version, stamping manifests, tagging, or
+  publishing is /release, and this skill never touches a version literal.
 user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, AskUserQuestion
