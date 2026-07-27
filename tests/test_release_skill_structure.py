@@ -8,6 +8,8 @@ test_<skill>_skill_structure modules.
 import re
 from pathlib import Path
 
+from skill_version_policy import assert_version_at_least
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GIT_RESOLUTION_DOC = REPO_ROOT / "docs" / "git-remote-resolution.md"
 SHIP_SKILL = REPO_ROOT / "skills" / "ship" / "SKILL.md"
@@ -206,3 +208,84 @@ def test_fingerprints_within_a_technology_are_disjoint_or_ranked():
                 f"{technology}/{toolchain_name} shares a fingerprint but the "
                 "contract does not rank it"
             )
+
+
+RELEASE_SKILL_MD = RELEASE_SKILL_DIR / "SKILL.md"
+
+# Literals that would mean the core stopped being technology-agnostic.
+TECHNOLOGY_LITERALS = (
+    "uv build",
+    "uv sync",
+    "npm ci",
+    "npm publish",
+    "mvn ",
+    "pyproject",
+)
+
+
+def strip_fenced_code_blocks(markdown_text):
+    """Drop ``` fenced blocks so illustrative examples aren't read as instructions."""
+    kept_lines = []
+    inside_fence = False
+    for line in markdown_text.splitlines():
+        if line.lstrip().startswith("```"):
+            inside_fence = not inside_fence
+            continue
+        if not inside_fence:
+            kept_lines.append(line)
+    return "\n".join(kept_lines)
+
+
+def test_release_skill_declares_house_style_frontmatter():
+    assert RELEASE_SKILL_MD.is_file(), "skills/release/SKILL.md must exist"
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    fields = parse_frontmatter(text)
+    assert fields.get("name") == "release"
+    assert fields.get("user-invocable") == "true"
+    assert fields.get("disable-model-invocation") == "true"
+    assert "allowed-tools" in fields
+    assert_version_at_least(text.split("---")[1], (0, 1, 0))
+
+
+def test_release_description_disclaims_ship_territory():
+    fields = parse_frontmatter(RELEASE_SKILL_MD.read_text(encoding="utf-8"))
+    description = fields.get("description", "")
+    for trigger in ("cut a release", "tag and publish", "/release"):
+        assert trigger in description, f"description missing trigger: {trigger}"
+    assert (
+        "pull request" in description or "PR" in description
+    ), "description must disclaim /ship's territory explicitly"
+
+
+def test_core_workflow_contains_no_technology_specific_command():
+    """The seam, enforced. Extending the core by editing it must fail CI."""
+    body = strip_fenced_code_blocks(RELEASE_SKILL_MD.read_text(encoding="utf-8"))
+    offenders = [literal for literal in TECHNOLOGY_LITERALS if literal in body]
+    assert not offenders, (
+        f"core SKILL.md names technology-specific commands {offenders} — "
+        "these belong in references/targets/, not the core"
+    )
+
+
+def test_core_declares_every_hard_refusal():
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
+    for refusal in (
+        "dirty",
+        "default branch",
+        "gate",
+        "second",
+        "artifact_pattern",
+        "already exists",
+        "stub",
+    ):
+        assert refusal in text, f"core does not document the refusal: {refusal}"
+
+
+def test_core_links_the_shared_git_resolution():
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    assert (
+        "git-remote-resolution.md" in text
+    ), "core must link the shared resolution rather than restating it"
+    assert (
+        "gh repo view --json defaultBranchRef" not in text
+    ), "core restates the resolution inline — link the shared doc instead"
