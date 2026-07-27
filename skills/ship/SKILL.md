@@ -65,25 +65,15 @@ working in (the current working directory unless they point elsewhere):
 
 ```bash
 git rev-parse --is-inside-work-tree 2>/dev/null || { echo "NOT_A_GIT_REPO"; exit 0; }
+```
 
-# Resolve the remote ONCE — prefer 'origin', else the first configured remote. Every
-# later step uses this name; never hardcode 'origin' (forks/upstream repos differ).
-REMOTE=$(git remote | grep -qx origin && echo origin || git remote | head -1)
-echo "=== remote ==="   ; echo "${REMOTE:-(none)}"
+Resolve the remote and the base branch using the shared procedure in
+[docs/git-remote-resolution.md](../../docs/git-remote-resolution.md) — run that file's two
+blocks to set `REMOTE` and `DEFAULT`, then continue with the rest of this block. Both
+values are used throughout the steps below; never reintroduce a literal `origin`.
 
-# Resolve the default/base branch via layered fallback. origin/HEAD is unset on many
-# repos (git remote add never sets it; only a fresh clone does), so symbolic-ref alone
-# is not enough: 1) local symbolic-ref → 2) live `git remote show` → 3) gh → 4) guess.
-DEFAULT=""
-if [ -n "$REMOTE" ]; then
-  DEFAULT=$(git symbolic-ref "refs/remotes/$REMOTE/HEAD" 2>/dev/null | sed 's@.*/@@')
-  [ -z "$DEFAULT" ] && DEFAULT=$(git remote show "$REMOTE" 2>/dev/null | sed -n 's/.*HEAD branch: //p')
-  [ -z "$DEFAULT" ] && DEFAULT=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)
-fi
-for candidate in main master; do
-  [ -z "$DEFAULT" ] && git show-ref --verify --quiet "refs/heads/$candidate" && DEFAULT="$candidate"
-done
-echo "=== default ==="  ; echo "${DEFAULT:-(unknown — confirm with the user)}"
+```bash
+# REMOTE and DEFAULT are now set — see docs/git-remote-resolution.md.
 
 # Current branch. EMPTY output means detached HEAD — Step 2 must create a branch.
 BRANCH=$(git branch --show-current)
