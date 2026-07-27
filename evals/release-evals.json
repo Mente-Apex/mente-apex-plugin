@@ -83,14 +83,14 @@
       "eval_name": "artifact-pattern-mismatch-refusal",
       "skill": "release",
       "prompt": "/release — cut a release for the fixture project. Clean tree, on main, up to date, gate passes, exactly one version literal, version bumping from 0.9.0 to 0.9.1. The adapter declares artifact_pattern as dist/fixture-*.whl, but the fixture build_command actually produces dist/fixture-0.9.1.tar.gz (a tarball, not a wheel) — nothing matching *.whl lands in dist/.",
-      "expected_output": "Step 6 runs the build, then expands artifact_pattern and finds no match. It refuses, explicitly comparing the expected pattern (dist/fixture-*.whl) against what the build actually produced (dist/fixture-0.9.1.tar.gz), and does not proceed to Step 7 (commit) or beyond. The stamp from Step 5 is already on disk but not yet committed, and the refusal does not silently accept the tarball as close enough.",
+      "expected_output": "Step 6 runs the build, then expands artifact_pattern and finds no match. It refuses, explicitly comparing the expected pattern (dist/fixture-*.whl) against what the build actually produced (dist/fixture-0.9.1.tar.gz), and does not proceed to Step 7 (commit) or beyond. The stamp from Step 5 is already on disk but not yet committed, so the refusal also tells the user how to revert it (git checkout -- the version_source and each derived manifest) rather than leaving an unexplained dirty tree for the next run to trip over. It does not run that revert unasked, and does not silently accept the tarball as close enough.",
       "files": [],
       "assertions": [
         "The build_command is actually run before the refusal — the refusal is a consequence of comparing real build output to the pattern, not a guess",
         "The refusal states the expected artifact_pattern (dist/fixture-*.whl) and explicitly names what the build actually emitted (dist/fixture-0.9.1.tar.gz)",
         "The skill does not treat the tarball as an acceptable substitute for the declared wheel pattern",
         "The workflow does not reach Step 7 (commit), Step 8 (tag), or the confirmation checkpoint after this refusal",
-        "The uncommitted stamp from Step 5 is not rolled back automatically or committed anyway — the refusal simply stops forward progress"
+        "The uncommitted stamp from Step 5 is not rolled back automatically or committed anyway — the refusal stops forward progress and hands the user the revert command (git checkout -- <version_source> <derived manifests>) so the leftover dirty tree is explained rather than abandoned"
       ]
     },
     {

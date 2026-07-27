@@ -49,9 +49,13 @@ contract is missing a field — extend the contract, not the core.
 Read [references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md) and follow its
 two-level detection: technology first, then toolchain, both by declared precedence.
 
-Load the resolved adapter file and hold its ten fields — `version_source`, `gate_command`,
-`artifact_pattern`, and the rest. **Every later step reads through those fields.** This is
-the only place a concrete target enters the workflow.
+Load the resolved adapter file and hold its ten contract fields — `version_source`,
+`gate_command`, `artifact_pattern`, and the rest. **Every later step reads through those
+fields.** This is the only place a concrete target enters the workflow.
+
+An adapter may also carry the `status` marker described below. It is a maturity flag on
+the file, not an eleventh contract field: no step reads through it, and the contract stays
+ten fields wide.
 
 Stop here if:
 
@@ -73,19 +77,36 @@ Target : python / git-tag-only   (fingerprint: .claude-plugin/plugin.json)
 ## Step 1 — Inspect
 
 Resolve `REMOTE` and `DEFAULT` with the shared procedure in
-[../../docs/git-remote-resolution.md](../../docs/git-remote-resolution.md). Then gather
-the rest in one pass:
+[../../docs/git-remote-resolution.md](../../docs/git-remote-resolution.md).
+
+**Run that resolution and the block below inside a single shell invocation — one Bash
+call.** Every tool call gets a fresh shell, so a variable set in one call does not exist
+in the next: split across two calls, `"$REMOTE"` and `"$DEFAULT"` expand to empty strings,
+the fetch is meaningless or fatal, and the workflow proceeds believing it fetched. Either
+paste the resolution above this block, or re-resolve both values at the top of every block
+that reads them.
 
 ```bash
-git fetch --quiet "$REMOTE" "$DEFAULT"
+# REMOTE and DEFAULT must already be set in THIS shell — see the shared procedure.
+if [ -z "$REMOTE" ] || [ -z "$DEFAULT" ]; then
+  echo "=== unresolved ===" ; echo "REMOTE=${REMOTE:-(none)} DEFAULT=${DEFAULT:-(unknown)}"
+else
+  git fetch --quiet "$REMOTE" "$DEFAULT"
+  echo "=== behind ==="  ; git rev-list --count "HEAD..$REMOTE/$DEFAULT"
+  echo "=== ahead ==="   ; git rev-list --count "$REMOTE/$DEFAULT..HEAD"
+fi
 echo "=== branch ==="  ; git branch --show-current
 echo "=== status ==="  ; git status --short
-echo "=== behind ==="  ; git rev-list --count "HEAD..$REMOTE/$DEFAULT"
-echo "=== ahead ==="   ; git rev-list --count "$REMOTE/$DEFAULT..HEAD"
 echo "=== tags ==="    ; git tag --sort=-v:refname | head -5
 ```
 
-Read the adapter's `version_source` to get the current version.
+The two resolution refusals below — no remote, unknown default branch — are decided from
+the resolution output alone. **Check them first**, before reading anything that depends on
+the fetch: an `=== unresolved ===` line means `behind` and `ahead` were never computed and
+nothing may be inferred from their absence.
+
+Read the adapter's `version_source` to get the current version. When `version_source` is
+`null` there is no manifest literal to read — the current version is the most recent tag.
 
 ### Hard refusals
 
@@ -102,6 +123,10 @@ These are not confirmable. Say what is wrong and what would fix it, then stop.
 - **Local commits not on the remote** (`ahead` is non-zero). A release must not carry work
   the plan never listed — push them with `/ship` first, then re-run.
 - **No remote.** There is nowhere to publish.
+- **The default branch is unknown.** Resolution reported `(unknown — confirm with the
+  user)`: no signal was found at any of its four layers. Never guess one. A guessed
+  default branch cuts a release onto the wrong line of development, which is not
+  recoverable by deleting a tag. Ask the user which branch is the release line and re-run.
 
 **A merged pull request is not something the user has to announce.** After the fetch, a
 merge is visible locally — it is why `behind` is checked rather than asked about. Never
@@ -121,7 +146,11 @@ ships unreviewed.
 
 ## Step 3 — Verify there is exactly one version literal
 
-Search the repository for the current version string. Every occurrence must be either the
+Skip this step entirely when the adapter's `version_source` is `null`. That target keeps
+no version literal in the tree at all — the tag is the version — so there is no canonical
+occurrence to compare anything against, and every match would be prose.
+
+Otherwise, search the repository for the current version string. Every occurrence must be either the
 adapter's `version_source` or a declared entry in `derived_manifests`.
 
 An undeclared occurrence → **refuse**, listing the file and line. It means either a
@@ -140,6 +169,12 @@ Derive the proposed bump from Conventional Commits since the last tag:
 - only `fix:` / `refactor:` / `chore:` / `docs:` → patch
 - any `!` or `BREAKING CHANGE:` → major
 
+**Below `1.0.0` that last rule does not apply.** A `0.x` project has not promised
+stability yet, so a breaking change proposes a **minor** bump — the leading zero stays.
+Reaching `1.0.0` is a deliberate declaration the user makes, not something a commit
+message triggers; the derivation never proposes it. When a breaking change is present on a
+`0.x` version, say so and note that `1.0.0` is available if that is what the user means.
+
 With no tags, fall back to commits since the last `chore(release):` commit; failing that,
 the full history.
 
@@ -147,7 +182,7 @@ Show the reasoning, then let the user override — the derivation is a proposal,
 ruling:
 
 ```
-Version : 0.21.0 → 0.22.0   (minor: 4 feat, 2 fix since v0.21.0)
+Version : 1.4.2 → 1.5.0   (minor: 4 feat, 2 fix since v1.4.2)
 ```
 
 Once the version is settled — derived or user-chosen — refuse if its tag already exists;
@@ -155,7 +190,11 @@ Step 8 carries the rationale.
 
 ## Step 5 — Stamp
 
-Write the new version to the adapter's `version_source`, then to every entry in
+Skip this step entirely when the adapter's `version_source` is `null`. There is nothing to
+stamp: the tag carries the version, no file records it, and writing one anywhere would
+invent a literal the adapter never declared. Say so in the report and go to Step 6.
+
+Otherwise write the new version to the adapter's `version_source`, then to every entry in
 `derived_manifests`. All of them or none — a partial stamp leaves the manifests
 inconsistent, which in a repo with a lockstep guard is a red suite and in a repo without
 one is a silent wrong release.
@@ -166,8 +205,11 @@ Show the resulting diff explicitly:
 git --no-pager diff
 ```
 
-The tree is now dirty. That is expected and temporary — Step 7 commits it, and nothing is
-tagged until it is committed. This ordering is the point of Steps 5 → 7 → 8.
+The tree is now dirty, and deliberately so: nothing is tagged until the stamp is
+committed, which is the point of the Steps 5 → 7 → 8 ordering. On the happy path Step 7
+commits it. **If any later step refuses instead, that dirty tree is this skill's own
+leftover** and must be reverted before re-running — Step 6 says how, and a refusal after
+this point should always name the files it left behind.
 
 ## Step 6 — Build and verify the artifacts
 
@@ -181,6 +223,19 @@ ls -1 <expanded artifact_pattern>
 
 No match → **refuse**. Report the pattern and what the build actually emitted.
 
+Step 5's stamp is on disk and uncommitted at this point, so the refusal is not finished
+until it says how to undo it. Give the user the exact command, naming every file that was
+stamped:
+
+```bash
+git checkout -- <version_source> <each derived manifest>
+```
+
+Without that line the next `/release` refuses at Step 1 on a dirty tree the user never
+made, with no clue where it came from. Do not run the revert unasked — the user may want
+to inspect the stamp — but never leave it undocumented. Nothing to revert when
+`version_source` is `null`; say that instead.
+
 This is not defensive padding. In the reference repo the install documentation named a
 wheel the build had never produced, and it stayed wrong for a long time because no step
 ever compared the documented artifact against a real one. Assuming the artifact name is
@@ -188,7 +243,15 @@ how that happens; verifying it is how it stops.
 
 ## Step 7 — Commit
 
-One commit, on the default branch, containing only the stamp:
+Skip this step entirely when the adapter's `version_source` is `null`. That target stamps
+nothing, so there is nothing to commit and **there is no release commit** — the tag in
+Step 8 points at the existing `HEAD`, which is already the reviewed, merged state of the
+default branch. Never create an empty commit to have something to tag: an empty
+`chore(release):` commit adds a second, contentless node to the release line and makes
+`git show` on the tag say nothing. Say plainly in the report that no release commit was
+made and which commit the tag will point at.
+
+Otherwise: one commit, on the default branch, containing only the stamp:
 
 ```bash
 git add <version_source> <each derived manifest>
@@ -198,6 +261,12 @@ chore(release): v<version>
 Co-Authored-By: Claude <noreply@anthropic.com>
 MSG
 ```
+
+**Stage file paths, not selectors.** `version_source` and each derived manifest are
+written as `path#selector`; the selector addresses a field *inside* the file and means
+nothing to git. Drop everything from the `#` onward and stage the path alone — passing the
+whole string makes git report a nonexistent pathspec and abort. Two entries that differ
+only in selector are one file: stage it once.
 
 Use the co-author trailer the harness prescribes for the active model this session.
 
@@ -216,7 +285,9 @@ git tag -a "v<version>" -m "v<version>"
 **The tag already exists** → refuse. Re-tagging a released version is how two different
 commits end up claiming to be the same release. If the user genuinely means to re-cut,
 they delete the tag deliberately, first. The stamp from Step 7 is already committed at
-this point — undo it with `git reset --hard HEAD~1` before doing anything else.
+this point — undo it with `git reset --hard HEAD~1` before doing anything else. If Step 7
+made no commit because there was nothing to stamp, there is nothing to reset: leave `HEAD`
+alone.
 
 Everything up to here is local. Nothing has left the machine.
 
@@ -253,6 +324,26 @@ commands. Do not proceed on ambiguity.
 
 Run the adapter's `publish_command`, substituting the resolved `<remote>` and `<default>`.
 Stop and report on any failure — never paper over a failed push, and never retry blindly.
+
+A failure here is the one stop that lands on a *committed and tagged* default branch, so
+say what state the repo is in and how to leave it. The rollback is the same two commands
+the checkpoint printed:
+
+```bash
+git tag -d v<version>
+git reset --hard HEAD~1
+```
+
+Drop the second command if Step 7 made no commit.
+
+**A compound `publish_command` breaks that rollback.** Some adapters publish to a registry
+*and then* push to git in one command. If the registry half succeeded and the git half
+failed, **the rollback above is not safe and must not be offered**: the version is already
+out in the world, immutable and installable, and deleting the local tag would leave a
+published version that no commit in the repository claims. Do not re-cut it, do not bump
+past it silently, and do not re-run the command hoping it is idempotent. Report exactly
+that state — published, not pushed — name the version, and stop. Recovering is a decision
+the user makes, and the usual answer is to push the tag by hand once the cause is fixed.
 
 Then create the GitHub release, with notes grouped from the Conventional Commits since the
 previous tag:

@@ -73,6 +73,12 @@ Resolve the remote and the base branch using the shared procedure in
 blocks to set `REMOTE` and `DEFAULT`, then continue with the rest of this block. Both
 values are used throughout the steps below; never reintroduce a literal `origin`.
 
+Run the resolution in the **same shell invocation** as the block that reads it — a fresh
+shell per tool call means the variables are empty in any later call, so a block that needs
+them must either follow the resolution in one call or re-resolve them itself. The
+`[ -n "$REMOTE" ]` guards below exist so that mistake shows up rather than passing empty
+arguments to git.
+
 ```bash
 # REMOTE and DEFAULT are now set — see docs/git-remote-resolution.md.
 
