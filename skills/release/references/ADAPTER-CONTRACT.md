@@ -579,24 +579,52 @@ resolved build adapter's `version_source`, and its `release_command` and
 
 ## Adding an adapter
 
-1. Create `references/build/<technology>/<toolchain>.md` with all fourteen fields.
-   `tag_pattern` is the one people forget, because `v<version>` feels like a default
-   rather than a choice. `relock_command` is the one people get wrong: check whether your
-   lockfile records the project's *own* version before declaring it `null`.
-2. Declare [`status: stub`](#status-stub) unless you authored it by running every command
+First decide **which axis you are adding to**. An adapter that answers *how this component
+builds and tests itself* is a build adapter; one that answers *what the repository ships
+beyond the tag, and how you confirm it arrived* is a distribution adapter. The two live in
+different directories, carry different field sets, and are detected differently.
+
+1. Create the file with **its axis's field set** — a build adapter at
+   `references/build/<technology>/<toolchain>.md` with the twelve
+   [build adapter fields](#build-adapter-fields), a distribution adapter at
+   `references/distributions/<kind>.md` with the five
+   [distribution adapter fields](#distribution-adapter-fields). Do not mix them: a
+   `build_command` on a distribution adapter, or a `derived_manifests` on a build adapter,
+   is the axis tangle this split exists to remove.
+2. On a build adapter, `tag_pattern` is the one people forget, because `v<version>` feels
+   like a default rather than a choice, and `relock_command` is the one people get wrong:
+   check whether your lockfile records the project's *own* version before declaring it
+   `null`. On a distribution adapter, `release_command` is the one people over-fill — a
+   target where the tag *is* the whole release declares it `null` rather than inventing a
+   forge step.
+3. Write the `fingerprint` under [the separation rule](#the-separation-rule), which
+   constrains it by **fact, not by file**. A build adapter fingerprints build evidence
+   only, matched on the whole path regardless of selector. A distribution adapter
+   fingerprints shipping evidence only — and where the only manifest its ecosystem has is
+   also build evidence, it must name a **selector** into the shipping fact it reads:
+   `pom.xml#/project/distributionManagement` and `Cargo.toml#package.publish` pass, bare
+   `pom.xml` and bare `Cargo.toml` do not.
+4. Declare [`status: stub`](#status-stub) unless you authored it by running every command
    on a real repository first. The marker means "sketched, never exercised" — it is not a
    probation the core lets you serve, since it refuses to run against a stub at all.
-3. Add its fingerprint row to the Level 2 table above, positioned so its precedence
-   against existing adapters is explicit. The row's fingerprint cell must list the same
-   entries the field does — a test compares them.
-4. **If the technology is new** — the first adapter under that directory — add a Level 1
-   row for it as well, again positioned deliberately. A Level 2 row alone is unreachable:
-   detection resolves the technology first, so an adapter whose technology no Level 1
-   fingerprint selects is never considered, and the run refuses with "nothing matches"
-   while the adapter sits right there. Adding a toolchain to an *existing* technology
-   needs Level 2 only.
-5. Run `uv run pytest tests/test_release_skill_structure.py` — the guard checks the field
-   set, the directory/filename agreement, and fingerprint disjointness.
+5. **Build adapter only** — add its fingerprint row to the Level 2 table above, positioned
+   so its precedence against existing adapters is explicit. The row's fingerprint cell must
+   list the same entries the field does — a test compares them.
+6. **Build adapter only, and only if the technology is new** — the first adapter under that
+   directory — add a Level 1 row for it as well, again positioned deliberately. A Level 2
+   row alone is unreachable: detection resolves the technology first, so an adapter whose
+   technology no Level 1 fingerprint selects is never considered, and the run refuses with
+   "nothing matches" while the adapter sits right there. Adding a toolchain to an *existing*
+   technology needs Level 2 only.
+7. **A new distribution kind needs neither table.** [Distribution
+   detection](#distribution-detection) has no precedence table to add a row to: shipping
+   evidence is matched directly, **any** number of adapters may match, and resolving
+   **none** is a legitimate outcome rather than a detection failure. There is no ordering
+   to declare because there is no first-match-wins to order.
+8. Run `uv run pytest tests/test_release_skill_structure.py` — the guard checks both field
+   sets, the directory/filename agreement, the separation rule, and fingerprint
+   disjointness.
 
 You do not touch `SKILL.md`. If you find yourself wanting to, the contract is missing a
-field — add it here, to every adapter, and to the test, in that order.
+field — add it here, to the field set it belongs to, to every adapter on that axis, and to
+the test, in that order.
