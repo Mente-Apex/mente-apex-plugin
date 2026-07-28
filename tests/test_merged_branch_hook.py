@@ -4,6 +4,7 @@ Every test drives the real git CLI against a temp bare origin plus a clone.
 Mocking git here would test our idea of git's exit codes rather than git's.
 """
 
+import io
 import json
 import os
 import subprocess
@@ -240,11 +241,12 @@ def test_hook_emits_nothing_when_there_is_nothing_to_say(tmp_path):
     assert completed.stdout == ""
 
 
-def test_hook_exits_silently_when_report_raises(monkeypatch, tmp_path):
+def test_hook_exits_silently_when_report_raises(monkeypatch):
     def explode(_cwd):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(merged_branch, "report", explode)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
     assert merged_branch.main() == 0
 
 
