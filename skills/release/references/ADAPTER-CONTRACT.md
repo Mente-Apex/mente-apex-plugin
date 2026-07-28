@@ -90,6 +90,31 @@ Adding a fourth adapter filled in the missing square. It did not remove the caus
 this rule the manifest has no path by which to reach `build_command`, which is a stronger
 claim than "the missing adapter now exists".
 
+**The rule is refined by selector, not by path, because Maven and Cargo have exactly one
+manifest each.** `pom.xml` and `Cargo.toml` are simultaneously build evidence (they carry
+the project's version) and the only place their ecosystem records a shipping fact —
+`<project><distributionManagement>` and `package.publish` respectively. There is no second
+file to redirect a distribution adapter's fingerprint to, the way `.claude-plugin/` sits
+apart from `package.json`. So the evidence sets name **facts**, not files, and what
+distinguishes "this fingerprint reads the manifest's build identity" from "this fingerprint
+reads a shipping fact recorded inside it" is whether the fingerprint names a **selector**:
+
+- A distribution adapter fingerprinting a **bare** build-evidence path (`pom.xml`,
+  `Cargo.toml`) is still a violation — that is reading the file's identity, which is a
+  build fact.
+- A distribution adapter fingerprinting a **selector** into a build-evidence file
+  (`pom.xml#/project/distributionManagement`, `Cargo.toml#package.publish`) is reading a
+  named shipping fact recorded inside a shared manifest, not the file's build identity, and
+  is not a violation.
+- The build direction gets no matching latitude: `SHIPPING_EVIDENCE` stays matched on the
+  whole path regardless of selector, because `.claude-plugin/` carries no build fact at any
+  selector for one to disambiguate. A build adapter naming
+  `.claude-plugin/plugin.json#.version` is still a violation.
+
+That asymmetry is the point, not an inconsistency: the two evidence sets are not
+structurally symmetric, because the shipping side has a file that carries no build facts and
+the build side (for these two ecosystems) does not have the reverse.
+
 ### Where the axes tangle
 
 Two fields do not cleanly belong to one side, and pretending otherwise would be the same
@@ -379,7 +404,7 @@ point where nobody is checking.
 | `<version>` | the version being released, as computed in Step 4 |
 | `<tag>` | expanding this adapter's own `tag_pattern`; unavailable *inside* `tag_pattern` |
 | `<release-notes-file>` | a path the core writes the grouped Conventional Commit notes to |
-| `<distribution-name:role>` | reading the `role` key of this adapter's `distribution_names` |
+| `<distribution-name:role>` | reading the `role` key of the resolved `distribution_names` — see below for which adapter that is |
 
 `<release-notes-file>` is a *path* rather than the notes themselves for a reason worth
 stating: release notes are multi-line and routinely contain quotes, backticks and `$`.
@@ -387,10 +412,22 @@ Substituting them into a command string would make every adapter author responsi
 shell quoting, and the failure mode of getting it wrong is a release note that silently
 executes part of a commit message.
 
-Only roles the adapter actually declares are bound. `<distribution-name:binary>` in an
-adapter whose map has no `binary` key is an unbound token, exactly like `<tool-name>` would
-be — which is also what makes a `null` map with a name-using command a failure rather than
-an omission.
+Only roles the adapter actually declares are bound. `<distribution-name:binary>` in a
+**build** adapter whose map has no `binary` key is an unbound token, exactly like
+`<tool-name>` would be — which is also what makes a `null` map with a name-using command a
+failure rather than an omission.
+
+**A `<distribution-name:role>` token in a distribution adapter binds against the *root
+build adapter's* `distribution_names` map** — the build adapter that resolves alongside it
+for the same repository. `distribution_names` lives only on the build adapter (see "Where
+the axes tangle" above) and gets no map of its own on the distribution side; a distribution
+adapter's role tokens resolve against whichever build adapter's map that repository already
+resolved, so nothing is declared twice. `npm-registry.md`'s `<distribution-name:package>`,
+`maven-central.md`'s `<distribution-name:group>` and `<distribution-name:artifact>`, and
+`crates-io.md`'s `<distribution-name:crate>` all resolve this way, against `typescript/npm`,
+`java/maven` and `rust/cargo` respectively — each role was already declared there for the
+build adapter's own `install_verify_command`, so the distribution stub introduces no new
+role.
 
 `tests/test_release_skill_structure.py` scans every field of every adapter for `<…>` tokens
 and fails on any this table does not bind, so the vocabulary cannot drift open again. It

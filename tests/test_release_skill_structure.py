@@ -85,6 +85,10 @@ ADAPTER_CLASSIFICATIONS = {
     "typescript/npm": "stub",
     "java/maven": "stub",
     "rust/cargo": "stub",
+    "distributions/claude-plugin": "working",
+    "distributions/npm-registry": "stub",
+    "distributions/maven-central": "stub",
+    "distributions/crates-io": "stub",
 }
 
 # Adapters whose lockfile records the project's *own* version, so stamping the
@@ -429,6 +433,8 @@ def selector_references(fields):
         predicate = _FINGERPRINT_PREDICATE.match(clause)
         if predicate:
             references.append(predicate.group(1))
+        elif "#" in clause:
+            references.append(clause)
     return references
 
 
@@ -959,7 +965,13 @@ def test_three_technologies_are_represented():
 
 
 def adapter_identities():
-    return [f"{adapter.parent.name}/{adapter.stem}" for adapter in adapter_files()]
+    identities = {
+        f"{adapter.parent.name}/{adapter.stem}": adapter for adapter in adapter_files()
+    }
+    identities.update(
+        {f"distributions/{adapter.stem}": adapter for adapter in distribution_files()}
+    )
+    return identities
 
 
 def test_every_adapter_is_classified_exactly_once():
@@ -1121,16 +1133,47 @@ def test_the_package_false_case_resolves_without_a_plugin_manifest():
     )
 
 
-def _fingerprint_paths(fields):
-    """Every bare path named by a fingerprint, predicates and conjunctions unwrapped."""
-    paths = set()
+def _fingerprint_clause_parts(fields):
+    """(path, selector-or-None) for every clause a fingerprint names.
+
+    A bare `pom.xml` and a selecting `pom.xml#/project/distributionManagement`
+    name the same *path* but are not the same *claim*: the second names a
+    shipping fact recorded inside a file that also carries build facts. Maven
+    and Cargo have exactly one manifest each, so the path alone cannot tell the
+    two kinds of fact apart — the selector is what does. `_fingerprint_paths`
+    below collapses this pair for the direction that does not care (a build
+    adapter naming any selector into shipping evidence is still a violation).
+    """
+    parts = []
     for entry in fingerprint_selectors(str(fields.get("fingerprint", ""))):
         for clause in fingerprint_clauses(entry):
-            paths.add(clause.partition("#")[0])
-    return paths
+            path, separator, selector = clause.partition("#")
+            parts.append((path, selector if separator else None))
+    return parts
+
+
+def _fingerprint_paths(fields):
+    """Every bare path named by a fingerprint, predicates and conjunctions unwrapped."""
+    return {path for path, _selector in _fingerprint_clause_parts(fields)}
 
 
 def test_neither_adapter_kind_fingerprints_on_the_others_evidence():
+    """The separation rule, refined for the direction where the split is real.
+
+    A distribution adapter fingerprinting a bare build-evidence path is a
+    violation regardless. But `pom.xml` and `Cargo.toml` are each the *only*
+    manifest their ecosystem has, so they carry both the project's version
+    (a build fact) and its publish eligibility (a shipping fact) in the same
+    file — unlike `.claude-plugin/`, which carries no build facts at any
+    selector. A distribution adapter naming a *selector* into a build-evidence
+    file is reading a shipping fact recorded there, not the file's build
+    identity, so only a bare, selector-less build-evidence path offends.
+
+    The build direction is not given the same latitude: `SHIPPING_EVIDENCE`
+    stays prefix-matched on the whole path, selector or not, because there is
+    no shipping-evidence file that also carries a build fact for a selector to
+    disambiguate.
+    """
     offenders = []
     for adapter in adapter_files():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
@@ -1142,11 +1185,11 @@ def test_neither_adapter_kind_fingerprints_on_the_others_evidence():
                 )
     for adapter in distribution_files():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
-        for path in _fingerprint_paths(fields):
-            if path in BUILD_EVIDENCE:
+        for path, selector in _fingerprint_clause_parts(fields):
+            if path in BUILD_EVIDENCE and selector is None:
                 offenders.append(
                     f"{adapter.relative_to(REPO_ROOT)}: distribution adapter "
-                    f"fingerprints on build evidence {path!r}"
+                    f"fingerprints on bare build evidence {path!r}"
                 )
     assert not offenders, "the separation rule is violated:\n" + "\n".join(offenders)
 
@@ -1159,6 +1202,28 @@ def test_separation_rule_catches_a_synthetic_violation():
 
     lock_fingerprinted_distribution = {"fingerprint": "uv.lock"}
     assert "uv.lock" in _fingerprint_paths(lock_fingerprinted_distribution)
+
+    # Distribution direction, selector-sensitive: a bare build-evidence path is
+    # still a violation ...
+    bare_pom = {"fingerprint": "pom.xml"}
+    assert any(
+        path in BUILD_EVIDENCE and selector is None
+        for path, selector in _fingerprint_clause_parts(bare_pom)
+    )
+    # ... but a selector into the same file naming a shipping fact is not.
+    selecting_pom = {"fingerprint": "pom.xml#/project/distributionManagement"}
+    assert not any(
+        path in BUILD_EVIDENCE and selector is None
+        for path, selector in _fingerprint_clause_parts(selecting_pom)
+    )
+
+    # Build direction, not selector-sensitive: `.claude-plugin/` carries no
+    # build facts at any selector, so a selector does not launder it.
+    selecting_plugin_manifest = {
+        "fingerprint": "uv.lock+.claude-plugin/plugin.json#.version"
+    }
+    paths = _fingerprint_paths(selecting_plugin_manifest)
+    assert any(path.startswith(".claude-plugin") for path in paths)
 
 
 def test_contract_states_the_separation_rule():
@@ -1204,13 +1269,21 @@ def test_contract_declares_a_selector_language_for_every_file_format():
 
 
 def test_every_adapter_selector_matches_its_file_formats_syntax():
-    """Four build adapters, one distribution adapter, three selector languages.
+    """Five build adapters, four distribution adapters, three selector languages.
 
     `selector_references` is field-set agnostic — it reads whichever of
     `version_source`, `derived_manifests`, `distribution_names` and `fingerprint`
     a given file's frontmatter carries — so a distribution adapter's
     `derived_manifests` selectors (the only place that field lives, post-split)
     get exactly the same check as a build adapter's `version_source`.
+
+    `maven-central.md` and `crates-io.md` have no `version_source`,
+    `derived_manifests` or `distribution_names` at all — a stub distribution
+    adapter's only field carrying a selector is `fingerprint` itself
+    (`pom.xml#/project/distributionManagement`, `Cargo.toml#package.publish`),
+    and neither is a `==` predicate. `selector_references` must therefore also
+    collect a bare `path#selector` fingerprint clause, not only its predicate
+    form, or these two adapters would present nothing to check at all.
     """
     offenders = []
     for adapter in adapter_files() + distribution_files():
@@ -1261,6 +1334,17 @@ def test_selector_references_collects_from_every_field_that_carries_one():
         "pyproject.toml#project.scripts",
         "pyproject.toml#tool.uv.package",
     ]
+
+    # A bare `path#selector` fingerprint clause — no `==` predicate — is still
+    # a reference: `maven-central.md` and `crates-io.md` have no other field
+    # to check, and a presence-check selector deserves the same syntax check a
+    # predicate gets.
+    assert selector_references(
+        {"fingerprint": "pom.xml#/project/distributionManagement"}
+    ) == ["pom.xml#/project/distributionManagement"]
+    # A bare path with no selector at all is not a reference — nothing to
+    # check a selector language against.
+    assert selector_references({"fingerprint": "uv.lock"}) == []
     # The null and empty-list spellings contribute nothing rather than erroring.
     assert (
         selector_references(
@@ -1286,6 +1370,28 @@ def test_level_two_rows_are_parsed_from_the_real_contract():
     assert python_order.index("uv-nobuild") < python_order.index("uv")
 
 
+def all_build_declared_roles():
+    """Every role any build adapter's `distribution_names` map declares.
+
+    A distribution adapter has no map of its own and will not get one — a
+    `<distribution-name:role>` token on the distribution side resolves against
+    the `distribution_names` of the build adapter that resolves alongside it,
+    which is where the toolchain-determined name already lives (see "Where the
+    axes tangle" in the contract), so nothing is duplicated. This structural
+    check has no notion of pairing — it cannot tell which build adapter
+    resolves alongside a given distribution adapter — so it checks against the
+    union of every build adapter's declared roles. A role missing from that
+    union is a real gap regardless of pairing; a role present in the union but
+    declared by the "wrong" build adapter is not something a static file-shape
+    check can catch, and is the runtime core's problem, not this contract's.
+    """
+    roles = set()
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        roles |= declared_roles(fields.get("distribution_names"))
+    return roles
+
+
 def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
     """A token the contract does not bind is a value the agent has to guess.
 
@@ -1298,15 +1404,14 @@ def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
 
     A distribution adapter has no `distribution_names` map of its own — that
     field stays on the build adapter (see "Where the axes tangle" in the
-    contract) — so no role is ever declared for one, and any
-    `<distribution-name:role>` token appearing in a distribution adapter's
-    fields would be unbound unconditionally. No adapter today writes one:
-    `claude-plugin.md`'s `release_command` and `install_verify_command` use only
-    `<tag>` and `<release-notes-file>`, both bound without a role. The binding
-    rule for a distribution-side `<distribution-name:role>` is therefore
-    genuinely undefined pending a real need — this test enforces what is true of
-    the one adapter that exists rather than inventing a mechanism nothing calls
-    for yet.
+    contract). Its `<distribution-name:role>` tokens instead bind against the
+    union of every build adapter's declared roles (`all_build_declared_roles`)
+    — the role the build adapter that resolves alongside it declares, which a
+    static per-file check cannot pair but can still verify exists somewhere.
+    `npm-registry.md`, `maven-central.md` and `crates-io.md` use `package`,
+    `group`/`artifact` and `crate` respectively, and all four are already
+    declared by `typescript/npm`, `java/maven` and `rust/cargo` — no build
+    adapter needed a new role for this.
     """
     offenders = []
     for adapter in adapter_files():
@@ -1317,10 +1422,12 @@ def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
         )
         if unbound:
             offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {unbound}")
+    distribution_roles = all_build_declared_roles()
     for adapter in distribution_files():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
         unbound = unbound_placeholders(
-            str(fields.get(field, "")) for field in DISTRIBUTION_FIELDS
+            (str(fields.get(field, "")) for field in DISTRIBUTION_FIELDS),
+            distribution_roles,
         )
         if unbound:
             offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {unbound}")
