@@ -286,10 +286,13 @@ for that file's format. **This is a field read, not a text search**: it returns 
 value the manifest actually holds, so a stale one is read and compared rather than passed
 over. A component whose `version_source` is `null` carries no such field and is skipped.
 
-Compare each **self-version** so read against the canonical version — the one the root
-component's `version_source` holds. Any component that disagrees → **refuse**, naming the
-component, the value found there, and the canonical value. The way out is one of exactly
-two, and only the user can say which:
+Compare each **self-version** so read against the canonical version, which is the current
+version Step 1 resolved: the root component's `version_source` when it has one, and the
+most recent tag when that `version_source` is `null`. Both are always available by this
+point, so this check never skips wholesale — a repository whose root keeps no literal of
+its own is exactly where a stale mirror hides longest. Any component that disagrees →
+**refuse**, naming the component, the value found there, and the canonical value. The way
+out is one of exactly two, and only the user can say which:
 
 1. **Nothing consumes that literal.** Then **delete the field**. A version nobody reads is
    not a version to maintain, and leaving it in place only re-arms the same drift for the

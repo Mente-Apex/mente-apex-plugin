@@ -1886,17 +1886,30 @@ def test_step_three_checks_every_component_manifest_against_the_canonical_versio
     That finds an undeclared copy of the current version and is blind by
     construction to a mirror pinned at an older one — which is why
     worker/package.json sat at 0.3.0 against a project at 0.4.0, unseen.
+
+    Scoped to Step 3, a deliberate departure from the plan's literal test on the
+    standing human ruling that a weak plan-verbatim guard gets strengthened rather
+    than deferred (as at Tasks 2 and 7). The plan searched the whole file, where
+    two of its three legs were already green before this check existed: "delete"
+    from Step 8's tag rationale, and "component" 55 times over from Tasks 6-7.
     """
-    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
-    assert "self-version" in text or "own version field" in text, (
+    step = _section_after(
+        RELEASE_SKILL_MD.read_text(encoding="utf-8"), "## Step 3 — Verify"
+    ).lower()
+    assert "self-version" in step or "own version field" in step, (
         "the check must read each manifest's own version key, not search for a "
         "version string — a text search cannot see a stale literal"
     )
-    assert "component" in text
-    assert "delete" in text, (
+    assert "field read, not a text search" in step, (
+        "Step 3 must say why it is a field read: searching for the current "
+        "version string is what made an older mirror invisible"
+    )
+    assert "every component" in step, "the read runs over every component, not the root"
+    assert "delete" in step, (
         "the refusal must name the way out: a version literal nobody reads gets "
         "deleted, not declared"
     )
+    assert "#111" in step, "the published case must be named as out of scope"
 
 
 def test_core_prose_lines_stay_within_the_house_width():
