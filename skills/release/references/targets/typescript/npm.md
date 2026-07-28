@@ -4,6 +4,7 @@ toolchain: npm
 fingerprint: package-lock.json
 version_source: package.json#.version
 derived_manifests: []
+relock_command: npm install --package-lock-only
 gate_command: npm ci && npm test && npm run lint
 build_command: npm run build && npm pack
 artifact_pattern: "*-<version>.tgz"
@@ -34,6 +35,15 @@ demonstrated it did not.
 if the lockfile and `package.json` disagree. That is the latent-dependency detector for
 this technology — the direct analogue of `uv sync`, and the same reason: a dependency that
 is installed but undeclared has to fail *here*, not at a user's first install.
+
+**`package-lock.json` repeats the package's own version — twice.** Once in the root object
+and once in the `""` entry of `packages`. So this adapter has the same shape the Rust one
+documents: stamping `package.json` leaves the lockfile stale, `npm ci` then fails because
+the two disagree, and the release commit carries a mismatched pair. `relock_command: npm
+install --package-lock-only` refreshes the lock without touching `node_modules`; the core
+runs it after the stamp and stages the result. Verify the flag against your npm version
+before de-stubbing, and never widen it to a plain `npm install`, which re-resolves
+dependencies and would smuggle an unreviewed upgrade into the release commit.
 
 **`npm publish` is irreversible in a way tagging is not.** A published version cannot be
 re-published, and unpublish windows are narrow. It sits after the confirmation checkpoint

@@ -6,6 +6,7 @@ version_source: .claude-plugin/plugin.json#.version
 derived_manifests:
   - .claude-plugin/marketplace.json#.plugins[0].version
   - pyproject.toml#project.version
+relock_command: uv lock
 gate_command: uv sync && uv run pytest && uv run ruff check . && uv run black --check .
 build_command: null
 artifact_pattern: null
@@ -42,6 +43,15 @@ present in this repo — every uv project has one. `git-tag-only` wins on preced
 its fingerprint is the more specific signal. If you ever find `/release` proposing a
 `dist/*.whl` for this repo, detection picked the wrong adapter; fix the precedence table
 in the contract rather than editing this file.
+
+**`uv.lock` carries this project's own version, so the stamp makes it stale.** Even with
+`package = false` the root project has an entry in the lockfile, and it repeats the version
+that `pyproject.toml` declares. Stamping the three manifests without refreshing the lock
+would put a mismatched pair in the release commit, and the next clean `uv sync` on anyone's
+machine would rewrite the file the release claimed was current. That is why
+`relock_command: uv lock` is declared: the core runs it after the stamp and stages
+`uv.lock` into the same commit. It is not a `derived_manifests` entry because nobody edits a
+lockfile by hand.
 
 **`uv sync` before the tests is not decoration.** It rebuilds the environment from
 `uv.lock`, which is the only way a dependency that is installed-but-undeclared shows

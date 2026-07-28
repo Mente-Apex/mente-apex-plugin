@@ -20,9 +20,9 @@ actual command set). One file is exactly one command set — one reason to chang
 `python.md` branching uv-versus-poetry would have two, which is why the tree has two
 levels.
 
-## The thirteen fields
+## The fourteen fields
 
-Declared as YAML frontmatter. Every field is required; six may be `null`.
+Declared as YAML frontmatter. Every field is required; seven may be `null`.
 
 | Field | Meaning | `null` allowed |
 |---|---|---|
@@ -31,6 +31,7 @@ Declared as YAML frontmatter. Every field is required; six may be `null`.
 | `fingerprint` | The file whose presence selects this adapter. | no |
 | `version_source` | `path/to/file#selector` — the one canonical version literal. | yes — targets where the tag itself is the version and no manifest carries it |
 | `derived_manifests` | List of `path#selector` stamped *from* the source. | yes — empty list |
+| `relock_command` | Regenerates the lockfile the stamp just invalidated. | yes — targets whose lockfile does not record the project's own version |
 | `gate_command` | Clean rebuild from the lockfile, then the red/green check. | no |
 | `build_command` | Produce distributable artifacts. | yes — no-build targets |
 | `artifact_pattern` | Glob the build must emit. Verified, never assumed. | yes — iff no build |
@@ -81,6 +82,44 @@ contract field.
 mapping, the role's value is that mapping's single key. **If it holds more than one entry,
 refuse and ask which** — do not pick. Guessing here is the whole failure this field exists
 to prevent, and it would arrive at Step 10 where nothing else is checking.
+
+### `relock_command` — a lockfile that records its own project's version
+
+Most lockfiles pin *dependencies*, and a version bump does not touch them. Several pin the
+project **itself**: `Cargo.lock` carries an entry for the crate being built, this repo's
+own `uv.lock` carries `version = "…"` for the root project, and `package-lock.json` repeats
+the package's version twice. For those targets the stamp in Step 5 makes the lockfile stale
+the moment it lands, and nothing downstream notices until the toolchain refuses to publish
+from a dirty tree — after the confirmation checkpoint, on a branch that is already
+committed and tagged.
+
+**Why this is not just another `derived_manifests` entry.** Entries there are `path#selector`
+files the core *stamps*, by rewriting the addressed field. A lockfile is not stamped: it is
+**regenerated** by the toolchain, from the manifest, with a hash and a resolution the core
+has no business hand-editing. Listing it as derived would also collide with the core's
+single-version-literal check, which excludes lockfiles precisely because they legitimately
+repeat versions the adapter never declared.
+
+So the adapter names a *command*, and the core runs it in the one window where its output
+can still be staged — after the stamp, before the build that consumes it, before the commit:
+
+```yaml
+relock_command: uv lock                             # uv
+relock_command: npm install --package-lock-only     # npm
+relock_command: cargo generate-lockfile --offline   # cargo
+relock_command: null                                # nothing pins this project's version
+```
+
+`null` is a positive claim, exactly like the other nullable fields: **stamping this target's
+manifests cannot make anything stale.** Maven declares it — it has no lockfile at all.
+
+The core stages whatever the command modified, so the command must be *narrow*. A relock
+that also upgrades dependencies (`npm install`, `cargo update`) sweeps an unreviewed
+dependency change into the release commit; prefer the offline, manifest-only form of your
+toolchain's command and keep the resolution unchanged.
+
+`relock_command` requires a non-`null` `version_source`: a target that stamps nothing
+invalidates nothing, and `tests/test_release_skill_structure.py` fails the pair.
 
 ### `tag_pattern` — the tag convention is the target's, not the core's
 
@@ -205,6 +244,7 @@ First match wins:
 | `pom.xml` or `build.gradle` / `build.gradle.kts` | `java` |
 | `package.json` | `typescript` |
 | `pyproject.toml` or `setup.py` | `python` |
+| `Cargo.toml` | `rust` |
 
 **More than one technology matches** — a Python backend beside a TypeScript frontend — →
 **ask the user**. Never guess; the wrong guess publishes the wrong thing.
@@ -219,6 +259,7 @@ First match wins:
 | `python` | `uv.lock` | `uv` |
 | `typescript` | `package-lock.json` | `npm` |
 | `java` | `pom.xml` | `maven` |
+| `rust` | `Cargo.lock` | `cargo` |
 
 Note the ordering within `python` is load-bearing: this very repo matches **both**
 `git-tag-only` and `uv`. `git-tag-only` is listed first because it is the more specific
@@ -234,9 +275,10 @@ deliberate act.
 
 ## Adding an adapter
 
-1. Create `references/targets/<technology>/<toolchain>.md` with all thirteen fields.
+1. Create `references/targets/<technology>/<toolchain>.md` with all fourteen fields.
    `tag_pattern` is the one people forget, because `v<version>` feels like a default
-   rather than a choice.
+   rather than a choice. `relock_command` is the one people get wrong: check whether your
+   lockfile records the project's *own* version before declaring it `null`.
 2. Declare `status: stub` until you have cut a real release with it.
 3. Add its fingerprint row to the Level 2 table above, positioned so its precedence
    against existing adapters is explicit.
