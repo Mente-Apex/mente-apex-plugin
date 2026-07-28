@@ -141,4 +141,4 @@ def test_unreachable_remote_does_not_raise(clone):
     run("git", "remote", "set-url", "origin", "/nonexistent/origin.git", cwd=clone)
     # The fetch fails; the stale remote-tracking ref is still usable, and a
     # stale ref can only under-report a merge, never invent one.
-    assert isinstance(merged_branch.report(clone), list)
+    assert "Branch feat/x has been merged into main." in merged_branch.report(clone)
