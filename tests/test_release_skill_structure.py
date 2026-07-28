@@ -1646,6 +1646,47 @@ def test_core_declares_every_hard_refusal():
         assert refusal in text, f"core does not document the refusal: {refusal}"
 
 
+def test_core_discovers_components_from_tracked_files_only():
+    """The exclusion rule is one rule, not a skip-list.
+
+    Only git-tracked files count as build evidence, which eliminates
+    node_modules, .venv, dist, build and target in one move because all of them
+    are gitignored — and stays correct as repositories change, which a hardcoded
+    list would not.
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    assert "component" in text.lower(), "the core must name the unit it discovers"
+    assert "tracked" in text.lower(), "the discovery rule must be stated"
+    for skip_listed in ("node_modules", ".venv", "dist/", "target/"):
+        assert skip_listed not in text, (
+            f"{skip_listed!r} is a skip-list entry; the rule is tracked-files-only, "
+            "and naming directories individually is what goes stale"
+        )
+
+
+def test_core_asks_whenever_more_than_one_component_is_found():
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
+    assert "more than one component" in text
+    assert "check only" in text, "the second component kind must be named"
+    assert (
+        "build and release" in text
+    ), "the first component kind must be named alongside it"
+
+
+def test_the_two_language_refusal_moved_inside_a_component():
+    """Strengthened, not weakened.
+
+    mente-apex-memory escaped the old repo-wide refusal only because its
+    package.json files happen to sit in subfolders. Scoping the refusal to a
+    single component turns that accident into the rule.
+    """
+    text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    assert "within a component" in text, (
+        "the refusal must be scoped to a component, or the repo-wide version "
+        "silently forbids exactly the repositories this design exists to support"
+    )
+
+
 def test_core_links_the_shared_git_resolution():
     text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
     assert (
