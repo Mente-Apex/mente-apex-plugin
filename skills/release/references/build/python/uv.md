@@ -17,9 +17,10 @@ distribution_names:
 # python / uv
 
 A `uv`-managed Python project that builds a wheel. `pyproject.toml` holds the single
-version literal; package metadata derives from it, so there is usually nothing to stamp —
-`derived_manifests` is empty. If a project grows a second manifest carrying the version,
-add it here rather than letting the core find an undeclared literal and refuse.
+version literal; package metadata derives from it, so there is usually nothing else that
+mirrors it. If a project grows a second manifest carrying the version, add it to that
+project's `references/distributions/` adapter rather than letting the core find an
+undeclared literal and refuse — `derived_manifests` lives there now, not on this file.
 
 Derived from the verified release procedure in Mente-Apex/menteapex-memory-system#202.
 
