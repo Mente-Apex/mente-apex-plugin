@@ -239,14 +239,19 @@ component that failed. Show each failing output verbatim. Do not offer to fix it
 gate is a different job, and mixing a fix into a release is how an unrelated change ships
 unreviewed.
 
-## Step 3 — Verify there is exactly one version literal
+## Step 3 — Verify the version literals
 
-Skip this step entirely when the adapter's `version_source` is `null`. That target keeps
-no version literal in the tree at all — the tag is the version — so there is no canonical
-occurrence to compare anything against, and every match would be prose.
+Two checks run here, and they ask different questions. Run both: each is blind to exactly
+what the other sees.
+
+### The single-literal search
+
+Skip this check entirely when the root component's `version_source` is `null`. That target
+keeps no version literal in the tree at all — the tag is the version — so there is no
+canonical occurrence to compare anything against, and every match would be prose.
 
 Otherwise, search the repository for the current version string. Every occurrence must be
-either the adapter's `version_source` or a declared entry in `derived_manifests`.
+either that component's `version_source` or a declared entry in `derived_manifests`.
 
 An undeclared occurrence → **refuse**, listing the file and line. It means either a
 manifest that will silently keep the old version after stamping, or an adapter that is out
@@ -265,6 +270,33 @@ Exclude three kinds of path, none of them named after any particular repository:
 Ask the user if the third category is ambiguous in their repository, and let the adapter or
 the user name any further path to exclude. Do not extend the list on your own judgement: an
 exclusion invented mid-release is how a real manifest gets skipped.
+
+### The per-component self-version read
+
+The search above asks: of everything that says the *current* version, is each occurrence
+declared? That question is blind by construction to a manifest pinned at an *older*
+version — a search for the current string does not match a file still carrying the previous
+one, so a mirror left behind stays invisible release after release, which is precisely how
+one sat two versions stale through several of them.
+
+So do not search for it. For **every component** — the one being released and every
+check-only one alike — open that component's manifest and read its **own version field**: the
+manifest's own version key, addressed in whatever selector language the contract declares
+for that file's format. **This is a field read, not a text search**: it returns whatever
+value the manifest actually holds, so a stale one is read and compared rather than passed
+over. A component whose `version_source` is `null` carries no such field and is skipped.
+
+Compare each **self-version** so read against the canonical version — the one the root
+component's `version_source` holds. Any component that disagrees → **refuse**, naming the
+component, the value found there, and the canonical value. The way out is one of exactly
+two, and only the user can say which:
+
+1. **Nothing consumes that literal.** Then **delete the field**. A version nobody reads is
+   not a version to maintain, and leaving it in place only re-arms the same drift for the
+   next release.
+2. **Something consumes it.** Then that component is published in its own right, which this
+   workflow does not yet do — it is issue #111. Say so and stop; do not stamp a second
+   component by hand to get past the refusal.
 
 ## Step 4 — Decide the version
 

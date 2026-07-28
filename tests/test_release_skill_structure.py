@@ -1879,6 +1879,26 @@ def test_single_literal_search_names_no_repository_specific_path():
         ), f"exclusion list dropped a category: {universal}"
 
 
+def test_step_three_checks_every_component_manifest_against_the_canonical_version():
+    """The bug the old check could not see.
+
+    Step 3 asked: of everything that says the CURRENT version, is each declared?
+    That finds an undeclared copy of the current version and is blind by
+    construction to a mirror pinned at an older one — which is why
+    worker/package.json sat at 0.3.0 against a project at 0.4.0, unseen.
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
+    assert "self-version" in text or "own version field" in text, (
+        "the check must read each manifest's own version key, not search for a "
+        "version string — a text search cannot see a stale literal"
+    )
+    assert "component" in text
+    assert "delete" in text, (
+        "the refusal must name the way out: a version literal nobody reads gets "
+        "deleted, not declared"
+    )
+
+
 def test_core_prose_lines_stay_within_the_house_width():
     """One line ran ~100 columns against the file's otherwise consistent ~95 (#102.6).
 
