@@ -28,7 +28,9 @@ CONTRACT_FIELDS = (
     "gate_command",
     "build_command",
     "artifact_pattern",
+    "tag_pattern",
     "publish_command",
+    "release_command",
     "install_verify_command",
     "distribution_names",
 )
@@ -40,7 +42,22 @@ CONTRACT_FIELDS = (
 # `<distribution-name:role>` is bound per adapter, by the roles that adapter's
 # `distribution_names` map declares — which is also what makes a null map with a
 # name-using command a failure rather than a silent omission.
-UNPARAMETERISED_PLACEHOLDERS = ("<remote>", "<default>", "<version>")
+#
+# `<tag>` is the expansion of this adapter's own `tag_pattern`, computed once the
+# version settles. It exists so that `release_command` can name the tag without
+# either re-encoding the convention or forcing the core to know it (#96, #97).
+#
+# `<release-notes-file>` is a path the core writes the grouped Conventional
+# Commit notes to. A path rather than the notes themselves: release notes are
+# multi-line and contain quotes and backticks, and inlining them into a command
+# string makes every adapter responsible for shell quoting.
+UNPARAMETERISED_PLACEHOLDERS = (
+    "<remote>",
+    "<default>",
+    "<version>",
+    "<tag>",
+    "<release-notes-file>",
+)
 DISTRIBUTION_NAME_PREFIX = "<distribution-name:"
 
 # Every adapter must be classified. This mapping is the classification — a new
@@ -319,6 +336,41 @@ def test_uv_adapter_verifies_a_real_artifact_pattern():
     assert fields.get("build_command") != "null", "a uv package target does build"
 
 
+def test_every_adapter_declares_a_non_null_tag_pattern():
+    """`tag_pattern` has no null case: every target creates a tag.
+
+    The tag is the one artifact this workflow always produces — a `null`
+    `build_command` or `release_command` is a real target shape, but a release
+    with no tag is not a release. A null here would be an unfilled field wearing
+    a contract value's clothes.
+    """
+    offenders = []
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        value = (fields.get("tag_pattern") or "").strip()
+        if not value or value == "null":
+            offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {value or '(absent)'}")
+    assert not offenders, "adapters declare no tag_pattern:\n" + "\n".join(offenders)
+
+
+def test_no_tag_pattern_references_the_tag_it_defines():
+    """`tag_pattern` is what `<tag>` expands *to* — it cannot contain `<tag>`.
+
+    Nothing else in the placeholder vocabulary is self-referential, so the
+    substitution loop has no cycle detection and would not acquire any: this is
+    the one field that could introduce one.
+    """
+    offenders = [
+        str(adapter.relative_to(REPO_ROOT))
+        for adapter in adapter_files()
+        if "<tag>"
+        in str(
+            parse_frontmatter(adapter.read_text(encoding="utf-8")).get("tag_pattern")
+        )
+    ]
+    assert not offenders, f"tag_pattern is self-referential in: {offenders}"
+
+
 def test_no_adapter_recommends_a_forbidden_python_toolchain():
     """uv is canonical: pip/pipx/pyenv must never appear as an instruction."""
     offenders = []
@@ -573,6 +625,23 @@ TECHNOLOGY_LITERALS = (
     "pyproject",
 )
 
+# Forge CLIs. A *second* axis of variation from the one above: `gh` is not a
+# build tool, so it sailed through TECHNOLOGY_LITERALS while hardcoding GitHub
+# into Step 9 (#97). Kept as its own tuple because it is also checked
+# differently — see the guard below.
+#
+# Matched on word boundaries, not as substrings. `"gh "` as a plain substring
+# hits "throu[gh ]those" and "enou[gh ]to", so the naive form fails *closed* on
+# ordinary prose — a guard that cries wolf gets deleted, which is how you end up
+# with no guard at all.
+FORGE_CLIS = ("gh", "glab", "tea")
+FORGE_LITERALS = ("releases/new",)
+
+# Tag conventions. `v<version>` is one ecosystem's convention wearing the
+# costume of a universal one: a Go submodule tags `sub/module/v1.2.3` and Maven
+# frequently tags `<artifactId>-<version>` (#96).
+TAG_CONVENTION_LITERALS = ("v<version>", "v<new>", "v<old>")
+
 
 def strip_fenced_code_blocks(markdown_text):
     """Drop ``` fenced blocks so illustrative examples aren't read as instructions."""
@@ -585,6 +654,26 @@ def strip_fenced_code_blocks(markdown_text):
         if not inside_fence:
             kept_lines.append(line)
     return "\n".join(kept_lines)
+
+
+def forge_and_tag_offenders(text):
+    """Forge CLIs and tag conventions appearing in core-workflow prose.
+
+    Kept a pure function of the text, like the rules above, so the word-boundary
+    behaviour can be pinned directly instead of only through whatever the real
+    SKILL.md happens to say today.
+    """
+    offenders = [
+        literal
+        for literal in FORGE_LITERALS + TAG_CONVENTION_LITERALS
+        if literal in text
+    ]
+    offenders += [
+        command_line_interface
+        for command_line_interface in FORGE_CLIS
+        if re.search(rf"\b{command_line_interface}\b", text)
+    ]
+    return offenders
 
 
 def test_release_skill_declares_house_style_frontmatter():
@@ -616,6 +705,66 @@ def test_core_workflow_contains_no_technology_specific_command():
         f"core SKILL.md names technology-specific commands {offenders} — "
         "these belong in references/targets/, not the core"
     )
+
+
+def test_core_names_no_forge_and_no_tag_convention():
+    """The two seam leaks of #96 and #97, pinned over the *unstripped* file.
+
+    Deliberately not `strip_fenced_code_blocks`. The guard above strips fences so
+    illustrative examples are not read as instructions — but Step 9's leak was
+    `gh release create` sitting *inside* a fence, as a live instruction. Stripping
+    fences here would leave the guard blind to the exact shape the leak took.
+
+    Fences in the core are not off-limits generally: `git tag -a`, `git add`, and
+    `git reset --hard` all live in them legitimately. Git is the portable
+    substrate every target shares. A forge CLI and a tag convention are not.
+    """
+    offenders = forge_and_tag_offenders(RELEASE_SKILL_MD.read_text(encoding="utf-8"))
+    assert not offenders, (
+        f"core SKILL.md hardcodes forge or tag conventions {offenders} — "
+        "these belong in the adapter's `release_command` and `tag_pattern`"
+    )
+
+
+def test_forge_rule_is_matched_on_word_boundaries():
+    """The rule itself, including the false positive that shaped it."""
+    assert forge_and_tag_offenders("gh release create <tag>") == ["gh"]
+    assert forge_and_tag_offenders("glab release create <tag>") == ["glab"]
+    assert forge_and_tag_offenders("tag it as v<version>") == ["v<version>"]
+    assert forge_and_tag_offenders("point them at releases/new") == ["releases/new"]
+
+    # Ordinary prose that a substring match would have condemned.
+    assert forge_and_tag_offenders("every later step reads through those fields") == []
+    assert forge_and_tag_offenders("that is high enough to matter") == []
+    # `<tag>` is the abstraction, never an offender.
+    assert forge_and_tag_offenders('git tag -a "<tag>" -m "<tag>"') == []
+
+
+def test_core_reads_the_tag_and_release_fields():
+    """The positive counterpart to the guard above, which deletion satisfies.
+
+    Removing Step 9's release-creation entirely would make the forge literals
+    vanish and turn that test green while losing the behaviour. This asserts the
+    core actually routes through the two new fields.
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    for field in ("tag_pattern", "release_command"):
+        assert field in text, f"core does not read the adapter's `{field}`"
+    assert "<tag>" in text, "core must substitute the expanded tag"
+
+
+def test_core_treats_a_failed_release_object_as_a_shipped_release():
+    """Graceful degradation, generalised off `gh`.
+
+    `release_command` runs *after* the push, so by the time it can fail the tag
+    is already public and the release has shipped. Reporting that as a failed
+    release tells the user to re-cut something that is already out.
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
+    assert "release object" in text, "core must name what degrades away"
+    assert (
+        "not a failed release" in text
+    ), "core must state that a failed release_command is not a failed release"
 
 
 def test_core_declares_every_hard_refusal():

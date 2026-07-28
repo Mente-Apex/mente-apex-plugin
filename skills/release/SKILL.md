@@ -35,9 +35,9 @@ first thing that leaves the machine — never a second.
 
 ## The seam
 
-This workflow names no technology. It knows only the eleven-field adapter contract in
-[references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md); the concrete commands
-live in `references/targets/<technology>/<toolchain>.md`.
+This workflow names no technology and no forge. It knows only the thirteen-field adapter
+contract in [references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md); the concrete
+commands live in `references/targets/<technology>/<toolchain>.md`.
 
 That is deliberate and it is enforced: `tests/test_release_skill_structure.py` fails if
 this file names a build tool. **Adding a release target means adding an adapter file, never
@@ -49,15 +49,16 @@ contract is missing a field — extend the contract, not the core.
 Read [references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md) and follow its
 two-level detection: technology first, then toolchain, both by declared precedence.
 
-Load the resolved adapter file and hold its eleven contract fields — `version_source`,
-`gate_command`, `artifact_pattern`, and the rest. **Every later step reads through those
-fields.** This is the only place a concrete target enters the workflow.
+Load the resolved adapter file and hold its thirteen contract fields — `version_source`,
+`gate_command`, `artifact_pattern`, `tag_pattern`, and the rest. **Every later step reads
+through those fields.** This is the only place a concrete target enters the workflow.
 
 A field's value may contain a placeholder from the contract's closed vocabulary —
-`<remote>`, `<default>`, `<version>`, and `<distribution-name:role>` for each role the
-adapter declares. Substitute each one as the contract's placeholder table directs, and
-**refuse on any token outside that table**: an unbound placeholder is a value you would
-have to guess, and a guess here publishes or verifies the wrong thing. A
+`<remote>`, `<default>`, `<version>`, `<tag>`, `<release-notes-file>`, and
+`<distribution-name:role>` for each role the adapter declares. Substitute each one as the
+contract's placeholder table directs, and **refuse on any token outside that table**: an
+unbound placeholder is a value you would have to guess, and a guess here publishes or
+verifies the wrong thing. A
 `<distribution-name:role>` whose role the adapter does not declare is unbound — including
 when `distribution_names` is `null`, which is a claim that no command needs a name.
 
@@ -65,8 +66,8 @@ If a `distribution_names` selector resolves to a mapping rather than a value, th
 that mapping's single key; **more than one entry is a refusal, not a choice** — ask which.
 
 An adapter may also carry the `status` marker described below. It is a maturity flag on
-the file, not a twelfth contract field: no step reads through it, and the contract stays
-eleven fields wide.
+the file, not a fourteenth contract field: no step reads through it, and the contract stays
+thirteen fields wide.
 
 Stop here if:
 
@@ -196,8 +197,13 @@ ruling:
 Version : 1.4.2 → 1.5.0   (minor: 4 feat, 2 fix since v1.4.2)
 ```
 
-Once the version is settled — derived or user-chosen — refuse if its tag already exists;
-Step 8 carries the rationale.
+Once the version is settled — derived or user-chosen — **expand the adapter's
+`tag_pattern` and hold the result as `<tag>`.** Every later mention of a tag reads that
+string: the commit subject, the annotated tag, the checkpoint, the rollback commands, and
+the report. Expand it here rather than at Step 8 because the refusal below needs it, and
+because a tag the user is asked to confirm should be the one that will actually exist.
+
+Then refuse if that tag already exists; Step 8 carries the rationale.
 
 ## Step 5 — Stamp
 
@@ -267,7 +273,7 @@ Otherwise: one commit, on the default branch, containing only the stamp:
 ```bash
 git add <version_source> <each derived manifest>
 git commit -F - <<'MSG'
-chore(release): v<version>
+chore(release): <tag>
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 MSG
@@ -287,10 +293,13 @@ the work is not delegated.
 
 ## Step 8 — Tag
 
-Annotated, never lightweight — an annotated tag carries an author, a date, and a message:
+Annotated, never lightweight — an annotated tag carries an author, a date, and a message.
+The name is `<tag>`, expanded from the adapter's `tag_pattern` back at Step 4 — this
+workflow has no tag convention of its own, because `v1.2.3` is one ecosystem's habit and
+not a universal one:
 
 ```bash
-git tag -a "v<version>" -m "v<version>"
+git tag -a "<tag>" -m "<tag>"
 ```
 
 **The tag already exists** → refuse. Re-tagging a released version is how two different
@@ -317,12 +326,12 @@ Release plan
   Version   : <old> → <new>
   Stamped   : <version_source>, <derived manifests>, or "nothing to stamp"
   Artifacts : <verified artifact names, or "none — no build for this target">
-  Tag       : v<new>  (created locally)
+  Tag       : <tag>  (created locally)
   Will push : <publish_command>
-  Then      : gh release create v<new>
+  Then      : <release_command, or "nothing — the tag is the release">
 
   Not yet pushed. To abandon:
-    git tag -d v<new>
+    git tag -d <tag>
     git reset --hard HEAD~1
 ```
 
@@ -344,7 +353,7 @@ say what state the repo is in and how to leave it. The rollback is the same two 
 the checkpoint printed:
 
 ```bash
-git tag -d v<version>
+git tag -d <tag>
 git reset --hard HEAD~1
 ```
 
@@ -359,16 +368,28 @@ past it silently, and do not re-run the command hoping it is idempotent. Report 
 that state — published, not pushed — name the version, and stop. Recovering is a decision
 the user makes, and the usual answer is to push the tag by hand once the cause is fixed.
 
-Then create the GitHub release, with notes grouped from the Conventional Commits since the
-previous tag:
+## Step 9a — Create the release object
 
-```bash
-gh release create "v<version>" --title "v<version>" --notes "<grouped notes>"
-```
+Skip this step entirely when the adapter's `release_command` is `null`. That target's tag
+*is* its release; there is no separate object to create. Say so in the report rather than
+leaving a blank line where a URL would go.
 
-**`gh` missing or unauthenticated** → this is not a failed release. The tag is pushed and
-the release is real. Report the tag, skip the GitHub release, give the user the
-`releases/new` URL, and suggest `gh auth login` for next time.
+Otherwise, group the Conventional Commits since the previous tag into release notes, write
+them to a file, and run the adapter's `release_command` with `<release-notes-file>` bound
+to that path and `<tag>` to the expanded tag. **Write the notes to a file rather than
+inlining them**: commit subjects contain quotes, backticks and `$`, and a note substituted
+into a command string is a note that can execute.
+
+The forge is the adapter's business, not this workflow's. A repository on GitLab, Gitea,
+or a self-hosted forge changes one field and nothing here.
+
+**A failure at this step is not a failed release.** The push in Step 9 already happened —
+the tag is public and the version is installable, so there is nothing to re-cut and the
+rollback commands above no longer apply. This is the same shape as a missing or
+unauthenticated forge CLI, which is the common case: the credential is absent, not the
+release. Report it as a release that shipped **without its release object**, name the tag
+that is live, show the command that failed, and stop. Do not retry, and do not offer the
+rollback.
 
 ## Step 10 — Verify the install
 
@@ -393,12 +414,16 @@ release that shipped with an install problem, and say what is wrong.
 ```
 ✓ Released <version>
   Target    : <technology> / <toolchain>
-  Commit    : <sha>  chore(release): v<version>, or "none — no manifest for this target"
-  Tag       : v<version>  (pushed)
+  Commit    : <sha>  chore(release): <tag>, or "none — no manifest for this target"
+  Tag       : <tag>  (pushed)
   Artifacts : <names, or "none">
-  Release   : <url>
+  Release   : <url>, or "none — the tag is the release", or "not created — <reason>"
   Installed : <verified version>  → <resolved path>
 ```
+
+The `Release` line has three honest answers and no fourth. Printing a URL
+unconditionally — including on the degraded path where Step 9a failed — reports a release
+object that does not exist, which is worse than saying nothing.
 
 If anything stopped early, say exactly where and what the user must do to finish. A
 partially completed release is worse than a refused one *only* if nobody says so.
