@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import merged_branch
 import pytest
@@ -260,3 +261,26 @@ def test_hook_survives_malformed_stdin(tmp_path):
     )
     assert completed.returncode == 0
     assert completed.stdout == ""
+
+
+HOOKS_JSON = os.path.join(os.path.dirname(HOOK_PATH), "hooks.json")
+
+
+def test_hooks_json_declares_the_hook_portably():
+    declaration = json.loads(Path(HOOKS_JSON).read_text())
+    session_start = declaration["hooks"]["SessionStart"]
+    commands = [hook["command"] for group in session_start for hook in group["hooks"]]
+    assert any("merged_branch.py" in command for command in commands)
+    for command in commands:
+        # An absolute path here works on exactly one machine.
+        assert "${CLAUDE_PLUGIN_ROOT}" in command
+
+
+def test_every_declared_hook_script_exists():
+    declaration = json.loads(Path(HOOKS_JSON).read_text())
+    plugin_root = os.path.dirname(os.path.dirname(HOOKS_JSON))
+    for groups in declaration["hooks"].values():
+        for group in groups:
+            for hook in group["hooks"]:
+                relative = hook["command"].split("${CLAUDE_PLUGIN_ROOT}/", 1)[1]
+                assert os.path.exists(os.path.join(plugin_root, relative)), relative

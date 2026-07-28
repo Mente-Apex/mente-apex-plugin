@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/merged_branch.py",
+            "timeout": 10,
+            "statusMessage": "Checking whether the branch was merged"
+          }
+        ]
+      }
+    ]
+  }
+}

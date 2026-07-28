@@ -1,7 +1,11 @@
 # Resolving the remote and the default branch
 
 Shared by every skill in this plugin that pushes, targets a base branch, or checks
-whether the working branch is current — today `/ship` (Step 1) and `/release` (Step 1).
+whether the working branch is current — today `/ship` (Step 1), `/release` (Step 1), and
+the SessionStart merged-branch hook. The hook is the one non-shell consumer: it carries a
+Python transcription of the ladder in `hooks/merged_branch.py::resolve_default`, in the
+same layer order, with layer 3 (`gh`) treated as optional. Change the ladder here and that
+transcription changes with it.
 
 This lives in one file for a specific reason. The resolution is fifteen lines of
 non-obvious shell, and the failure it guards against is silent: `refs/remotes/<remote>/HEAD`

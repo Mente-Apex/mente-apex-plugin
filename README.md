@@ -53,6 +53,15 @@ section-aware merge when machines diverge (optional LLM merge via
 > the `mente-apex-memory` MCP server — is the knowledge brain that captures and recalls
 > facts and has its own `mem sync`. Config sync is not the brain.
 
+## Hooks
+
+**SessionStart — merged-branch detector.** After a PR is merged in the forge UI, the plugin
+injects one line of context so the agent knows without being told: that the current branch
+has landed, how far the local default branch has fallen behind, and which merged branches
+are still sitting in `refs/heads`. It runs one single-branch `git fetch` and is silent on a
+clean repo, a non-repo directory, a detached HEAD, or an unmerged branch. Squash- and
+rebase-merges rewrite commits and are invisible to the local ancestor check.
+
 ## Installation
 
 ```bash
