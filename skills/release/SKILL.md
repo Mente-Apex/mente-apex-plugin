@@ -107,9 +107,10 @@ Resolve the distribution separately, from shipping evidence at the repository ro
 ships nothing further beyond the tag is a complete shape, not a detection failure. Do not
 reach for a near-fit adapter to fill the gap.
 
-Load the resolved adapter file and hold its fourteen contract fields — `version_source`,
-`gate_command`, `artifact_pattern`, `tag_pattern`, and the rest. **Every later step reads
-through those fields.** This is the only place a concrete target enters the workflow.
+Load each component's resolved adapter file and hold its fourteen contract fields —
+`version_source`, `gate_command`, `artifact_pattern`, `tag_pattern`, and the rest. **Every
+later step reads through those fields, per component.** This is the only place a concrete
+target enters the workflow.
 
 A field's value may contain a placeholder from the contract's closed vocabulary —
 `<remote>`, `<default>`, `<version>`, `<tag>`, `<release-notes-file>`, and
@@ -208,15 +209,28 @@ ask "did you merge it?"; look.
 
 ## Step 2 — Preflight
 
-Run the adapter's `gate_command`. It begins with a clean rebuild from the lockfile for a
-reason worth stating in the report: **that rebuild is a latent-dependency detector.** A
-test importing a package that nothing declares passes indefinitely on the machine that
-happens to have it installed, and fails the first time the environment is rebuilt. A
-release is the worst possible moment to find out.
+Run **every** component's `gate_command`, in the order Step 0 listed them, each from its own
+component's directory. Report a result per component, named — in a repository with three of
+them, "the gate failed" says nothing about where to look.
 
-Non-zero exit → **refuse**. Show the failing output verbatim. Do not offer to fix it here;
-a red gate is a different job, and mixing a fix into a release is how an unrelated change
-ships unreviewed.
+**Check only is a component claim, and it is not the same as `build_command: null`.**
+Marking a component check only says "this release is not building me" — a statement about
+this run, made by whoever answered Step 0. `build_command: null` says "this toolchain builds
+nothing, ever" — a statement about the toolchain, made by the adapter. They sit at different
+levels and neither implies the other: a check-only component whose adapter declares a real
+build command is still not built here, and a build-and-release component whose adapter
+declares `build_command: null` still emits nothing at Step 6. What check only never means is
+exempt from the gate. Every component is gated; only one is built.
+
+Each gate begins with a clean rebuild from that component's lockfile for a reason worth
+stating in the report: **that rebuild is a latent-dependency detector.** A test importing a
+package that nothing declares passes indefinitely on the machine that happens to have it
+installed, and fails the first time the environment is rebuilt. A release is the worst
+possible moment to find out.
+
+Non-zero exit from any component's gate → **refuse**, naming which component failed. Show
+the failing output verbatim. Do not offer to fix it here; a red gate is a different job, and
+mixing a fix into a release is how an unrelated change ships unreviewed.
 
 ## Step 3 — Verify there is exactly one version literal
 
@@ -320,26 +334,28 @@ this point should always name the files it left behind.
 
 ## Step 5a — Refresh the lockfile
 
-Skip this step entirely when the adapter's `relock_command` is `null` — that target's
-lockfile does not record the project's own version, so the stamp invalidated nothing. Skip
-it too when Step 5 was skipped: nothing was stamped, so nothing is stale.
+Relock **every** component whose adapter's `relock_command` is non-`null`, in the order Step
+0 listed them. Skip a component whose `relock_command` is `null` — that component's lockfile
+does not record the project's own version, so the stamp invalidated nothing. Skip the step
+entirely when Step 5 was skipped: nothing was stamped, so nothing is stale.
 
 Otherwise the stamp has just made the lockfile disagree with the manifest, and the lockfile
 is not something to edit by hand — the toolchain regenerates it. Capture the tree's state,
-run the command, and hold what it changed:
+run each component's command from that component's directory, and hold what it changed:
 
 ```bash
 git status --porcelain          # before: the stamp's files, and nothing else
-# run the adapter's relock_command
+# for each component, from its directory: run that component's relock_command
 git status --porcelain          # after: the difference is what the relock touched
 ```
 
-**Hold the tracked files whose status changed as the *relocked set*.** Step 7 stages them
-alongside the stamped manifests; that is the whole point of running the command here rather
-than leaving it to the build. Report the set explicitly — a relock that changed nothing is
-a fine outcome to state, but an unstated one hides a command that silently did nothing.
+**Hold the tracked files whose status changed as the *relocked set*** — the union across
+every component that relocked. Step 7 stages them alongside the stamped manifests; that is
+the whole point of running the commands here rather than leaving them to the build. Report
+the set explicitly, per component — a relock that changed nothing is a fine outcome to
+state, but an unstated one hides a command that silently did nothing.
 
-Two refusals:
+Two refusals, each naming the component it happened in:
 
 - **The command exits non-zero.** Report its output verbatim and stop. Step 5's stamp is on
   disk and uncommitted, so name the files to revert exactly as Step 6 does.
@@ -353,15 +369,21 @@ the adapter's command is meant to be the narrow, manifest-only form.
 
 ## Step 6 — Build and verify the artifacts
 
-Skip this step entirely when the adapter's `build_command` is `null`.
+Build **only** the components Step 0 marked *build and release* — today exactly one. A
+check-only component was gated at Step 2 and stops there; nothing of it is built, stamped,
+tagged or published, however much its adapter could build.
 
-Otherwise run it, then **expand `artifact_pattern` and check what actually landed**:
+Skip this step entirely when that component's `build_command` is `null`.
+
+Otherwise, for each component being built, run its command from that component's directory,
+then **expand that component's `artifact_pattern` and check what actually landed**:
 
 ```bash
-ls -1 <expanded artifact_pattern>
+ls -1 <expanded artifact_pattern>     # per component being built
 ```
 
-No match → **refuse**. Report the pattern and what the build actually emitted.
+No match → **refuse**, naming the component. Report the pattern and what its build actually
+emitted.
 
 Step 5's stamp is on disk and uncommitted at this point, so the refusal is not finished
 until it says how to undo it. Give the user the exact command, naming every file that was

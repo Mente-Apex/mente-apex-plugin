@@ -1687,6 +1687,27 @@ def test_the_two_language_refusal_moved_inside_a_component():
     )
 
 
+def test_gate_relock_and_build_run_per_component():
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
+    for field in ("gate_command", "relock_command", "build_command"):
+        window = text[text.index(field) - 400 : text.index(field) + 400]
+        assert "component" in window, (
+            f"{field} must be scoped to a component; a single run of it is the "
+            "assumption this design removes"
+        )
+
+
+def test_only_build_and_release_components_are_built():
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
+    assert "check only" in text
+    assert "gate" in text
+    # The distinction that must not collapse into build_command: null.
+    assert "not the same as" in text or "differs from" in text, (
+        "the core must say check-only is not build_command: null — one is a "
+        "toolchain claim, the other a component claim"
+    )
+
+
 def test_core_links_the_shared_git_resolution():
     text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
     assert (
