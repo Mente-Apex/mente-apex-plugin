@@ -1850,6 +1850,63 @@ def test_core_asks_whenever_more_than_one_component_is_found():
     ), "the first component kind must be named alongside it"
 
 
+def test_core_proceeds_silently_on_the_single_component_path():
+    """The ask is covered; the silence was not — and silence is the guarantee
+    whose loss regresses every repository releasing today. A one-component repo
+    that grows a confirmation prompt is a behaviour change nobody asked for.
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
+    assert "exactly one component" in text, "the single-component case must be named"
+    assert (
+        "proceed silently" in text
+    ), "the single-component path must be stated as silent, not merely un-asked"
+
+
+def test_the_multi_component_ask_proposes_and_requires_confirmation():
+    """ "Never pick" contradicted the block beneath it, which had already picked.
+
+    Propose-and-confirm is what was intended, but the auto-propose reading has a
+    real failure mode: a user reflexively confirming a root-defaults proposal is
+    the confident wrong answer this design fights. So the proposal must be stated
+    as a proposal AND the confirmation must be stated as required.
+    """
+    component_stage = " ".join(
+        _section_after(
+            RELEASE_SKILL_MD.read_text(encoding="utf-8"), "### Discover the components"
+        )
+        .lower()
+        .replace("*", "")
+        .split()
+    )
+    assert "propose" in component_stage, "the assignment is a proposal, not a ruling"
+    assert "confirmation" in component_stage or "confirm" in component_stage, (
+        "the proposal alone must never be enough to proceed on; explicit "
+        "confirmation is what settles the assignment"
+    )
+    assert "never pick" not in component_stage, (
+        "'never pick' contradicts a block that has already marked one component "
+        "build and release — the honest rule is propose, then require a yes"
+    )
+
+
+def test_core_discloses_that_the_multi_component_path_is_unexercised():
+    """`status: stub` covers unexercised *adapters*; there is no marker for an
+    unexercised *core path*, and this branch ships one. Said in prose instead.
+
+    Scoped per section, because "unexercised" already occurs in the contract's
+    `status: stub` prose — an unscoped scan passes against the text that has
+    said nothing about the core path.
+    """
+    for document, name, heading in (
+        (RELEASE_SKILL_MD, "SKILL.md", "### Discover the components"),
+        (ADAPTER_CONTRACT, "ADAPTER-CONTRACT.md", "### Stage 1"),
+    ):
+        section = _section_after(document.read_text(encoding="utf-8"), heading).lower()
+        assert (
+            "unexercised" in section
+        ), f"{name}'s {heading} does not disclose that the path is unexercised"
+
+
 def test_the_two_language_refusal_moved_inside_a_component():
     """Strengthened, not weakened.
 
@@ -2127,13 +2184,30 @@ def test_core_verifies_both_the_built_thing_and_the_shipped_thing():
     prose, so an unscoped version of this test would pass against the OLD
     single-command Step 10, unchanged.
     """
-    step = _section_after(
-        RELEASE_SKILL_MD.read_text(encoding="utf-8"), "## Step 10 — Verify"
-    ).lower()
+    step = " ".join(
+        _section_after(
+            RELEASE_SKILL_MD.read_text(encoding="utf-8"), "## Step 10 — Verify"
+        )
+        .lower()
+        .split()
+    )
     assert "install_verify_command" in step
     assert (
         "outside" in step and "checkout" in step
     ), "the install check must require the shim to resolve outside the checkout"
+    # Naming the build adapter is not enough: the step's own opening sentence
+    # names it, so a guard asserting only that stays green with the build-side
+    # command deleted. Pin the *instruction* — the field, read off that adapter.
+    assert "build adapter `install_verify_command`" in step, (
+        "'both run' is the rule this step exists to enforce, so the build side's "
+        "command must be read off the build adapter as explicitly as the "
+        "distribution side's is off its own"
+    )
+    assert "its own `install_verify_command`" in step, (
+        "the distribution side reads the field off its own adapter; a step that "
+        "names the field once cannot be running two checks, which is the compound "
+        "this step undid"
+    )
     assert "distribution adapter" in step, (
         "the shipped thing is verified by its own command; folding both into one "
         "field is what made that command a compound"
@@ -2141,6 +2215,11 @@ def test_core_verifies_both_the_built_thing_and_the_shipped_thing():
     assert "no distribution adapter" in step, (
         "resolving none is legitimate and the step must say so rather than "
         "failing on an absent field"
+    )
+    assert "nothing runs" in step, (
+        "when the build adapter's install_verify_command is `null` too, neither "
+        "check runs — 'only the build check above' was false for exactly the "
+        "shape python/uv-nobuild already declares"
     )
 
 
