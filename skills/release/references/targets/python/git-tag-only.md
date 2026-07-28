@@ -11,6 +11,7 @@ build_command: null
 artifact_pattern: null
 publish_command: git push <remote> <default> --follow-tags
 install_verify_command: claude plugin list
+distribution_names: null
 ---
 
 # python / git-tag-only

@@ -30,8 +30,18 @@ CONTRACT_FIELDS = (
     "artifact_pattern",
     "publish_command",
     "install_verify_command",
+    "distribution_names",
 )
 
+# The closed placeholder vocabulary. A command may contain these and nothing
+# else: an unbound token is a value the running agent has to guess at, which is
+# the class of error `artifact_pattern` exists to prevent (#98).
+#
+# `<distribution-name:role>` is bound per adapter, by the roles that adapter's
+# `distribution_names` map declares — which is also what makes a null map with a
+# name-using command a failure rather than a silent omission.
+UNPARAMETERISED_PLACEHOLDERS = ("<remote>", "<default>", "<version>")
+DISTRIBUTION_NAME_PREFIX = "<distribution-name:"
 
 # Every adapter must be classified. This mapping is the classification — a new
 # adapter absent from it fails `test_every_adapter_is_classified_exactly_once`
@@ -100,9 +110,11 @@ def parse_frontmatter(text):
 # set. The inverse — matching only well-formed tokens — fails open, because
 # `<TOOL_NAME>` or `<gemName>` simply would not match and would be read as "not a
 # placeholder at all" rather than as an unbound one.
+_PLACEHOLDER_TOKEN = re.compile(r"<[^<>\s][^<>]{0,60}>")
 
 # A role key inside `distribution_names:` once the frontmatter parser has folded
 # the nested mapping to a single space-joined line.
+_ROLE_DECLARATION = re.compile(r"([a-z][a-z0-9_-]*):\s*(\S+)")
 
 
 # ── Policy helpers ────────────────────────────────────────────────────────────
@@ -111,6 +123,29 @@ def parse_frontmatter(text):
 # policy. Filesystem-backed tests feed these the four real adapters, while
 # table-driven tests feed them synthetic ones — which is the only way to exercise
 # a rule (fingerprint collision) that today's adapters never trigger (#101.2).
+
+
+def declared_roles(distribution_names_value):
+    """Role keys declared by a `distribution_names` map, as the parser folds it."""
+    value = (distribution_names_value or "").strip()
+    if not value or value == "null":
+        return set()
+    return {role for role, _selector in _ROLE_DECLARATION.findall(value)}
+
+
+def unbound_placeholders(field_values, roles=frozenset()):
+    """Placeholder tokens in the values that the contract does not bind.
+
+    `roles` are this adapter's declared `distribution_names` keys; only those
+    make the matching `<distribution-name:role>` token bound. That is what makes
+    a null map beside a name-using command a failure rather than an omission.
+    """
+    bound = set(UNPARAMETERISED_PLACEHOLDERS)
+    bound.update(f"{DISTRIBUTION_NAME_PREFIX}{role}>" for role in roles)
+    used_tokens = set()
+    for value in field_values:
+        used_tokens.update(_PLACEHOLDER_TOKEN.findall(str(value)))
+    return sorted(used_tokens - bound)
 
 
 def level_two_rows(contract_text):
@@ -458,6 +493,72 @@ def test_level_two_rows_are_parsed_from_the_real_contract():
         toolchain for technology, toolchain in rows if technology == "python"
     ]
     assert python_order.index("git-tag-only") < python_order.index("uv")
+
+
+def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
+    """A token the contract does not bind is a value the agent has to guess.
+
+    `python/uv` is a working, non-stub adapter, so this bit a real release path:
+    `<tool-name>` and `<version>` were both used and neither was bound (#98).
+
+    Because a `<distribution-name:role>` token is bound only by a role the
+    adapter declares, this also enforces the contract's `null`-iff rule: a null
+    `distribution_names` beside a name-using command leaves the token unbound.
+    """
+    offenders = []
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        unbound = unbound_placeholders(
+            (str(fields.get(field, "")) for field in CONTRACT_FIELDS),
+            declared_roles(fields.get("distribution_names")),
+        )
+        if unbound:
+            offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {unbound}")
+    assert not offenders, (
+        "adapters use placeholders the contract does not bind:\n"
+        + "\n".join(offenders)
+        + f"\nbound without a role: {list(UNPARAMETERISED_PLACEHOLDERS)}"
+    )
+
+
+def test_unbound_placeholder_rule_catches_a_synthetic_unknown_token():
+    """The rule itself, pinned without depending on any adapter being wrong."""
+    assert unbound_placeholders(["push <remote> <default>"]) == []
+    assert unbound_placeholders(["install <package-name>"]) == ["<package-name>"]
+    assert unbound_placeholders([None, "", "dist/*-<version>.whl"]) == []
+
+    # Matching must be permissive: these all failed to match the old regex and
+    # were therefore read as "not a placeholder" rather than as unbound.
+    assert unbound_placeholders(["which <TOOL_NAME>"]) == ["<TOOL_NAME>"]
+    assert unbound_placeholders(["gem install <gemName>"]) == ["<gemName>"]
+    assert unbound_placeholders(["<pkg.name>"]) == ["<pkg.name>"]
+    assert unbound_placeholders(["<path/to/thing>"]) == ["<path/to/thing>"]
+
+    # A role token is bound only by a declared role.
+    assert unbound_placeholders(["which <distribution-name:binary>"]) == [
+        "<distribution-name:binary>"
+    ]
+    assert unbound_placeholders(["which <distribution-name:binary>"], {"binary"}) == []
+    assert unbound_placeholders(["which <distribution-name:binary>"], {"package"}) == [
+        "<distribution-name:binary>"
+    ]
+
+
+def test_declared_roles_reads_the_folded_map():
+    assert declared_roles(None) == set()
+    assert declared_roles("null") == set()
+    assert declared_roles("binary: pyproject.toml#project.scripts") == {"binary"}
+    assert declared_roles("package: package.json#.name binary: package.json#.bin") == {
+        "package",
+        "binary",
+    }
+
+
+def test_contract_binds_every_placeholder_in_the_vocabulary():
+    text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    expected = list(UNPARAMETERISED_PLACEHOLDERS) + ["<distribution-name:role>"]
+    missing = [token for token in expected if f"`{token}`" not in text]
+    assert not missing, f"contract does not bind its own placeholders: {missing}"
 
 
 RELEASE_SKILL_MD = RELEASE_SKILL_DIR / "SKILL.md"

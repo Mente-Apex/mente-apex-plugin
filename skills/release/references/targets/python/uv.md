@@ -8,7 +8,9 @@ gate_command: uv sync && uv run pytest && uv run ruff check . && uv run black --
 build_command: uv build
 artifact_pattern: dist/*-<version>-py3-none-any.whl
 publish_command: git push <remote> <default> --follow-tags
-install_verify_command: uv tool install --force . && which <tool-name>
+install_verify_command: uv tool install --force . && which <distribution-name:binary>
+distribution_names:
+  binary: pyproject.toml#project.scripts
 ---
 
 # python / uv
@@ -29,6 +31,19 @@ repo told users to install `mente_apex_mem-*` for a long time, and nothing caugh
 because no step ever compared the documented name against a real build. That is why
 `artifact_pattern` exists and why the core *verifies* rather than assumes: expand the glob
 after building and refuse if it matches nothing.
+
+**The binary name is not the project name either.** `<distribution-name:binary>` for this
+toolchain is the *key* under `[project.scripts]` — the shim `uv tool install` puts on
+`PATH` — and it routinely differs from `[project].name`. A project named
+`mente-apex-memory` whose `[project.scripts]` declares `mem = "..."` installs a binary
+called `mem`; `which mente-apex-memory` finds nothing and the install check reports a
+failure that is not real. The `binary` role selects the `[project.scripts]`
+table and takes its key, never the project name. If the table holds more than one
+entry the contract requires a refusal, not a choice — ask which entry point to verify.
+
+This is the same error as the wheel-name trap above, one step later: the build artifact is
+verified against a declared pattern, but the *installed* name was left to inference until
+`distribution_names` bound it (#98).
 
 **`uv sync` before the tests is the latent-dependency detector.** It rebuilds from
 `uv.lock`. A test importing a package that no dependency declares — `uvicorn`, in the
@@ -55,9 +70,9 @@ development checkout:
 
 ```bash
 uv tool install --force .
-which <tool-name>                 # must be under ~/.local/bin, not the checkout
-head -1 "$(which <tool-name>)"    # shebang must point at the tool venv
-<tool-name> --version             # must print the version just cut
+which <distribution-name:binary>                 # must be under ~/.local/bin, not the checkout
+head -1 "$(which <distribution-name:binary>)"    # shebang must point at the tool venv
+<distribution-name:binary> --version             # must print the version just cut
 ```
 
 A shim whose shebang points into the development checkout means the "installed" tool is

@@ -35,7 +35,7 @@ first thing that leaves the machine — never a second.
 
 ## The seam
 
-This workflow names no technology. It knows only the ten-field adapter contract in
+This workflow names no technology. It knows only the eleven-field adapter contract in
 [references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md); the concrete commands
 live in `references/targets/<technology>/<toolchain>.md`.
 
@@ -49,13 +49,24 @@ contract is missing a field — extend the contract, not the core.
 Read [references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md) and follow its
 two-level detection: technology first, then toolchain, both by declared precedence.
 
-Load the resolved adapter file and hold its ten contract fields — `version_source`,
+Load the resolved adapter file and hold its eleven contract fields — `version_source`,
 `gate_command`, `artifact_pattern`, and the rest. **Every later step reads through those
 fields.** This is the only place a concrete target enters the workflow.
 
+A field's value may contain a placeholder from the contract's closed vocabulary —
+`<remote>`, `<default>`, `<version>`, and `<distribution-name:role>` for each role the
+adapter declares. Substitute each one as the contract's placeholder table directs, and
+**refuse on any token outside that table**: an unbound placeholder is a value you would
+have to guess, and a guess here publishes or verifies the wrong thing. A
+`<distribution-name:role>` whose role the adapter does not declare is unbound — including
+when `distribution_names` is `null`, which is a claim that no command needs a name.
+
+If a `distribution_names` selector resolves to a mapping rather than a value, the role is
+that mapping's single key; **more than one entry is a refusal, not a choice** — ask which.
+
 An adapter may also carry the `status` marker described below. It is a maturity flag on
-the file, not an eleventh contract field: no step reads through it, and the contract stays
-ten fields wide.
+the file, not a twelfth contract field: no step reads through it, and the contract stays
+eleven fields wide.
 
 Stop here if:
 
@@ -324,7 +335,8 @@ commands. Do not proceed on ambiguity.
 
 ## Step 9 — Publish
 
-Run the adapter's `publish_command`, substituting the resolved `<remote>` and `<default>`.
+Run the adapter's `publish_command`, substituting every placeholder it carries as Step 0
+directs — for most adapters that is the resolved `<remote>` and `<default>`.
 Stop and report on any failure — never paper over a failed push, and never retry blindly.
 
 A failure here is the one stop that lands on a *committed and tagged* default branch, so
@@ -360,7 +372,11 @@ the release is real. Report the tag, skip the GitHub release, give the user the
 
 ## Step 10 — Verify the install
 
-Run the adapter's `install_verify_command` and confirm two things:
+Run the adapter's `install_verify_command`, substituting its placeholders as Step 0
+directs. This is the command most likely to carry `<distribution-name:role>` and
+`<version>`, so resolve those before running rather than pattern-matching past them.
+
+Confirm two things:
 
 1. The reported version is the one just cut.
 2. The resolved binary lives **outside** the development checkout.

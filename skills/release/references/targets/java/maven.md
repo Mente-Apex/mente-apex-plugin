@@ -8,7 +8,10 @@ gate_command: mvn -B clean verify
 build_command: mvn -B package
 artifact_pattern: target/*-<version>.jar
 publish_command: mvn -B deploy && git push <remote> <default> --follow-tags
-install_verify_command: mvn -B dependency:get -Dartifact=<group>:<artifact>:<version>
+install_verify_command: mvn -B dependency:get -Dartifact=<distribution-name:group>:<distribution-name:artifact>:<version>
+distribution_names:
+  group: pom.xml#/project/groupId
+  artifact: pom.xml#/project/artifactId
 status: stub
 ---
 
@@ -18,6 +21,12 @@ status: stub
 Remove `status: stub` only after cutting a release with it.
 
 ## What to verify before removing the stub marker
+
+**A Maven coordinate is two names, declared as two roles.** `group` and `artifact` are
+separate selectors, and the `:` that joins them lives in `install_verify_command` where it
+is Maven's syntax — not inside a selector value, where it would be the contract's. Verify
+both resolve against a real multi-module POM, where `groupId` is frequently inherited from
+`/project/parent/groupId` and absent from the child.
 
 **Maven's version literal is not a leaf.** `pom.xml` has both `/project/version` and
 `/project/parent/version`, and multi-module builds repeat the version in every child POM.
