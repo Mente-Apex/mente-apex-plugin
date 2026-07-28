@@ -80,15 +80,8 @@ DISTRIBUTION_NAME_PREFIX = "<distribution-name:"
 # adapter absent from it fails `test_every_adapter_is_classified_exactly_once`
 # rather than being silently skipped (#101.1).
 ADAPTER_CLASSIFICATIONS = {
-    "python/git-tag-only": "working",
+    "python/uv-nobuild": "working",
     "python/uv": "working",
-    # Working under the contract's "status: stub" rule: authored adapter-first by
-    # running every command against mente-apex-memory, including the three parts it
-    # did NOT inherit from python/uv (the second stamped manifest, the two
-    # JavaScript suites in the gate, the plugin-list check). The contract carries
-    # the reasoning — including why "cut a release with it first" cannot be the
-    # exit condition — so it is not restated here.
-    "python/uv-plugin": "working",
     "typescript/npm": "stub",
     "java/maven": "stub",
     "rust/cargo": "stub",
@@ -99,7 +92,7 @@ ADAPTER_CLASSIFICATIONS = {
 # invisible until publish time: the release commit carries an inconsistent pair
 # and the toolchain refuses on a dirty tree at the last step (#99).
 LOCKFILE_CARRIES_OWN_VERSION = (
-    "python/git-tag-only",
+    "python/uv-nobuild",
     "python/uv",
     "typescript/npm",
     "rust/cargo",
@@ -613,7 +606,7 @@ def test_the_no_build_adapter_makes_the_build_manifest_canonical():
     reopened the axis tangle. Nothing reads either literal when there is no build,
     so the direction is free, and uniform beats faithful.
     """
-    adapter = BUILD_DIR / "python" / "git-tag-only.md"
+    adapter = BUILD_DIR / "python" / "uv-nobuild.md"
     fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
     assert fields.get("version_source") == "pyproject.toml#project.version"
     assert (
@@ -1029,7 +1022,7 @@ def test_fingerprint_ranking_rule_catches_a_synthetic_collision():
     assert unranked_shared_fingerprints(colliding, ["uv"]) == ["poetry"]
 
     # Disjoint fingerprints are never offenders, rowed or not.
-    disjoint = [("uv", "uv.lock"), ("git-tag-only", "plugin.json")]
+    disjoint = [("uv", "uv.lock"), ("uv-nobuild", "plugin.json")]
     assert unranked_shared_fingerprints(disjoint, []) == []
 
 
@@ -1060,18 +1053,19 @@ def test_every_adapter_fingerprint_matches_its_detection_row():
     ), "fingerprint field and detection table disagree:\n" + "\n".join(offenders)
 
 
-def test_the_package_false_case_resolves_to_exactly_one_adapter():
-    """The concrete contradiction from #100, pinned as a resolution.
+def test_the_package_false_case_resolves_without_a_plugin_manifest():
+    """The empty square in the 2x2, closed.
 
     A uv project declaring `package = false` with no `.claude-plugin/` directory
-    matches `git-tag-only` by predicate and `uv` by `uv.lock`. Both are rowed, and
-    the table's order — first match wins — makes the outcome deterministic rather
-    than a coin toss between two adapters with incompatible build steps.
+    used to match git-tag-only by predicate, then refuse at the version_source
+    check because that adapter addressed plugin manifests the project had not
+    got. Under the split it resolves to a build adapter with no distribution
+    adapter — which is a legitimate repository, not a dead end.
     """
     contract_text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
     rowed = level_two_fingerprints(contract_text)
     predicate = "pyproject.toml#tool.uv.package==false"
-    assert predicate in rowed[("python", "git-tag-only")]
+    assert predicate in rowed[("python", "uv-nobuild")]
     assert predicate not in rowed[("python", "uv")]
 
     python_order = [
@@ -1079,13 +1073,31 @@ def test_the_package_false_case_resolves_to_exactly_one_adapter():
         for technology, toolchain in level_two_rows(contract_text)
         if technology == "python"
     ]
-    assert python_order.index("git-tag-only") < python_order.index("uv")
+    assert python_order.index("uv-nobuild") < python_order.index("uv")
 
-    # Resolution is only safe because a matched fingerprint is not assumed to fit:
-    # git-tag-only addresses three plugin manifests such a project has not got.
+    adapter = BUILD_DIR / "python" / "uv-nobuild.md"
+    fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+    assert "derived_manifests" not in fields, (
+        "a build adapter names no manifest mirrors; that is the distribution "
+        "adapter's field, and conflating them is what this split removed"
+    )
+
+
+def test_no_build_adapter_fingerprints_on_a_plugin_manifest():
+    """The concrete regression: mente-apex-memory's skipped wheel.
+
+    `.claude-plugin/plugin.json` is shipping evidence. It was a git-tag-only
+    fingerprint entry, so it decided `build_command: null` for a repository that
+    builds a wheel perfectly well, and the release cut a tag without one.
+    """
+    offenders = []
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        if ".claude-plugin" in str(fields.get("fingerprint", "")):
+            offenders.append(str(adapter.relative_to(REPO_ROOT)))
     assert (
-        "`version_source` file does not exist" in contract_text
-    ), "the contract must refuse when the resolved adapter addresses absent files"
+        not offenders
+    ), "build adapters fingerprinting on shipping evidence:\n" + "\n".join(offenders)
 
 
 def test_fingerprint_selectors_reads_both_written_forms():
@@ -1197,12 +1209,12 @@ def test_selector_references_collects_from_every_field_that_carries_one():
 def test_level_two_rows_are_parsed_from_the_real_contract():
     """The rule above is only as good as this parse — pin it against the real file."""
     rows = level_two_rows(ADAPTER_CONTRACT.read_text(encoding="utf-8"))
-    assert ("python", "git-tag-only") in rows and ("python", "uv") in rows
-    # Order is precedence: git-tag-only must precede uv (this repo matches both).
+    assert ("python", "uv-nobuild") in rows and ("python", "uv") in rows
+    # Order is precedence: uv-nobuild must precede uv (this repo matches both).
     python_order = [
         toolchain for technology, toolchain in rows if technology == "python"
     ]
-    assert python_order.index("git-tag-only") < python_order.index("uv")
+    assert python_order.index("uv-nobuild") < python_order.index("uv")
 
 
 def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():

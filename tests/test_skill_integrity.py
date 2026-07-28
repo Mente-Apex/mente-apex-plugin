@@ -185,7 +185,7 @@ HOOKS_DIR = REPO_ROOT / "hooks"
 # interpreter; they all go through uv, which resolves the operator's pin (a
 # repo's own .python-version first, then `uv python pin --global`).
 # Only `python3` is flagged. The uv form ends in a bare `python`, and the word
-# on its own is ordinary prose ("Target : python / git-tag-only"); `python3` is
+# on its own is ordinary prose ("Target : python / uv-nobuild"); `python3` is
 # never anything but a reach for the system binary.
 SYSTEM_PYTHON = re.compile(r"(?<![\w./-])python3(?![\w.-])")
 UV_PYTHON_PREFIX = "uv run --no-project"
