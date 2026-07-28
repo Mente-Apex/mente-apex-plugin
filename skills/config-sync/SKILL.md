@@ -12,7 +12,7 @@ user-invocable: true
 disable-model-invocation: false
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 metadata:
-  version: "0.9.0"
+  version: "0.10.0"
 ---
 
 # config-sync
@@ -48,18 +48,25 @@ if [ ! -f "$ENGINE" ]; then
     2>/dev/null | sort -V | tail -1)
 fi
 [ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
+
+# Never the interpreter the OS ships: it is 3.9 on stock macOS, and every
+# module this plugin ships is formatted at py314, which emits syntax older
+# interpreters reject outright. uv resolves a 3.14 whatever is on PATH.
+# A function, not a variable — zsh does not word-split an unquoted expansion,
+# so a multi-word PY="..." would be looked up as one long command name.
+py() { uv run --no-project --python 3.14 python "$@"; }
 CONFIG="$HOME/.claude/config-sync-config.json"
 REPO="$HOME/.claude/config-sync-repo"
 
 # One-time, idempotent rename of any legacy open-memory-* paths. No-op otherwise.
-python3 "$ENGINE" migrate
+py "$ENGINE" migrate
 
 if [ ! -f "$CONFIG" ]; then
   echo "config sync is not set up yet. Run /config-sync-setup first."
   exit 1
 fi
 
-MACHINE_ID=$(python3 "$ENGINE" machine-id)
+MACHINE_ID=$(py "$ENGINE" machine-id)
 ```
 
 ## Step 1 — Scan for secrets, then export and push local state
@@ -68,7 +75,7 @@ Before exporting, scan for any secret-like content that shouldn't be committed.
 `scan --gate` prints any findings and exits non-zero when the config isn't clean:
 
 ```bash
-if python3 "$ENGINE" scan --gate; then
+if py "$ENGINE" scan --gate; then
   SCAN_CLEAN=1
 else
   SCAN_CLEAN=0
@@ -82,17 +89,17 @@ to ask whether to continue anyway. If the user declines, stop here. If they acce
 ```bash
 # Reconcile first (mutating): drop orphaned plugin flags + prune stale caches.
 # Kept separate from export so export/backup stay pure, side-effect-free queries.
-python3 "$ENGINE" reconcile
+py "$ENGINE" reconcile
 
 # Export through the propagator seam: writes the machine snapshot (config —
 # CLAUDE.md/memory/rules/settings) AND skill/agent bundles under bundles/
 # (all files, hash-gated). Replaces the old `export > machines/…` line.
-EXPORT_OUT=$(python3 "$ENGINE" propagate-export "$REPO")
+EXPORT_OUT=$(py "$ENGINE" propagate-export "$REPO")
 printf '%s\n' "$EXPORT_OUT"
 
 # Surface plugin-provenance warnings: plugins that can't reach your other machines
 # because their marketplace isn't a shareable git/GitHub remote.
-printf '%s\n' "$EXPORT_OUT" | python3 -c "
+printf '%s\n' "$EXPORT_OUT" | py -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -148,7 +155,7 @@ no dependence on filename sort order. This is where diverged CLAUDE.md / memory
 files get combined intelligently.
 
 ```bash
-python3 "$ENGINE" consolidate "$REPO"
+py "$ENGINE" consolidate "$REPO"
 ```
 
 > **Bundle deletions propagate; config deletions don't.** Skill/agent **bundles**
@@ -164,13 +171,13 @@ python3 "$ENGINE" consolidate "$REPO"
 Always back up before touching local state so the user has a rollback path.
 
 ```bash
-BACKUP_PATH=$(python3 "$ENGINE" backup)
+BACKUP_PATH=$(py "$ENGINE" backup)
 echo "Backup saved: $BACKUP_PATH"
 
 # Applies config (SnapshotPropagator: consolidated snapshot → CLAUDE.md/memory/rules/
 # settings) AND skill/agent bundles (ContentBundlePropagator). Prints per-propagator
 # {applied, skipped, conflicts}. Replaces the old standalone `import`.
-APPLY=$(python3 "$ENGINE" propagate-apply "$REPO")
+APPLY=$(py "$ENGINE" propagate-apply "$REPO")
 printf '%s\n' "$APPLY"
 ```
 
@@ -184,7 +191,7 @@ keep your local version, or take the network's?"), then apply their choice:
 
 ```bash
 # winner is "local" (keep this machine's) or "repo" (take the network's)
-python3 "$ENGINE" resolve-bundle "$REPO" "<kind>" "<name>" "<winner>"
+py "$ENGINE" resolve-bundle "$REPO" "<kind>" "<name>" "<winner>"
 ```
 
 **Resolve bundle deletions (if any).** For each entry in `content-bundle.deletions` —
@@ -195,7 +202,7 @@ a skill/agent the network retired that this machine still has — ask the user w
 ```bash
 # decision is "remove" (delete this machine's copy) or "keep" (retain it; the next
 # export re-adds it for everyone)
-python3 "$ENGINE" resolve-deletion "$REPO" "<kind>" "<name>" "<decision>"
+py "$ENGINE" resolve-deletion "$REPO" "<kind>" "<name>" "<decision>"
 ```
 
 ## Step 4b — Converge marketplace plugins (plan → consent → apply)
@@ -205,7 +212,7 @@ propagator. **Plugins** converge here from the desired-state manifest. First com
 the plan (pure — nothing is mutated):
 
 ```bash
-PLAN=$(python3 "$ENGINE" plugins-plan "$REPO")
+PLAN=$(py "$ENGINE" plugins-plan "$REPO")
 printf '%s\n' "$PLAN"
 ```
 
@@ -218,7 +225,7 @@ marketplace whose source is unknown).
 If the user declines, stop here — nothing has been changed. If they accept, execute:
 
 ```bash
-APPLIED_PLUGINS=$(python3 "$ENGINE" plugins-apply "$REPO")
+APPLIED_PLUGINS=$(py "$ENGINE" plugins-apply "$REPO")
 printf '%s\n' "$APPLIED_PLUGINS"
 ```
 
@@ -230,7 +237,7 @@ Finally, install any **legacy** shared skills/rules/agents from older machines
 (never overwriting local copies):
 
 ```bash
-SHARED_RESULT=$(python3 "$ENGINE" apply-shared "$REPO")
+SHARED_RESULT=$(py "$ENGINE" apply-shared "$REPO")
 printf '%s\n' "$SHARED_RESULT"
 ```
 
@@ -239,13 +246,13 @@ printf '%s\n' "$SHARED_RESULT"
 After the plugin convergence step, provision any repo-shipped hooks this machine
 is missing:
 
-1. Run `python3 "$ENGINE" hooks-plan`. It scans the declared roots
+1. Run `py "$ENGINE" hooks-plan`. It scans the declared roots
    (`CONFIG_SYNC_ROOT_*`) for `hooks/hooks.json` files and lists the hook
    registrations missing from `~/.claude/settings.json`.
 2. If `actions` is empty, say so and move on.
 3. Otherwise show the user each hook it would register (event, matcher, command)
    and ask once for confirmation — this is the single consent gate.
-4. On yes, run `python3 "$ENGINE" hooks-apply`. It writes each
+4. On yes, run `py "$ENGINE" hooks-apply`. It writes each
    registration in portable `${TOKEN}` form, tagged `# config-sync:<id>` so it is
    never confused with a hand-added hook. Re-running is a safe no-op.
 
@@ -266,10 +273,10 @@ git push origin main 2>&1
 
 ```bash
 # Summarise what changed for the log (sum applied entries across both propagators)
-APPLIED=$(printf '%s\n' "$APPLY" | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(len(section.get('applied',[])) for section in d.values()))" 2>/dev/null || echo "?")
-SHARED_IN=$(printf '%s\n' "$SHARED_RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['installed']))" 2>/dev/null || echo "0")
+APPLIED=$(printf '%s\n' "$APPLY" | py -c "import json,sys; d=json.load(sys.stdin); print(sum(len(section.get('applied',[])) for section in d.values()))" 2>/dev/null || echo "?")
+SHARED_IN=$(printf '%s\n' "$SHARED_RESULT" | py -c "import json,sys; print(len(json.load(sys.stdin)['installed']))" 2>/dev/null || echo "0")
 
-python3 "$ENGINE" log-sync "$REPO" "sync" "$APPLIED file(s) updated, $SHARED_IN shared artifact(s) installed"
+py "$ENGINE" log-sync "$REPO" "sync" "$APPLIED file(s) updated, $SHARED_IN shared artifact(s) installed"
 
 # Persist the log entry. log-sync writes meta/sync-log.json but does not commit it,
 # so without this the sync log never reaches the remote — it just accumulates as an
@@ -280,7 +287,7 @@ git diff --cached --quiet && echo "sync log unchanged" || \
   { git commit -m "log: sync entry for $MACHINE_ID at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; git push origin main 2>&1; }
 
 # Update last_sync timestamp in local config
-python3 - <<EOF
+py - <<EOF
 import json
 from pathlib import Path
 from datetime import datetime, timezone
@@ -329,6 +336,13 @@ if [ ! -f "$ENGINE" ]; then
     2>/dev/null | sort -V | tail -1)
 fi
 [ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
+
+# Never the interpreter the OS ships: it is 3.9 on stock macOS, and every
+# module this plugin ships is formatted at py314, which emits syntax older
+# interpreters reject outright. uv resolves a 3.14 whatever is on PATH.
+# A function, not a variable — zsh does not word-split an unquoted expansion,
+# so a multi-word PY="..." would be looked up as one long command name.
+py() { uv run --no-project --python 3.14 python "$@"; }
 REPO="$HOME/.claude/config-sync-repo"
 
 if [ ! -d "$REPO" ]; then
@@ -337,14 +351,14 @@ if [ ! -d "$REPO" ]; then
 fi
 
 # Local inventory
-python3 "$ENGINE" status
+py "$ENGINE" status
 
 # Network: list all machines in the repo
 if [ -d "$REPO/machines" ]; then
   echo ""
   echo "── Network machines ────────────────────────────────"
   for snap in "$REPO/machines/"*.json; do
-    python3 - "$snap" <<'EOF'
+    py - "$snap" <<'EOF'
 import json, sys
 from pathlib import Path
 snapshot = json.loads(Path(sys.argv[1]).read_text())
@@ -358,7 +372,7 @@ fi
 if [ -d "$REPO/shared" ]; then
   echo ""
   echo "── Shared artifacts ─────────────────────────────────"
-  python3 - "$REPO" <<'EOF'
+  py - "$REPO" <<'EOF'
 import sys, subprocess
 from pathlib import Path
 
@@ -404,7 +418,7 @@ fi
 if [ -f "$REPO/meta/sync-log.json" ]; then
   echo ""
   echo "── Last 10 syncs ────────────────────────────────────"
-  python3 - "$REPO/meta/sync-log.json" <<'EOF'
+  py - "$REPO/meta/sync-log.json" <<'EOF'
 import json, sys
 from pathlib import Path
 log = json.loads(Path(sys.argv[1]).read_text()).get("syncs", [])
@@ -450,7 +464,7 @@ Once the user provides a resolution, write it into the consolidated snapshot and
 # Write the resolved content into $REPO/consolidated/snapshot.json
 # (replace the conflicted section with the chosen version), then re-apply so
 # local files reflect the resolution.
-python3 "$ENGINE" propagate-apply "$REPO"
+py "$ENGINE" propagate-apply "$REPO"
 ```
 
 Then continue to Step 5 (commit and push the resolved consolidated snapshot).

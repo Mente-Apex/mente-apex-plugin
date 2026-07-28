@@ -10,7 +10,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, AskUserQuestion
 metadata:
-  version: "0.3.1"
+  version: "0.4.0"
 ---
 
 # config-sync-setup
@@ -38,13 +38,20 @@ if [ ! -f "$ENGINE" ]; then
     2>/dev/null | sort -V | tail -1)
 fi
 [ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
+
+# Never the interpreter the OS ships: it is 3.9 on stock macOS, and every
+# module this plugin ships is formatted at py314, which emits syntax older
+# interpreters reject outright. uv resolves a 3.14 whatever is on PATH.
+# A function, not a variable — zsh does not word-split an unquoted expansion,
+# so a multi-word PY="..." would be looked up as one long command name.
+py() { uv run --no-project --python 3.14 python "$@"; }
 CONFIG="$HOME/.claude/config-sync-config.json"
 
 # One-time, idempotent rename of any legacy open-memory-* paths. No-op otherwise.
-python3 "$ENGINE" migrate
+py "$ENGINE" migrate
 
-python3 "$ENGINE" machine-id
-python3 "$ENGINE" status
+py "$ENGINE" machine-id
+py "$ENGINE" status
 ```
 
 If `~/.claude/config-sync-config.json` already exists, tell the user their current
@@ -55,7 +62,7 @@ run `/config-sync` instead if everything looks healthy.
 
 ```bash
 command -v git >/dev/null 2>&1 && echo "git: ok" || echo "git: MISSING — install git first"
-command -v python3 >/dev/null 2>&1 && echo "python3: ok" || echo "python3: MISSING"
+command -v uv >/dev/null 2>&1 && echo "uv: ok" || echo "uv: MISSING — install uv first (https://docs.astral.sh/uv/)"
 ```
 
 If anything is missing, stop and tell the user what to install.
@@ -106,7 +113,7 @@ committed. This is the same secret-scan gate `/config-sync` runs before every pu
 — `scan --gate` prints any findings and exits non-zero when the config isn't clean:
 
 ```bash
-if python3 "$ENGINE" scan --gate; then
+if py "$ENGINE" scan --gate; then
   SCAN_CLEAN=1
 else
   SCAN_CLEAN=0
@@ -133,14 +140,14 @@ git init
 git remote add origin "$REMOTE_URL"
 
 # Export current local state
-MACHINE_ID=$(python3 "$ENGINE" machine-id)
-python3 "$ENGINE" export > "$REPO/machines/$MACHINE_ID.json"
+MACHINE_ID=$(py "$ENGINE" machine-id)
+py "$ENGINE" export > "$REPO/machines/$MACHINE_ID.json"
 cp "$REPO/machines/$MACHINE_ID.json" "$REPO/consolidated/snapshot.json"
 
 echo '{"syncs":[]}' > "$REPO/meta/sync-log.json"
 
 git add .
-git commit -m "init: $(python3 "$ENGINE" machine-id) on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+git commit -m "init: $(py "$ENGINE" machine-id) on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 git branch -M main
 git push -u origin main
 ```
@@ -153,7 +160,7 @@ REPO="$HOME/.claude/config-sync-repo"
 # Back up current state before touching anything
 BACKUP="$HOME/.claude/config-sync-backups/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP"
-python3 "$ENGINE" export > "$BACKUP/pre-join-snapshot.json"
+py "$ENGINE" export > "$BACKUP/pre-join-snapshot.json"
 echo "Backup saved to $BACKUP"
 
 # Clone the remote (or pull if the dir already exists from a prior attempt)
@@ -163,8 +170,8 @@ else
   git clone "$REMOTE_URL" "$REPO"
 fi
 
-MACHINE_ID=$(python3 "$ENGINE" machine-id)
-python3 "$ENGINE" export > "$REPO/machines/$MACHINE_ID.json"
+MACHINE_ID=$(py "$ENGINE" machine-id)
+py "$ENGINE" export > "$REPO/machines/$MACHINE_ID.json"
 ```
 
 Ask the user how to handle existing local content:
@@ -190,7 +197,7 @@ echo "Keeping local state — will push this machine's snapshot to the repo."
 
 For **"Take theirs"**:
 ```bash
-python3 "$ENGINE" import "$REPO/consolidated/snapshot.json"
+py "$ENGINE" import "$REPO/consolidated/snapshot.json"
 ```
 
 ## Step 5 — Register this machine and push
@@ -204,12 +211,12 @@ git push origin main
 
 Save config:
 ```bash
-python3 - <<EOF
+py - <<EOF
 import json, os
 from pathlib import Path
 cfg = {
     "remote": "$REMOTE_URL",
-    "machine_id": "$(python3 "$ENGINE" machine-id)",
+    "machine_id": "$(py "$ENGINE" machine-id)",
     "last_sync": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 Path(os.path.expanduser("~/.claude/config-sync-config.json")).write_text(json.dumps(cfg, indent=2))
@@ -220,7 +227,7 @@ EOF
 ## Step 5b — Log the setup event
 
 ```bash
-python3 "$ENGINE" log-sync "$HOME/.claude/config-sync-repo" "setup" "machine joined repo"
+py "$ENGINE" log-sync "$HOME/.claude/config-sync-repo" "setup" "machine joined repo"
 ```
 
 ## Step 6 — Confirm
@@ -228,7 +235,7 @@ python3 "$ENGINE" log-sync "$HOME/.claude/config-sync-repo" "setup" "machine joi
 Tell the user:
 - Their machine ID
 - The remote URL
-- The current local inventory (output from `python3 "$ENGINE" status`)
+- The current local inventory (output from `py "$ENGINE" status`)
 - If they chose **Merge** on join: "Run `/config-sync` now to merge and apply the network."
 - Next step: "Run `/config-sync` any time you want to sync. Run `/config-sync status`
   to see the machines in your network, shared artifacts, and recent sync history."
