@@ -109,8 +109,9 @@ reach for a near-fit adapter to fill the gap.
 
 Load each component's resolved adapter file and hold its fourteen contract fields —
 `version_source`, `gate_command`, `artifact_pattern`, `tag_pattern`, and the rest. **Every
-later step reads through those fields, per component.** This is the only place a concrete
-target enters the workflow.
+later step reads through those fields, per component** — except `tag_pattern` and
+`publish_command`, which are read once and only from the root component, for the reason
+given above. This is the only place a concrete target enters the workflow.
 
 A field's value may contain a placeholder from the contract's closed vocabulary —
 `<remote>`, `<default>`, `<version>`, `<tag>`, `<release-notes-file>`, and
@@ -213,6 +214,11 @@ Run **every** component's `gate_command`, in the order Step 0 listed them, each 
 component's directory. Report a result per component, named — in a repository with three of
 them, "the gate failed" says nothing about where to look.
 
+**Run all of them before refusing; do not stop at the first red one.** The release is
+refused either way, so the only question is what the user learns per run: stopping early
+hides the second failure until they have fixed the first and re-run the whole gate. One pass
+that names every red component is the cheaper answer even when the gates are slow.
+
 **Check only is a component claim, and it is not the same as `build_command: null`.**
 Marking a component check only says "this release is not building me" — a statement about
 this run, made by whoever answered Step 0. `build_command: null` says "this toolchain builds
@@ -228,9 +234,10 @@ package that nothing declares passes indefinitely on the machine that happens to
 installed, and fails the first time the environment is rebuilt. A release is the worst
 possible moment to find out.
 
-Non-zero exit from any component's gate → **refuse**, naming which component failed. Show
-the failing output verbatim. Do not offer to fix it here; a red gate is a different job, and
-mixing a fix into a release is how an unrelated change ships unreviewed.
+Any component's gate exiting non-zero → **refuse** once the whole set has run, naming every
+component that failed. Show each failing output verbatim. Do not offer to fix it here; a red
+gate is a different job, and mixing a fix into a release is how an unrelated change ships
+unreviewed.
 
 ## Step 3 — Verify there is exactly one version literal
 
@@ -339,9 +346,14 @@ Relock **every** component whose adapter's `relock_command` is non-`null`, in th
 does not record the project's own version, so the stamp invalidated nothing. Skip the step
 entirely when Step 5 was skipped: nothing was stamped, so nothing is stale.
 
-Otherwise the stamp has just made the lockfile disagree with the manifest, and the lockfile
-is not something to edit by hand — the toolchain regenerates it. Capture the tree's state,
-run each component's command from that component's directory, and hold what it changed:
+**For the stamped component**, the stamp has just made its lockfile disagree with its
+manifest, and a lockfile is not something to edit by hand — the toolchain regenerates it.
+That justification reaches no further: a check-only component was never stamped, so nothing
+of its manifest moved and nothing of its lockfile is stale. Its relock runs to show that the
+lockfile still resolves, not to catch up with a version that changed.
+
+Capture the tree's state, run each component's command from that component's directory, and
+hold what it changed:
 
 ```bash
 git status --porcelain          # before: the stamp's files, and nothing else
@@ -354,6 +366,14 @@ every component that relocked. Step 7 stages them alongside the stamped manifest
 the whole point of running the commands here rather than leaving them to the build. Report
 the set explicitly, per component — a relock that changed nothing is a fine outcome to
 state, but an unstated one hides a command that silently did nothing.
+
+**A check-only component whose lockfile moved must have its diff shown before any of it is
+staged.** Nothing of that component was stamped, so the stamp cannot account for the change:
+what moved is a fresh upstream resolution or an unpinned range catching up, and Step 7
+stages the relocked set without asking. Show the diff, say which component it came from, and
+let the user decide whether it belongs in this release commit. The closing rule below is not
+enough on its own — it fires when a relock changed *more* than a lockfile, and here the
+lockfile is itself the unreviewed change.
 
 Two refusals, each naming the component it happened in:
 
@@ -373,7 +393,8 @@ Build **only** the components Step 0 marked *build and release* — today exactl
 check-only component was gated at Step 2 and stops there; nothing of it is built, stamped,
 tagged or published, however much its adapter could build.
 
-Skip this step entirely when that component's `build_command` is `null`.
+Skip any such component whose `build_command` is `null`; when that leaves nothing to build,
+the step is skipped entirely.
 
 Otherwise, for each component being built, run its command from that component's directory,
 then **expand that component's `artifact_pattern` and check what actually landed**:
