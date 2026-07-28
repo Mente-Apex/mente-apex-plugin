@@ -120,6 +120,24 @@ place.
 It moves to the distribution adapter, where the wart gets cheaper by accident: fewer files copy
 it than copied it across every build adapter.
 
+**`version_source` always comes from the build adapter — which changes this repository's
+canonical version file.** The two existing plugin adapters disagree about direction, and the
+disagreement is principled: `python/uv-plugin` makes `pyproject.toml` canonical because
+`uv build` reads it, while `python/git-tag-only` makes `.claude-plugin/plugin.json#.version`
+canonical (pinned by `test_git_tag_only_adapter_stamps_all_three_version_mirrors`). So which
+file leads depends on what *reads* the version, which is a shipping fact, not a build fact.
+
+It collapses. In a `package = false` repository nothing builds, so no toolchain reads either
+literal — both are stamped regardless, and only the arrow's direction differs. The direction
+is therefore a free choice, and the uniform rule is cheaper than the faithful one: the build
+adapter always supplies `version_source`, with no distribution-adapter override to reopen the
+tangle. `uv-plugin.md`'s existing rule — *"the stamp direction follows whatever the toolchain
+actually reads"* — stays true everywhere it has force.
+
+Consequence for this repository: under `python/uv-nobuild`, `pyproject.toml#project.version`
+becomes canonical and `.claude-plugin/plugin.json#.version` becomes derived, reversing today's
+arrow. The same files are stamped to the same values; only authority moves.
+
 #### The separation rule
 
 > A build adapter may fingerprint only on build evidence. A distribution adapter may
