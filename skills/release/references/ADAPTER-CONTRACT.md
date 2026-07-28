@@ -61,7 +61,7 @@ empty square, where it builds, it tags, and nothing further mirrors or ships.
 |---|---|---|
 | `kind` | Must equal the filename stem. | no |
 | `fingerprint` | List of detection selectors; **any** match selects this adapter. Shipping evidence only. See [Fingerprint selectors](#fingerprint-selectors). | no |
-| `derived_manifests` | List of `path#selector` stamped *from* the build adapter's `version_source`, same selector syntax. A trailing `?` marks an entry [optional](#optional-derived-manifests). | yes — empty list |
+| `derived_manifests` | List of `path#selector` stamped *from* the build adapter's `version_source`, same selector syntax. A trailing `?` marks an entry [optional](#optional-derived-manifests). | yes — `null` or an empty list, both meaning this distribution mirrors no version literal |
 | `install_verify_command` | Proves the *shipped* thing arrived. | no |
 | `release_command` | Creates the forge's release *object* from the pushed tag. | yes — targets where the tag is the whole release |
 
@@ -519,7 +519,18 @@ the walk, and the rule stays correct as a repository changes.
 - **Exactly one component** → the core proceeds silently. Every repository releasing today
   is this shape, so the common path is unchanged.
 - **More than one component** → the core stops and asks which is **build and release** and
-  which are **check only**. It never picks.
+  which are **check only**. It may *propose* an assignment — a proposal the user can read
+  and correct is more useful than a bare question — but it never proceeds on the proposal
+  alone. Explicit confirmation is what settles it; without one, nothing is picked.
+
+**The multi-component path is designed and unexercised.** Per-component gating,
+per-component relock, the check-only lockfile-diff gate and the per-component self-version
+read have never run against a real repository — every repository releasing through this
+skill today is the single-component shape. `status: stub` marks an unexercised *adapter*
+and there is no equivalent marker for an unexercised *core path*, so it is said here
+instead: treat the first multi-component release as the exercise, watch each step, and
+expect to correct something. The exit from unexercised is exercising it, exactly as for a
+stub.
 
 Two fields are repo-level in effect and are read **only from the root component's build
 adapter**: `tag_pattern` and `publish_command`. A repository has one tag and one

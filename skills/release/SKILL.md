@@ -17,7 +17,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Edit, AskUserQuestion
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # release
@@ -78,10 +78,14 @@ Three rules, and they are the whole stage:
   repository changes. A hand-written list does not.
 - **Exactly one component → proceed silently.** That is every repository this skill runs
   against today, and the common path must not grow a question it never needed.
-- **More than one component → stop and ask.** Never pick. Report what was found, with each
-  component's resolved technology and toolchain, and mark exactly one **build and release**
-  — the one this run cuts — and every other **check only**: a check-only component's gate
-  runs, and nothing of it is stamped, tagged or published.
+- **More than one component → stop and ask.** Report what was found, with each component's
+  resolved technology and toolchain, and **propose** exactly one as **build and release** —
+  the one this run cuts — and every other as **check only**: a check-only component's gate
+  runs, and nothing of it is stamped, tagged or published. **The proposal is not the
+  answer.** Proceed only on the user's explicit confirmation of the assignment, never on
+  the proposal alone: a root-defaults proposal waved through is the confident wrong answer
+  this design exists to refuse, and it is indistinguishable from having picked. Anything
+  other than a clear yes changes nothing.
 
 ```
 Found 3 components:
@@ -90,6 +94,14 @@ Found 3 components:
   worker         typescript/npm   check only
 Correct?
 ```
+
+**Say plainly that the multi-component path is unexercised.** Everything past "more than
+one component" — per-component gating, per-component relock, the check-only lockfile-diff
+gate, the per-component self-version read — is designed and has never run against a real
+repository; every release cut through this skill so far has been the single-component
+shape. That is not a reason to refuse, but it is a reason to tell the user before they
+confirm, and to watch each step rather than assume it. The single-component path is
+unaffected and unchanged.
 
 The **root component carries the repository's release identity**: its adapter supplies
 `tag_pattern` and `publish_command`, and no other component's does. A repository has one
@@ -641,8 +653,14 @@ check. Otherwise this is the command most likely to carry `<distribution-name:ro
 `<version>`, so resolve those before running rather than pattern-matching past them.
 
 Then, if a distribution adapter resolved, run its own `install_verify_command` the same
-way. **Resolving no distribution adapter runs only the build check above, and that is not
-a degraded release** — it is the same legitimate shape Step 0 already named.
+way. **Resolving no distribution adapter leaves only the build check above, and that is
+not a degraded release** — it is the same legitimate shape Step 0 already named.
+
+**When that build adapter's `install_verify_command` is `null` as well, nothing runs at
+this step at all.** A target that builds nothing and ships nothing further has nothing
+installed to check, and the two skips compose rather than one covering the other. Report
+that plainly — "no install check for this target" — rather than reporting a check that
+did not happen.
 
 For whichever command or commands ran, confirm two things:
 
