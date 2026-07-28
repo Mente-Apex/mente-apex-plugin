@@ -1967,6 +1967,153 @@ def test_core_verifies_both_the_built_thing_and_the_shipped_thing():
     )
 
 
+def test_the_steps_that_read_distribution_fields_name_the_distribution_adapter():
+    """Steps 5 and 9a read `derived_manifests` and `release_command` — both
+    *distribution* fields — and both said "the adapter's", left over from the
+    single-adapter contract. There is no "the adapter" any more, and in a
+    repository resolving no distribution adapter (a shape Step 0 and the contract
+    both bless) neither field exists to read at all.
+
+    Scoped per step, on the standing ruling: "distribution adapter" occurs in
+    Step 0's resolution prose, so an unscoped scan passes against the old text.
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+
+    # Whitespace-normalised: these are wrapped prose, so a phrase the guard looks
+    # for straddles a line break as often as not, and an index lookup that raises
+    # instead of asserting reports the wrong thing.
+    def normalised(heading):
+        section = _section_after(text, heading).lower().replace("*", "")
+        return " ".join(section.split())
+
+    stamp = normalised("## Step 5 — Stamp")
+    assert "derived_manifests" in stamp, "Step 5 no longer stamps the mirrors"
+    assert "distribution adapter" in stamp, (
+        "derived_manifests is a distribution field; naming only 'the adapter' is "
+        "the axis confusion this split removed"
+    )
+    assert "no distribution adapter" in stamp, (
+        "a repository resolving no distribution adapter has no derived manifests, "
+        "and Step 5 must say it stamps version_source alone rather than failing a "
+        "lookup on a field that does not exist"
+    )
+
+    release_object = normalised("## Step 9a")
+    assert "release_command" in release_object, "Step 9a no longer reads the field"
+    assert "no distribution adapter" in release_object, (
+        "9a's skip condition read release_command off nothing when no distribution "
+        "adapter resolved"
+    )
+    assert "`release_command` is `null`" in release_object, (
+        "9a must still name the null case; it is the second skip condition, not a "
+        "condition to drop"
+    )
+    assert release_object.index("no distribution adapter") < release_object.index(
+        "`release_command` is `null`"
+    ), (
+        "the absent-adapter case must be the FIRST skip condition: reading `null` "
+        "off an adapter that does not exist is the failure, not a second variant "
+        "of the same check"
+    )
+
+
+# A count of contract fields, in the three shapes SKILL.md wrote one in:
+# `the fourteen-field adapter contract`, `hold its fourteen contract fields`,
+# `the contract stays fourteen fields wide`, `not a fifteenth contract field`.
+# `one field` is deliberately not a count claim — Step 10's "folding both into one
+# field" is about compounding a command, not about how wide the contract is.
+_COUNT_WORD = (
+    r"(?:\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen"
+    r"|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty"
+    r"|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh"
+    r"|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth"
+    r"|nineteenth|twentieth)"
+)
+_FIELD_COUNT_CLAIM = re.compile(
+    rf"\b{_COUNT_WORD}[- ](?:contract|adapter)[- ]?fields?\b"
+    rf"|\b{_COUNT_WORD}[- ]fields?\s+wide\b"
+    rf"|\b{_COUNT_WORD}-field\b",
+    re.IGNORECASE,
+)
+
+NUMBER_WORDS = [
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+]
+
+
+def test_field_count_claim_rule_catches_every_shape_the_core_wrote_one_in():
+    """The rule, pinned directly — including the prose it must not condemn."""
+    assert _FIELD_COUNT_CLAIM.search("the fourteen-field adapter contract")
+    assert _FIELD_COUNT_CLAIM.search("hold its fourteen contract fields")
+    assert _FIELD_COUNT_CLAIM.search("the contract stays fourteen fields wide")
+    assert _FIELD_COUNT_CLAIM.search("not a fifteenth contract field")
+    assert _FIELD_COUNT_CLAIM.search("its 14 contract fields")
+
+    assert not _FIELD_COUNT_CLAIM.search("folding both into one field is what made")
+    assert not _FIELD_COUNT_CLAIM.search("those two fields sit on different axes")
+    assert not _FIELD_COUNT_CLAIM.search("every later step reads through those fields")
+
+
+def test_core_states_no_field_count_of_its_own():
+    """The core said "fourteen" three times through the split that made it twelve
+    plus five, and no test counted anything — `test_adapter_contract_documents_
+    every_field` checks each name is backticked somewhere and never totals them.
+
+    The fix is not a corrected number here: a count restated in two files rots in
+    whichever one nobody edits. The contract owns the field sets, so it owns the
+    count, and the core is forbidden one. The guard below pins the contract's.
+    """
+    offenders = []
+    for line_number, line in enumerate(
+        RELEASE_SKILL_MD.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        for match in _FIELD_COUNT_CLAIM.finditer(line):
+            offenders.append(f"SKILL.md:{line_number}: {match.group(0)!r}")
+    assert not offenders, (
+        "the core states a contract field count, which is the contract's to state "
+        "and the core's to rot:\n" + "\n".join(offenders)
+    )
+
+
+def test_contract_field_counts_match_the_declared_field_sets():
+    """The positive counterpart: the contract *does* count, and its counts are the
+    real ones. "with the twelve build adapter fields" is the sentence an author
+    uses to confirm they held the right set, so it must be checked, not trusted.
+    """
+    text = " ".join(ADAPTER_CONTRACT.read_text(encoding="utf-8").split())
+    for axis, fields in (
+        ("build", BUILD_FIELDS),
+        ("distribution", DISTRIBUTION_FIELDS),
+    ):
+        claimed = re.findall(rf"(\S+) \[{axis} adapter fields\]", text)
+        assert claimed, f"the contract states no count for the {axis} adapter fields"
+        expected = NUMBER_WORDS[len(fields)]
+        assert set(claimed) == {expected}, (
+            f"the contract calls the {axis} adapter fields {sorted(set(claimed))}; "
+            f"there are {len(fields)} of them ({expected})"
+        )
+
+
 RELEASE_EVALS = REPO_ROOT / "evals" / "release-evals.json"
 EVAL_CASE_KEYS = {"id", "skill", "prompt", "expected_output", "assertions"}
 
