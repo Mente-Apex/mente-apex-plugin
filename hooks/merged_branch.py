@@ -115,6 +115,22 @@ def current_branch(cwd: str | Path) -> str | None:
     return output if code == 0 and output else None
 
 
+def is_merged(cwd: str | Path, revision: str, tracking: str) -> bool:
+    """True when `revision` has landed on `tracking`.
+
+    The tip comparison is not redundant with the ancestor check: a branch
+    created a second ago and never committed to is an ancestor of the remote
+    default because it *is* the remote default, and announcing that as a merge
+    would fire on every branch /ship opens.
+    """
+    code_revision, tip = git(cwd, "rev-parse", revision)
+    code_tracking, tracking_tip = git(cwd, "rev-parse", tracking)
+    if code_revision != 0 or code_tracking != 0 or tip == tracking_tip:
+        return False
+    code, _ = git(cwd, "merge-base", "--is-ancestor", revision, tracking)
+    return code == 0
+
+
 def report(cwd: str | Path) -> list[str]:
     """The lines to inject as session context. Empty means stay silent."""
     code, _ = git(cwd, "rev-parse", "--git-dir")
@@ -129,4 +145,16 @@ def report(cwd: str | Path) -> list[str]:
     branch = current_branch(cwd)
     if branch is None:
         return []
-    return []
+
+    # One fetch of one branch. Failure is not fatal: a stale remote-tracking ref
+    # can only miss a merge, never invent one.
+    git(cwd, "fetch", "--quiet", remote, default, timeout=NETWORK_TIMEOUT_SECONDS)
+    tracking = f"{remote}/{default}"
+    code, _ = git(cwd, "rev-parse", "--verify", "--quiet", f"{tracking}^{{commit}}")
+    if code != 0:
+        return []
+
+    lines = []
+    if branch != default and is_merged(cwd, "HEAD", tracking):
+        lines.append(f"Branch {branch} has been merged into {default}.")
+    return lines

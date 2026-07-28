@@ -90,3 +90,55 @@ def test_silent_when_head_is_detached(clone):
     head = run("git", "rev-parse", "HEAD", cwd=clone)
     run("git", "checkout", "--detach", head, cwd=clone)
     assert merged_branch.report(clone) == []
+
+
+def merge_into_main(clone, branch):
+    """Merge `branch` into main on the origin, the way the GitHub UI would,
+    leaving the clone still sitting on `branch` and unaware."""
+    run("git", "checkout", "main", cwd=clone)
+    run("git", "merge", "--no-ff", "-m", f"merge {branch}", branch, cwd=clone)
+    run("git", "push", "origin", "main", cwd=clone)
+    run("git", "checkout", branch, cwd=clone)
+    # Rewind the local main so the clone looks like one that never pulled.
+    run("git", "branch", "-f", "main", "main~1", cwd=clone)
+
+
+def commit_on_new_branch(clone, branch, filename):
+    run("git", "checkout", "-b", branch, cwd=clone)
+    (clone / filename).write_text(filename)
+    run("git", "add", filename, cwd=clone)
+    run("git", "commit", "-m", f"add {filename}", cwd=clone)
+
+
+def test_reports_the_merged_branch(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    merge_into_main(clone, "feat/x")
+    assert "Branch feat/x has been merged into main." in merged_branch.report(clone)
+
+
+def test_silent_on_an_unmerged_branch(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    assert merged_branch.report(clone) == []
+
+
+def test_a_freshly_created_branch_is_not_merged(clone):
+    # Its tip IS an ancestor of origin/main — it is origin/main. Calling that
+    # "merged" would fire on every branch /ship has just created.
+    run("git", "checkout", "-b", "feat/empty", cwd=clone)
+    assert merged_branch.report(clone) == []
+
+
+def test_silent_when_the_remote_tracking_ref_is_missing(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    run("git", "update-ref", "-d", "refs/remotes/origin/main", cwd=clone)
+    run("git", "remote", "set-url", "origin", "/nonexistent/origin.git", cwd=clone)
+    assert merged_branch.report(clone) == []
+
+
+def test_unreachable_remote_does_not_raise(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    merge_into_main(clone, "feat/x")
+    run("git", "remote", "set-url", "origin", "/nonexistent/origin.git", cwd=clone)
+    # The fetch fails; the stale remote-tracking ref is still usable, and a
+    # stale ref can only under-report a merge, never invent one.
+    assert isinstance(merged_branch.report(clone), list)
