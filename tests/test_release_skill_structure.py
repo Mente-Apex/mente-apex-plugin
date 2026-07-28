@@ -98,6 +98,26 @@ LOCKFILE_CARRIES_OWN_VERSION = (
     "rust/cargo",
 )
 
+# The separation rule. A build adapter may fingerprint only on build evidence; a
+# distribution adapter only on shipping evidence. Neither may look at the other's.
+#
+# This is what makes the skipped-wheel incident impossible rather than patched.
+# `.claude-plugin/plugin.json` is shipping evidence, and it was deciding
+# `build_command: null` for a repository with a setuptools backend and a console
+# script — one that builds a wheel perfectly well. Adding a fourth adapter filled
+# in the missing square; it did not remove the cause.
+BUILD_EVIDENCE = (
+    "uv.lock",
+    "package-lock.json",
+    "Cargo.lock",
+    "Cargo.toml",
+    "pom.xml",
+    "build.gradle",
+    "pyproject.toml",
+    "setup.py",
+)
+SHIPPING_EVIDENCE = (".claude-plugin",)
+
 
 _FRONTMATTER_KEY_VALUE = re.compile(r"^([A-Za-z0-9_-]+):\s?(.*)$")
 _BLOCK_SCALAR_INDICATORS = (">", ">-", "|", "|-")
@@ -1101,21 +1121,52 @@ def test_the_package_false_case_resolves_without_a_plugin_manifest():
     )
 
 
-def test_no_build_adapter_fingerprints_on_a_plugin_manifest():
-    """The concrete regression: mente-apex-memory's skipped wheel.
+def _fingerprint_paths(fields):
+    """Every bare path named by a fingerprint, predicates and conjunctions unwrapped."""
+    paths = set()
+    for entry in fingerprint_selectors(str(fields.get("fingerprint", ""))):
+        for clause in fingerprint_clauses(entry):
+            paths.add(clause.partition("#")[0])
+    return paths
 
-    `.claude-plugin/plugin.json` is shipping evidence. It was a git-tag-only
-    fingerprint entry, so it decided `build_command: null` for a repository that
-    builds a wheel perfectly well, and the release cut a tag without one.
-    """
+
+def test_neither_adapter_kind_fingerprints_on_the_others_evidence():
     offenders = []
     for adapter in adapter_files():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
-        if ".claude-plugin" in str(fields.get("fingerprint", "")):
-            offenders.append(str(adapter.relative_to(REPO_ROOT)))
+        for path in _fingerprint_paths(fields):
+            if any(path.startswith(marker) for marker in SHIPPING_EVIDENCE):
+                offenders.append(
+                    f"{adapter.relative_to(REPO_ROOT)}: build adapter fingerprints "
+                    f"on shipping evidence {path!r}"
+                )
+    for adapter in distribution_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        for path in _fingerprint_paths(fields):
+            if path in BUILD_EVIDENCE:
+                offenders.append(
+                    f"{adapter.relative_to(REPO_ROOT)}: distribution adapter "
+                    f"fingerprints on build evidence {path!r}"
+                )
+    assert not offenders, "the separation rule is violated:\n" + "\n".join(offenders)
+
+
+def test_separation_rule_catches_a_synthetic_violation():
+    """The rule must be observable, or it is decoration."""
+    plugin_fingerprinted_build = {"fingerprint": "uv.lock+.claude-plugin/plugin.json"}
+    paths = _fingerprint_paths(plugin_fingerprinted_build)
+    assert any(path.startswith(".claude-plugin") for path in paths)
+
+    lock_fingerprinted_distribution = {"fingerprint": "uv.lock"}
+    assert "uv.lock" in _fingerprint_paths(lock_fingerprinted_distribution)
+
+
+def test_contract_states_the_separation_rule():
+    text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    assert "build evidence" in text and "shipping evidence" in text
     assert (
-        not offenders
-    ), "build adapters fingerprinting on shipping evidence:\n" + "\n".join(offenders)
+        "Neither may look at the other's" in text
+    ), "the rule must be stated, not merely implied by the evidence lists"
 
 
 def test_fingerprint_selectors_reads_both_written_forms():
