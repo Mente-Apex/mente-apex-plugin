@@ -17,7 +17,7 @@ user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash, Read, Edit, AskUserQuestion
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # release
@@ -247,6 +247,24 @@ Otherwise write the new version to the adapter's `version_source`, then to every
 inconsistent, which in a repo with a lockstep guard is a red suite and in a repo without
 one is a silent wrong release.
 
+**An entry whose file does not exist is a refusal** — the adapter names a manifest this
+repository lacks, which means detection resolved an adapter that does not fit. Say which
+file, and stop; nothing has been written yet, so there is nothing to revert.
+
+**Unless the entry ends in `?`.** That is the contract's optional marker: the mirror is
+legitimately absent in some repositories of this adapter's shape. Stamp it when present,
+skip it when absent, and **say which in the report** — an unreported skip is the marker
+being used to hide a path nobody has checked in months. The marker applies only to
+`derived_manifests`; it is never valid on `version_source`, and a missing `version_source`
+file was already refused back at detection.
+
+**Hold what you actually wrote as the *stamped set*** — `version_source` plus every derived
+manifest that was present, minus every optional one that was skipped. Steps 6 and 7 name
+that set, never the adapter's raw list: a skipped optional entry is a path that does not
+exist, and `git add` on a nonexistent pathspec **stages nothing at all** rather than
+staging the rest. Reciting the declared list there would abort the release commit on
+exactly the repositories the optional marker was added to support.
+
 Show the resulting diff explicitly:
 
 ```bash
@@ -309,7 +327,7 @@ until it says how to undo it. Give the user the exact command, naming every file
 stamped:
 
 ```bash
-git checkout -- <version_source> <each derived manifest> <each file in the relocked set>
+git checkout -- <each file in the stamped set> <each file in the relocked set>
 ```
 
 Without that line the next `/release` refuses at Step 1 on a dirty tree the user never
@@ -336,7 +354,7 @@ Otherwise: one commit, on the default branch, containing the stamp and the lockf
 refreshed from it — and nothing else:
 
 ```bash
-git add <version_source> <each derived manifest> <each file in the relocked set>
+git add <each file in the stamped set> <each file in the relocked set>
 git commit -F - <<'MSG'
 chore(release): <tag>
 
@@ -349,11 +367,11 @@ the harness prescribes this session and write that. It is spelled out rather tha
 because a literal here is a literal that gets copied, and the copy outlives the model it
 named.
 
-**Stage file paths, not selectors.** `version_source` and each derived manifest are
-written as `path#selector`; the selector addresses a field *inside* the file and means
-nothing to git. Drop everything from the `#` onward and stage the path alone — passing the
-whole string makes git report a nonexistent pathspec and abort. Two entries that differ
-only in selector are one file: stage it once.
+**Stage file paths, not selectors.** Every member of the stamped set is written as
+`path#selector`; the selector addresses a field *inside* the file and means nothing to git.
+Drop everything from the `#` onward and stage the path alone — passing the whole string
+makes git report a nonexistent pathspec and abort. A trailing `?` goes with it. Two entries
+that differ only in selector are one file: stage it once.
 
 **Stage the relocked set too.** Step 5a held the tracked files its `relock_command` changed,
 and they belong in this commit: a refreshed lockfile left unstaged is the stale-lockfile bug
@@ -504,7 +522,14 @@ release that shipped with an install problem, and say what is wrong.
   Artifacts : <names, or "none">
   Release   : <url>, or "none — the tag is the release", or "not created — <reason>"
   Installed : <verified version>  → <resolved path>
+  Skipped   : <each optional derived manifest absent from this repo>, omitted when none
 ```
+
+**The `Skipped` line is not optional when a mirror was skipped.** An optional
+`derived_manifests` entry that silently does nothing is the marker being used to hide a
+path nobody has checked in months — a manifest renamed a year ago reports exactly like a
+manifest that was never meant to exist here. Naming it every release is what keeps the
+distinction visible; omit the line only when nothing was skipped.
 
 The `Release` line has three honest answers and no fourth. Printing a URL
 unconditionally — including on the degraded path where Step 9a failed — reports a release

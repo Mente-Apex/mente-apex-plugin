@@ -30,7 +30,7 @@ Declared as YAML frontmatter. Every field is required; seven may be `null`.
 | `toolchain` | Must equal the filename stem. | no |
 | `fingerprint` | List of detection selectors; **any** match selects this adapter. See [Fingerprint selectors](#fingerprint-selectors). | no |
 | `version_source` | `path/to/file#selector` — the one canonical version literal. Selector language is the file format's; see [Selector syntax](#selector-syntax). | yes — targets where the tag itself is the version and no manifest carries it |
-| `derived_manifests` | List of `path#selector` stamped *from* the source, same selector syntax. | yes — empty list |
+| `derived_manifests` | List of `path#selector` stamped *from* the source, same selector syntax. A trailing `?` marks an entry [optional](#optional-derived-manifests). | yes — empty list |
 | `relock_command` | Regenerates the lockfile the stamp just invalidated. | yes — targets whose lockfile does not record the project's own version |
 | `gate_command` | Clean rebuild from the lockfile, then the red/green check. | no |
 | `build_command` | Produce distributable artifacts. | yes — no-build targets |
@@ -78,19 +78,74 @@ than an invitation to improvise: add the row here first.
 `tests/test_release_skill_structure.py` checks every selector in every adapter against its
 file's row.
 
+### Optional derived manifests
+
+A `derived_manifests` entry may end in `?`:
+
+```yaml
+derived_manifests:
+  - .claude-plugin/plugin.json#.version                    # required
+  - .claude-plugin/marketplace.json#.plugins[0].version?   # stamp it if present
+```
+
+**Required is the default and stays strict**: an entry without `?` addressing a file that
+does not exist is a **refusal**, before anything is written. Optional means exactly one
+thing — *this mirror is legitimately absent in some repositories of this adapter's shape* —
+and the core stamps it when the file is there, skips it when it is not, and reports which
+it did.
+
+The marker exists because one adapter shape spans repositories that differ in which
+mirrors they carry. A plugin repo that is also its own marketplace source has three
+manifests; one that publishes through somebody else's marketplace has two. Both are
+`python/uv-plugin`. Without the marker the list forces a choice between an adapter that
+fails the stamp on the two-manifest repo and one that lets the third repo's literal read as
+undeclared drift — and the second failure lands at Step 3, mid-release, after the gate has
+already run.
+
+**Why a marker rather than "skip any absent entry".** Silently skipping absence would make
+a *typo* — `marketplaces.json`, `.plugin/` — indistinguishable from a legitimately absent
+mirror, and a mistyped entry would then read as a clean release that quietly stamped one
+file fewer. That is the exact class of error this contract exists to prevent, so absence
+must be **declared**, never inferred. "All of them or none" still holds; the marker only
+changes which set "all" names.
+
+The `?` is the contract's, not jq's. A jq path may legitimately end in `?` — its own
+optional-value operator — and no selector here uses it; if one ever needs to, that is the
+moment this marker moves to a separate field rather than the moment it grows an escape.
+The marker is not available on `version_source` (a canonical version that might not exist
+is not canonical), on `fingerprint` (an absent file simply does not match), or on
+`distribution_names` (a name the command needs is not optional).
+
 ### Fingerprint selectors
 
-`fingerprint` is a **list**, and each entry takes one of two forms:
+`fingerprint` is a **list**, and each entry takes one of these forms:
 
 | Form | Matches when | Example |
 |---|---|---|
 | `path/to/file` | that path exists | `uv.lock` |
 | `path/to/file#selector==value` | that path exists **and** the selector resolves to `value` | `pyproject.toml#tool.uv.package==false` |
+| `clause+clause` | **every** clause matches; each clause is either form above | `uv.lock+.claude-plugin/plugin.json` |
 
-The predicate form has no spaces, so a folded list is unambiguous, and its `path#selector`
-half obeys [Selector syntax](#selector-syntax) exactly like every other selector. An
-adapter with one entry may write it inline — `fingerprint: uv.lock` — which is the same
-list, shortened.
+No form contains a space, so a folded list is unambiguous, and every `path#selector` half
+obeys [Selector syntax](#selector-syntax) exactly like any other selector. An adapter with
+one entry may write it inline — `fingerprint: uv.lock` — which is the same list, shortened.
+
+**The list is OR; `+` is the AND the list cannot express.** Entries are alternatives —
+*any* match selects the adapter — which is right for a target reachable by several
+independent signals. It cannot say "this repo is both a uv project *and* a plugin", and
+that conjunction is exactly what distinguishes `python/uv-plugin` from a plugin repo built
+by setuptools or poetry. Without it that adapter would have to fingerprint
+`.claude-plugin/plugin.json` alone and would **confidently claim** every non-uv Python
+plugin repo — running `uv sync`, then `uv lock`, creating a lockfile in a repo that
+deliberately has none, and refusing at Step 5a after the gate. A repo that no adapter fits
+must reach "no toolchain matches → ask the user"; a fingerprint too weak to exclude it
+converts that clean refusal into a confident wrong answer, which is the failure the
+detection table's ordering rules already spend three paragraphs on.
+
+Keep clauses to the minimum that excludes what must be excluded. A conjunction is a
+narrowing tool, not a description of the repository: piling on clauses that happen to be
+true of the one repo you are looking at turns a shape into a fingerprint of a single
+checkout, and the next repo of that shape silently falls through.
 
 The field was originally a single file path while the Level 2 table already listed a
 non-file selector for `python/git-tag-only`. That contradiction left an adapter author with
@@ -273,7 +328,31 @@ status: stub
 
 The core **refuses to run** against a stub. A half-written adapter driving a real release
 is exactly the failure this contract exists to prevent, so the refusal is unconditional —
-no confirmation overrides it. Remove the marker only after cutting a real release with it.
+no confirmation overrides it.
+
+**Which makes "remove the marker after cutting a real release with it" circular**, and the
+circle is worth naming rather than leaving each author to rediscover: the core will not run
+a stub, so no release can ever be cut *with* one, so the marker can never be cleared by the
+route that is supposed to clear it. Read literally, `status: stub` is not a probation
+period — it is permanent.
+
+The marker therefore means **"sketched, never exercised"**, and the exit is *exercising it*,
+not releasing with it:
+
+- **Author from a procedure already run by hand**, adapter-first: perform every command on
+  the real repository, in order, and write down what actually happened. `python/uv` shipped
+  unstubbed this way. So did `python/uv-plugin` — its inherited half was `python/uv`'s, and
+  its three genuinely new parts (a second stamped manifest, two JavaScript suites in the
+  gate, a plugin-list check) were each run against `mente-apex-memory` before being
+  declared.
+- **Declare `status: stub` when you have *not* done that** — a target sketched from an
+  ecosystem's documentation, or from another adapter by analogy. `typescript/npm`,
+  `java/maven` and `rust/cargo` are all this kind. Clearing the marker means going and
+  running the thing, not waiting for permission the core will never grant.
+
+"Inherited from a verified sibling" is not itself a licence: it covers the fields you
+genuinely copied and nothing else. Every field you *changed* is unexercised until you
+exercise it, which is the whole distinction the two bullets above turn on.
 
 ## The prose body
 
@@ -312,18 +391,37 @@ Each row's fingerprint cell lists that adapter's `fingerprint` entries verbatim,
 
 | Technology | Fingerprint | Toolchain |
 |---|---|---|
-| `python` | `.claude-plugin/plugin.json` or `pyproject.toml#tool.uv.package==false` | `git-tag-only` |
+| `python` | `pyproject.toml#tool.uv.package==false` | `git-tag-only` |
+| `python` | `uv.lock+.claude-plugin/plugin.json` | `uv-plugin` |
 | `python` | `uv.lock` | `uv` |
 | `typescript` | `package-lock.json` | `npm` |
 | `java` | `pom.xml` | `maven` |
 | `rust` | `Cargo.lock` | `cargo` |
 
-Note the ordering within `python` is load-bearing: this very repo matches **both**
-`git-tag-only` and `uv`. `git-tag-only` is listed first because it is the more specific
-signal — a repo declaring `package = false` under `[tool.uv]` builds no wheel, so the `uv`
-adapter's `build_command` and `artifact_pattern` would both be wrong for it. The ordering
-also settles the `package = false` case that carries no `.claude-plugin/` directory: it
-matches `git-tag-only`'s predicate entry and `uv`'s `uv.lock`, and the first row wins.
+Note the ordering within `python` is load-bearing: all three rows can match one repository,
+because every uv project has a `uv.lock`. The three python rows read as one question asked
+in narrowing order — **does it build? and does it also ship a plugin?**
+
+1. `package = false` → it builds no wheel at all, so `uv`'s `build_command` and
+   `artifact_pattern` would both be wrong. This very repo. `git-tag-only`.
+2. Otherwise a `uv.lock` **and** a `.claude-plugin/plugin.json` → it builds a wheel *and*
+   mirrors the version into a plugin manifest that must be stamped in lockstep.
+   `uv-plugin`. Both clauses are load-bearing: the plugin manifest alone would claim
+   setuptools- and poetry-built plugin repos, whose release this adapter's uv commands
+   would not survive.
+3. Otherwise → an ordinary wheel-building uv project. `uv`.
+
+The ordering also settles the `package = false` case that carries no `.claude-plugin/`
+directory: it matches row 1's predicate and row 3's `uv.lock`, and the first row wins.
+
+**Row 2 is the one that was missing, and its absence was not visible as a gap.**
+`.claude-plugin/plugin.json` used to be a `git-tag-only` fingerprint entry, on the reading
+that a plugin repo ships no package. A repo doing both was therefore *claimed* by row 1
+rather than falling through to a refusal — detection resolved confidently and the
+resulting plan would have cut a tag while skipping the build entirely. The failure of a
+too-broad fingerprint is not that nothing matches; it is that the wrong thing matches
+silently. Weigh a new row's fingerprint by what it would wrongly claim, not only by what it
+correctly selects.
 
 **The resolved adapter's `version_source` file does not exist** → refuse and ask which
 adapter to use. A fingerprint match is a signal, not proof of fit; see
@@ -342,7 +440,9 @@ deliberate act.
    `tag_pattern` is the one people forget, because `v<version>` feels like a default
    rather than a choice. `relock_command` is the one people get wrong: check whether your
    lockfile records the project's *own* version before declaring it `null`.
-2. Declare `status: stub` until you have cut a real release with it.
+2. Declare [`status: stub`](#status-stub) unless you authored it by running every command
+   on a real repository first. The marker means "sketched, never exercised" — it is not a
+   probation the core lets you serve, since it refuses to run against a stub at all.
 3. Add its fingerprint row to the Level 2 table above, positioned so its precedence
    against existing adapters is explicit. The row's fingerprint cell must list the same
    entries the field does — a test compares them.

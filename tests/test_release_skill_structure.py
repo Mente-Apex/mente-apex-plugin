@@ -67,6 +67,13 @@ DISTRIBUTION_NAME_PREFIX = "<distribution-name:"
 ADAPTER_CLASSIFICATIONS = {
     "python/git-tag-only": "working",
     "python/uv": "working",
+    # Working under the contract's "status: stub" rule: authored adapter-first by
+    # running every command against mente-apex-memory, including the three parts it
+    # did NOT inherit from python/uv (the second stamped manifest, the two
+    # JavaScript suites in the gate, the plugin-list check). The contract carries
+    # the reasoning — including why "cut a release with it first" cannot be the
+    # exit condition — so it is not restated here.
+    "python/uv-plugin": "working",
     "typescript/npm": "stub",
     "java/maven": "stub",
     "rust/cargo": "stub",
@@ -255,6 +262,23 @@ def fingerprint_selectors(fingerprint_value):
     return tuple(str(fingerprint_value or "").split())
 
 
+def fingerprint_clauses(fingerprint_value):
+    """Every individual clause a `fingerprint` tests, conjunctions expanded.
+
+    An entry may be a `+`-joined conjunction — `uv.lock+.claude-plugin/plugin.json`
+    — meaning every clause must match. For collision purposes the clause is the
+    unit: `uv.lock+X` and a bare `uv.lock` both fire on a repo with a lockfile, so
+    they overlap and need ranking, even though the two entries compare unequal as
+    strings. Comparing whole entries would reintroduce at the clause level exactly
+    the fail-open that comparing whole *fields* had at the entry level.
+    """
+    return tuple(
+        clause
+        for entry in fingerprint_selectors(fingerprint_value)
+        for clause in entry.split("+")
+    )
+
+
 def unranked_shared_fingerprints(entries, ranked_toolchains):
     """Toolchains in one technology sharing a selector without being ranked.
 
@@ -263,12 +287,12 @@ def unranked_shared_fingerprints(entries, ranked_toolchains):
     colliding toolchain absent from the table has no declared precedence, so it
     silently shadows its twin or is shadowed by it.
 
-    Collision is per *selector*, not per whole field. Comparing the folded field
+    Collision is per *clause*, not per whole field. Comparing the folded field
     would let two adapters share one selector out of several and read as disjoint
     — a fail-open the field only acquired when it became a list.
     """
     selectors_by_toolchain = {
-        toolchain: fingerprint_selectors(fingerprint)
+        toolchain: fingerprint_clauses(fingerprint)
         for toolchain, fingerprint in entries
     }
     all_selectors = [
@@ -309,8 +333,41 @@ SELECTOR_SHAPE_BY_LANGUAGE = {
 _FINGERPRINT_PREDICATE = re.compile(r"^(\S+#\S+?)==(\S+)$")
 
 
+def split_optional_marker(entry):
+    """`(reference, is_optional)` for a `derived_manifests` entry.
+
+    A trailing `?` means the mirror is legitimately absent in some repositories of
+    the adapter's shape: stamp it if present, skip it if not. Required is the
+    default and stays strict, so that a *typo'd* path stays distinguishable from a
+    declared absence — silently skipping any missing file would make a mistyped
+    entry read as a clean release that stamped one manifest fewer.
+
+    The marker is stripped before the selector is validated, so an optional entry
+    gets exactly the same syntax check as a required one. Exactly one `?` is
+    stripped: a doubled `??` leaves a stray marker behind, which
+    `selector_syntax_violation` then rejects rather than waving through as a jq
+    optional-value operator nobody meant to write.
+    """
+    text = str(entry).strip()
+    if text.endswith("?"):
+        return text[:-1], True
+    return text, False
+
+
 def selector_syntax_violation(reference):
-    """Why this `path#selector` misuses its file format's language, or None."""
+    """Why this `path#selector` misuses its file format's language, or None.
+
+    Callers must strip the contract's optional marker first — a `?` reaching here
+    is either a doubled marker or an unstripped entry, and both are errors rather
+    than selectors. Without this branch the strip in `selector_references` would be
+    unobservable: the shape checks below are prefix-anchored, so a trailing `?`
+    would sail past every one of them.
+    """
+    if reference.endswith("?"):
+        return (
+            f"{reference}: a trailing '?' is the contract's optional marker, not "
+            "part of the selector — strip it (and write only one)"
+        )
     if "#" not in reference:
         return f"{reference}: not a path#selector reference"
     path, _, selector = reference.partition("#")
@@ -333,15 +390,15 @@ def selector_references(fields):
         references.append(str(fields["version_source"]).strip())
     derived = str(fields.get("derived_manifests") or "").strip()
     if derived not in ("", "null", "[]"):
-        references.extend(derived.split())
+        references.extend(split_optional_marker(entry)[0] for entry in derived.split())
     references.extend(
         selector
         for _role, selector in _ROLE_DECLARATION.findall(
             str(fields.get("distribution_names") or "")
         )
     )
-    for entry in fingerprint_selectors(fields.get("fingerprint")):
-        predicate = _FINGERPRINT_PREDICATE.match(entry)
+    for clause in fingerprint_clauses(fields.get("fingerprint")):
+        predicate = _FINGERPRINT_PREDICATE.match(clause)
         if predicate:
             references.append(predicate.group(1))
     return references
@@ -467,10 +524,22 @@ def test_git_tag_only_adapter_stamps_all_three_version_mirrors():
     adapter = TARGETS_DIR / "python" / "git-tag-only.md"
     assert adapter.is_file(), "the dogfooded adapter must exist"
     text = adapter.read_text(encoding="utf-8")
-    assert ".claude-plugin/plugin.json" in text, "canonical version source missing"
-    for stamped in (".claude-plugin/marketplace.json", "pyproject.toml"):
-        assert stamped in text, f"derived manifest not declared: {stamped}"
     fields = parse_frontmatter(text)
+    # Read the parsed fields, never the file text. A substring search is satisfied
+    # by the body prose that *discusses* these paths — and this adapter's traps
+    # name every one of them — so repointing `version_source` at pyproject.toml,
+    # the exact change its own prose forbids, passed a text-based assert.
+    assert (
+        fields.get("version_source") == ".claude-plugin/plugin.json#.version"
+    ), "the plugin manifest is this target's canonical version source"
+    declared = {
+        split_optional_marker(entry)[0].partition("#")[0]
+        for entry in str(fields.get("derived_manifests") or "").split()
+    }
+    assert declared == {
+        ".claude-plugin/marketplace.json",
+        "pyproject.toml",
+    }, f"the other two mirrors must be stamped; got {sorted(declared)}"
     assert fields.get("build_command") == "null", "a plugin builds no artifact"
     assert (
         fields.get("artifact_pattern") == "null"
@@ -488,6 +557,140 @@ def test_uv_adapter_verifies_a_real_artifact_pattern():
         "artifact_pattern", ""
     ), "artifact_pattern must name the real build output directory"
     assert fields.get("build_command") != "null", "a uv package target does build"
+
+
+def test_the_optional_marker_is_stripped_on_the_path_adapters_are_validated_by():
+    """The strip must be observable, or it is decoration.
+
+    An earlier version of this test called `split_optional_marker` directly and
+    asserted on its output, which passed identically whether or not
+    `selector_references` stripped anything: the shape checks are prefix-anchored,
+    so a trailing `?` was never a violation to begin with. Reverting the strip left
+    the whole suite green. Two things fix that — `selector_syntax_violation` now
+    rejects a stray `?`, and this test goes through `selector_references`, the
+    function every adapter is actually validated by.
+    """
+    optional = {"derived_manifests": "a.json#.version?"}
+    assert selector_references(optional) == ["a.json#.version"], "marker not stripped"
+    assert [
+        selector_syntax_violation(ref) for ref in selector_references(optional)
+    ] == [None]
+    # The stripped reference still gets the full format-specific check: a TOML file
+    # refuses a jq selector whether the entry is optional or not.
+    assert selector_syntax_violation(
+        selector_references({"derived_manifests": "a.toml#.version?"})[0]
+    )
+    # Exactly one marker is stripped, so a doubled one cannot pose as a selector.
+    assert selector_syntax_violation(
+        selector_references({"derived_manifests": "a.json#.version??"})[0]
+    )
+    # A required entry is untouched, and `is_optional` is what tells them apart.
+    assert split_optional_marker("a.json#.version") == ("a.json#.version", False)
+    assert split_optional_marker("a.json#.version?") == ("a.json#.version", True)
+
+
+def test_optional_marker_is_confined_to_derived_manifests():
+    """`version_source`, `fingerprint` and `distribution_names` have no optional case.
+
+    A canonical version that might not exist is not canonical; an absent file
+    simply fails to match a fingerprint, so a marker there means nothing; and a
+    name a command interpolates is not optional. All three would fail later, at
+    the point where nothing is checking.
+
+    The contract names all three exclusions. An earlier version of this test
+    checked only two, and `fingerprint: …?` passed the whole suite.
+    """
+    offenders = []
+    for adapter in adapter_files():
+        identity = f"{adapter.parent.name}/{adapter.stem}"
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        if str(fields.get("version_source") or "").strip().endswith("?"):
+            offenders.append(f"{identity}: version_source is marked optional")
+        for entry in fingerprint_selectors(fields.get("fingerprint")):
+            if entry.endswith("?"):
+                offenders.append(f"{identity}: fingerprint entry {entry!r} is optional")
+        for _role, selector in _ROLE_DECLARATION.findall(
+            str(fields.get("distribution_names") or "")
+        ):
+            if selector.strip().endswith("?"):
+                offenders.append(f"{identity}: distribution_names entry is optional")
+    assert (
+        not offenders
+    ), "optional marker used outside derived_manifests:\n" + "\n".join(offenders)
+
+
+def test_the_contract_and_the_core_both_define_the_optional_marker():
+    """A marker the contract declares but the core never acts on is a no-op.
+
+    Both halves are scoped to the section that has to carry them. Unscoped
+    whole-file substring checks passed when the entire Step 5 block was moved
+    verbatim into the trailing "what /release does not do" section, where the
+    stamp never reaches it — prose present but dead.
+    """
+    contract = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    marker_section = _section_after(contract, "### Optional derived manifests")
+    assert marker_section.strip(), "the marker is undocumented"
+    assert (
+        "typo" in marker_section.lower()
+    ), "the section must say why absence is declared rather than inferred"
+
+    stamp_step = _section_after(RELEASE_SKILL_MD.read_text(), "## Step 5 — Stamp")
+    assert "ends in `?`" in stamp_step, (
+        "Step 5 must define the marker's behaviour, or the contract declares a "
+        "syntax the core ignores"
+    )
+    assert (
+        "does not exist is a refusal" in stamp_step
+    ), "Step 5 must still refuse an absent *required* entry"
+
+
+def test_the_core_never_recites_the_declared_manifest_list_to_git():
+    """Steps 6 and 7 must name the *stamped set*, not `derived_manifests`.
+
+    Step 5 learned to skip an absent optional manifest while the staging and
+    rollback commands still recited every declared entry. `git add` on a
+    nonexistent pathspec stages NOTHING — not "everything else" — so the release
+    commit would abort at Step 7, after the gate and the build, on precisely the
+    repositories the optional marker was added to support. The rollback line at
+    Step 6 had the same defect while being the recovery advice printed to the user.
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    for heading in ("## Step 6 — Build and verify the artifacts", "## Step 7 — Commit"):
+        section = _section_after(text, heading)
+        for command in ("git add", "git checkout --"):
+            for line in section.splitlines():
+                if command not in line:
+                    continue
+                assert "each derived manifest" not in line, (
+                    f"{heading}: `{command}` recites the declared list; an absent "
+                    "optional manifest makes git reject the whole pathspec"
+                )
+                assert "stamped set" in line, (
+                    f"{heading}: `{command}` must name the stamped set, so a "
+                    "skipped optional manifest is not passed to git"
+                )
+
+
+def test_the_report_surfaces_a_skipped_optional_manifest():
+    """An optional entry that silently does nothing is the marker's failure mode.
+
+    "Stamp it if present, skip it if absent" makes a manifest renamed a year ago
+    indistinguishable from one that was never meant to exist here — unless every
+    skip is named. The contract argues absence must be declared rather than
+    inferred; this is the other half, at the point the user actually reads.
+    """
+    report = _section_after(RELEASE_SKILL_MD.read_text(), "## Step 11 — Report")
+    # Scope to the fenced template, not the whole section: the paragraph arguing
+    # for the line also contains the word "Skipped", so an unscoped substring
+    # check passed with the template line deleted — the assert survived while the
+    # thing it protects did not.
+    template = report.split("```")[1]
+    assert (
+        "Skipped" in template
+    ), "the report TEMPLATE must carry a line for skipped mirrors"
+    assert (
+        "optional" in report.lower()
+    ), "the report must say what a skipped entry is, not just print a label"
 
 
 def test_every_adapter_declares_a_non_null_tag_pattern():
