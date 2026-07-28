@@ -4,6 +4,7 @@ toolchain: maven
 fingerprint: pom.xml
 version_source: pom.xml#/project/version
 derived_manifests: []
+relock_command: null
 gate_command: mvn -B clean verify
 build_command: mvn -B package
 artifact_pattern: target/*-<version>.jar
@@ -46,6 +47,11 @@ its place: if every target wanted `v<version>` the field would be a constant.
 
 **`mvn versions:set` exists and should probably be the stamp mechanism** rather than
 editing XML directly. Confirm against the core's stamp step, which assumes a file rewrite.
+
+**`relock_command` is `null`, and that is a claim, not a gap.** Maven resolves dependencies
+at build time and commits no lockfile, so nothing in the tree can go stale when the POM is
+stamped. A project that has adopted a third-party lock plugin has left that assumption
+behind and must declare the refresh command here.
 
 **`clean verify` versus `clean test`.** `verify` runs integration tests and the full
 packaging lifecycle, which is what a release gate should do. Do not weaken it to `test`.

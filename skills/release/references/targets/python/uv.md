@@ -4,6 +4,7 @@ toolchain: uv
 fingerprint: uv.lock
 version_source: pyproject.toml#project.version
 derived_manifests: []
+relock_command: uv lock
 gate_command: uv sync && uv run pytest && uv run ruff check . && uv run black --check .
 build_command: uv build
 artifact_pattern: dist/*-<version>-py3-none-any.whl
@@ -46,6 +47,14 @@ entry the contract requires a refusal, not a choice — ask which entry point to
 This is the same error as the wheel-name trap above, one step later: the build artifact is
 verified against a declared pattern, but the *installed* name was left to inference until
 `distribution_names` bound it (#98).
+
+**`uv.lock` pins the project itself, not only its dependencies.** The lockfile holds an
+entry for the package being built, carrying the same version `pyproject.toml` declares, so
+the stamp invalidates it immediately. `relock_command: uv lock` refreshes it in the one
+window where the core can still stage the result — after the stamp, before `uv build`
+consumes it, before the release commit. `uv lock` alone re-resolves nothing that is already
+pinned; do not reach for `uv lock --upgrade` here, which would ride a dependency bump into a
+release commit nobody reviewed.
 
 **`uv sync` before the tests is the latent-dependency detector.** It rebuilds from
 `uv.lock`. A test importing a package that no dependency declares — `uvicorn`, in the

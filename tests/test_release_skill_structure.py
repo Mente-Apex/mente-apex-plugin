@@ -25,6 +25,7 @@ CONTRACT_FIELDS = (
     "fingerprint",
     "version_source",
     "derived_manifests",
+    "relock_command",
     "gate_command",
     "build_command",
     "artifact_pattern",
@@ -68,7 +69,19 @@ ADAPTER_CLASSIFICATIONS = {
     "python/uv": "working",
     "typescript/npm": "stub",
     "java/maven": "stub",
+    "rust/cargo": "stub",
 }
+
+# Adapters whose lockfile records the project's *own* version, so stamping the
+# manifest makes the lockfile stale. Pinned by identity because the failure is
+# invisible until publish time: the release commit carries an inconsistent pair
+# and the toolchain refuses on a dirty tree at the last step (#99).
+LOCKFILE_CARRIES_OWN_VERSION = (
+    "python/git-tag-only",
+    "python/uv",
+    "typescript/npm",
+    "rust/cargo",
+)
 
 
 _FRONTMATTER_KEY_VALUE = re.compile(r"^([A-Za-z0-9_-]+):\s?(.*)$")
@@ -225,6 +238,25 @@ def unranked_shared_fingerprints(entries, ranked_toolchains):
     )
 
 
+def is_null(field_value):
+    """The contract's `null`, however the frontmatter parser hands it over."""
+    return (str(field_value or "")).strip() in ("", "null")
+
+
+def relock_contract_violation(version_source, relock_command):
+    """Why this pair is inconsistent, or None.
+
+    `relock_command` refreshes a lockfile the *stamp* invalidated, so it only
+    means anything for a target that stamps something. A target whose
+    `version_source` is `null` records the version nowhere — the tag is the
+    version — so nothing can go stale and a relock step would run a toolchain
+    command for no reason, outside the one window the core can stage its output.
+    """
+    if is_null(version_source) and not is_null(relock_command):
+        return "relock_command is set while version_source is null: nothing is stamped"
+    return None
+
+
 def classification_gaps(identities, classifications):
     """(unclassified, stale) — adapters on disk with no classification, and
     classifications naming an adapter that no longer exists."""
@@ -262,6 +294,19 @@ def test_adapter_contract_documents_every_field():
     text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
     missing = [field for field in CONTRACT_FIELDS if f"`{field}`" not in text]
     assert not missing, f"contract does not document fields: {missing}"
+
+
+def test_adapter_contract_explains_why_a_lockfile_is_not_a_derived_manifest():
+    """`Cargo.lock` and `package-lock.json` are regenerated, never hand-stamped —
+    which is why the concern needed a field of its own rather than another
+    `derived_manifests` entry (#99)."""
+    text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    assert (
+        "### `relock_command`" in text
+    ), "contract must explain the field, not just list it"
+    assert "derived_manifests" in _section_after(
+        text, "### `relock_command`"
+    ), "the contract must say why a lockfile is not simply a derived manifest"
 
 
 def test_adapter_contract_declares_detection_precedence():
@@ -369,6 +414,64 @@ def test_no_tag_pattern_references_the_tag_it_defines():
         )
     ]
     assert not offenders, f"tag_pattern is self-referential in: {offenders}"
+
+
+def test_relock_command_is_only_declared_where_something_is_stamped():
+    """The real adapters, checked against the rule pinned synthetically below."""
+    offenders = []
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        violation = relock_contract_violation(
+            fields.get("version_source"), fields.get("relock_command")
+        )
+        if violation:
+            offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {violation}")
+    assert not offenders, "adapters misdeclare relock_command:\n" + "\n".join(offenders)
+
+
+def test_relock_rule_catches_a_synthetic_tag_only_target():
+    """No adapter violates this today, so the failure branch needs exercising."""
+    assert (
+        relock_contract_violation("pyproject.toml#project.version", "uv lock") is None
+    )
+    assert relock_contract_violation("null", "null") is None
+    assert relock_contract_violation(None, None) is None
+    assert relock_contract_violation("null", "uv lock") is not None
+
+
+def test_adapters_whose_lockfile_carries_their_own_version_declare_a_relock():
+    """The bug itself, pinned per adapter.
+
+    This repo's own `uv.lock` carries `version = "…"` for the root project, so
+    the dogfooded adapter is the first one the trap bites: stamping
+    `pyproject.toml` without refreshing the lock puts an inconsistent pair in the
+    release commit (#99).
+    """
+    declared = {
+        f"{adapter.parent.name}/{adapter.stem}": parse_frontmatter(
+            adapter.read_text(encoding="utf-8")
+        ).get("relock_command")
+        for adapter in adapter_files()
+    }
+    missing = [
+        identity
+        for identity in LOCKFILE_CARRIES_OWN_VERSION
+        if is_null(declared.get(identity))
+    ]
+    assert not missing, (
+        f"adapters whose lockfile records their own version declare no "
+        f"relock_command: {missing}"
+    )
+
+
+def test_npm_adapter_body_records_that_it_shares_the_lockfile_shape():
+    """`package-lock.json` carries the package's own version exactly as
+    `Cargo.lock` does. The stub has never hit it; the body must say it will."""
+    body = parse_frontmatter(
+        (TARGETS_DIR / "typescript" / "npm.md").read_text(encoding="utf-8")
+    )["_body"]
+    assert "package-lock.json" in body, "the npm body must name its own lockfile"
+    assert "relock_command" in body, "the npm body must name the field that fixes it"
 
 
 def test_no_adapter_recommends_a_forbidden_python_toolchain():
@@ -801,6 +904,32 @@ def test_stamp_precedes_commit_which_precedes_tag():
     assert (
         stamp_position < commit_position < tag_position
     ), "stamp must precede commit, which must precede tag"
+
+
+def test_relock_runs_between_the_stamp_and_the_commit():
+    """Ordering is the whole fix.
+
+    Refreshing the lockfile after the commit leaves the release commit carrying a
+    stale lock; refreshing it before the stamp refreshes nothing. It also has to
+    precede the build, which consumes the lockfile it just rewrote.
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    assert "## Step 5a — Refresh the lockfile" in text, "core has no relock step"
+    stamp_position = text.index("## Step 5 — Stamp")
+    relock_position = text.index("## Step 5a — Refresh the lockfile")
+    build_position = text.index("## Step 6 — Build")
+    commit_position = text.index("## Step 7 — Commit")
+    assert stamp_position < relock_position < build_position < commit_position
+
+
+def test_commit_step_stages_whatever_the_relock_touched():
+    """A relock whose output is not staged is the original bug with extra steps:
+    the lockfile is refreshed on disk and the release commit still omits it."""
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    commit_step = text[text.index("## Step 7 — Commit") : text.index("## Step 8 — Tag")]
+    assert (
+        "relock" in commit_step
+    ), "Step 7's staging rule does not mention the relock step's output"
 
 
 def test_exactly_one_confirmation_checkpoint_before_publishing():
