@@ -61,10 +61,51 @@ next to a command the shell runs. The test is who does the substituting: you, be
 call, for `<name>`; the shell, during it, for `$NAME`. A `<placeholder>` that reaches a
 shell unresolved is a bug, not a variable the shell will fill in.
 
-## Step 0 — Resolve the adapter
+## Step 0 — Resolve the components and the distribution
+
+### Discover the components
+
+A repository may hold more than one buildable thing. Before any adapter is resolved, walk
+the repository's **git-tracked** files for build evidence — the paths and predicates the
+contract's Level 1 table names — and treat each directory that carries some as one
+**component**.
+
+Three rules, and they are the whole stage:
+
+- **Only git-tracked files count as build evidence.** One rule rather than a list of
+  directories to skip: generated, vendored and virtual-environment trees are ignored by
+  git, so the walk excludes them without naming any of them, and it stays correct as a
+  repository changes. A hand-written list does not.
+- **Exactly one component → proceed silently.** That is every repository this skill runs
+  against today, and the common path must not grow a question it never needed.
+- **More than one component → stop and ask.** Never pick. Report what was found, with each
+  component's resolved technology and toolchain, and mark exactly one **build and release**
+  — the one this run cuts — and every other **check only**: a check-only component's gate
+  runs, and nothing of it is stamped, tagged or published.
+
+```
+Found 3 components:
+  .              python/uv        build and release
+  dashboard/web  typescript/vite  check only
+  worker         typescript/npm   check only
+Correct?
+```
+
+The **root component carries the repository's release identity**: its adapter supplies
+`tag_pattern` and `publish_command`, and no other component's does. A repository has one
+tag and one outward-facing step no matter how many things it builds, so reading either
+field from a subfolder would give one repository two release lines.
+
+### Resolve the adapters
 
 Read [references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md) and follow its
-two-level detection: technology first, then toolchain, both by declared precedence.
+detection: components first, then within each component technology and then toolchain,
+each by declared precedence.
+
+Resolve the distribution separately, from shipping evidence at the repository root.
+**Resolving no distribution adapter is legitimate** — a repository that builds, tags, and
+ships nothing further beyond the tag is a complete shape, not a detection failure. Do not
+reach for a near-fit adapter to fill the gap.
 
 Load the resolved adapter file and hold its fourteen contract fields — `version_source`,
 `gate_command`, `artifact_pattern`, `tag_pattern`, and the rest. **Every later step reads
@@ -88,7 +129,7 @@ fourteen fields wide.
 
 Stop here if:
 
-- **Several technologies match** → ask which to release. Never guess.
+- **Several technologies match within one component** → ask which to release. Never guess.
 - **No toolchain matches** inside a detected technology → ask, listing the available
   adapters for that technology.
 - **Nothing matches at all** → refuse. Point the user at the contract's "Adding an

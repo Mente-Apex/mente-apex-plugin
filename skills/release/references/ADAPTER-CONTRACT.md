@@ -482,7 +482,28 @@ needed to be documented as a reason.
 
 ## Detection
 
-Two levels. Precedence is **declared here**, never emergent from directory listing order.
+A stage, then two levels. Precedence is **declared here**, never emergent from directory
+listing order.
+
+### Stage 1 — components
+
+Detection resolves *what* before it resolves *how*. A repository may hold several
+**components** — directories that each build something — and the two levels below run
+inside one component, not across the repository.
+
+A component is a directory carrying **build evidence** in a **git-tracked** file. Only
+tracked files count, which is one rule rather than a list of directories to skip:
+generated, vendored and virtual-environment trees are ignored by git and so never enter
+the walk, and the rule stays correct as a repository changes.
+
+- **Exactly one component** → the core proceeds silently. Every repository releasing today
+  is this shape, so the common path is unchanged.
+- **More than one component** → the core stops and asks which is **build and release** and
+  which are **check only**. It never picks.
+
+Two fields are repo-level in effect and are read **only from the root component's build
+adapter**: `tag_pattern` and `publish_command`. A repository has one tag and one
+outward-facing step regardless of how many components it builds.
 
 ### Level 1 — technology
 
@@ -495,8 +516,17 @@ First match wins:
 | `pyproject.toml` or `setup.py` | `python` |
 | `Cargo.toml` | `rust` |
 
-**More than one technology matches** — a Python backend beside a TypeScript frontend — →
-**ask the user**. Never guess; the wrong guess publishes the wrong thing.
+More than one technology matches **within a component** → **ask the user**. Never guess;
+the wrong guess publishes the wrong thing.
+
+Scoping the refusal to a component is what makes it usable. Repo-wide, it forbade exactly
+the repositories this design exists to support: `mente-apex-memory` is a Python project at
+the root beside a dashboard and a worker, and it escaped the old refusal only by accident —
+its `package.json` files happen to sit in subfolders that the root-level check never
+looked at. Scoping the refusal turns that accidental escape into the rule, and it
+strengthens the refusal rather than relaxing it: a Python backend and a TypeScript
+frontend genuinely sharing one directory now stops, where the repo-wide form would have
+been satisfied by whichever fingerprint the table listed first.
 
 ### Level 2 — toolchain within that technology
 
