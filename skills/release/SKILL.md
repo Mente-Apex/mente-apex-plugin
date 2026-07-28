@@ -35,7 +35,7 @@ first thing that leaves the machine — never a second.
 
 ## The seam
 
-This workflow names no technology and no forge. It knows only the fourteen-field adapter
+This workflow names no technology and no forge. It knows only the two-axis adapter
 contract in [references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md); the concrete
 commands live in `references/build/<technology>/<toolchain>.md`.
 
@@ -107,8 +107,11 @@ Resolve the distribution separately, from shipping evidence at the repository ro
 ships nothing further beyond the tag is a complete shape, not a detection failure. Do not
 reach for a near-fit adapter to fill the gap.
 
-Load each component's resolved adapter file and hold its fourteen contract fields —
-`version_source`, `gate_command`, `artifact_pattern`, `tag_pattern`, and the rest. **Every
+Load each component's resolved adapter file and hold the contract fields its axis
+declares — `version_source`, `gate_command`, `artifact_pattern`, `tag_pattern` and the
+rest on the build side; `derived_manifests`, `release_command` and the rest on the
+distribution side. The contract enumerates each set; do not carry one axis's field list
+over to the other. **Every
 later step reads through those fields, per component** — except `tag_pattern` and
 `publish_command`, which are read once and only from the root component, for the reason
 given above. This is the only place a concrete target enters the workflow.
@@ -126,8 +129,8 @@ If a `distribution_names` selector resolves to a mapping rather than a value, th
 that mapping's single key; **more than one entry is a refusal, not a choice** — ask which.
 
 An adapter may also carry the `status` marker described below. It is a maturity flag on
-the file, not a fifteenth contract field: no step reads through it, and the contract stays
-fourteen fields wide.
+the file, not a contract field on either axis: no step reads through it, and the contract
+is where each axis's field set is enumerated — never here.
 
 Stop here if:
 
@@ -335,12 +338,19 @@ Then refuse if that tag already exists; Step 8 carries the rationale.
 
 ## Step 5 — Stamp
 
-Skip this step entirely when the adapter's `version_source` is `null`. There is nothing to
-stamp: the tag carries the version, no file records it, and writing one anywhere would
-invent a literal the adapter never declared. Say so in the report and go to Step 6.
+Skip this step entirely when the root component's **build adapter** `version_source` is
+`null`. There is nothing to stamp: the tag carries the version, no file records it, and
+writing one anywhere would invent a literal the adapter never declared. Say so in the
+report and go to Step 6.
 
-Otherwise write the new version to the adapter's `version_source`, then to every entry in
-`derived_manifests`. All of them or none — a partial stamp leaves the manifests
+Otherwise write the new version to the build adapter's `version_source`, then to every
+entry in the resolved **distribution adapter's** `derived_manifests`. The two fields sit on
+different axes and neither implies the other: `version_source` is where the build side
+keeps the canonical literal, `derived_manifests` is the mirrors the shipping side wants
+stamped from it. **Resolving no distribution adapter means there are no derived
+manifests** — stamp `version_source` alone and say so; that is the same legitimate shape
+Step 0 named, not a lookup that failed. All of them or none — a partial stamp leaves the
+manifests
 inconsistent, which in a repo with a lockstep guard is a red suite and in a repo without
 one is a silent wrong release.
 
@@ -461,8 +471,8 @@ how that happens; verifying it is how it stops.
 
 ## Step 7 — Commit
 
-Skip this step entirely when the adapter's `version_source` is `null`. That target stamps
-nothing, so there is nothing to commit and **there is no release commit** — the tag in
+Skip this step entirely when the build adapter's `version_source` is `null`. That target
+stamps nothing, so there is nothing to commit and **there is no release commit** — the tag in
 Step 8 points at the existing `HEAD`, which is already the reviewed, merged state of the
 default branch. Never create an empty commit to have something to tag: an empty
 `chore(release):` commit adds a second, contentless node to the release line and makes
@@ -592,12 +602,16 @@ the user makes, and the usual answer is to push the tag by hand once the cause i
 
 ## Step 9a — Create the release object
 
-Skip this step entirely when the adapter's `release_command` is `null`. That target's tag
-*is* its release; there is no separate object to create. Say so in the report rather than
-leaving a blank line where a URL would go.
+Skip this step entirely when **no distribution adapter resolved** — `release_command` is a
+distribution field, so a repository that ships nothing beyond the tag has no field to read
+here at all, and reading one off nothing is the axis confusion this split removed. Skip it
+equally when the resolved distribution adapter's `release_command` is `null`: that target's
+tag *is* its release. Either way there is no separate object to create. Say which of the
+two it was in the report, rather than leaving a blank line where a URL would go.
 
 Otherwise, group the Conventional Commits since the previous tag into release notes, write
-them to a file, and run the adapter's `release_command` with `<release-notes-file>` bound
+them to a file, and run the **distribution adapter's** `release_command` with
+`<release-notes-file>` bound
 to that path and `<tag>` to the expanded tag. **Write the notes to a file rather than
 inlining them**: commit subjects contain quotes, backticks and `$`, and a note substituted
 into a command string is a note that can execute.
