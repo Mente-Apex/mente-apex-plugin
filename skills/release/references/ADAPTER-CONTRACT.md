@@ -70,11 +70,15 @@ empty square, where it builds, it tags, and nothing further mirrors or ships.
 > A build adapter may fingerprint only on **build evidence**. A distribution adapter may
 > fingerprint only on **shipping evidence**. Neither may look at the other's.
 
-- **Build evidence** — `uv.lock`, `package-lock.json`, `Cargo.lock`, `Cargo.toml`,
-  `pom.xml`, `build.gradle`, `pyproject.toml`, `setup.py`, and predicates over them such
-  as `pyproject.toml#tool.uv.package==false`.
-- **Shipping evidence** — `.claude-plugin/plugin.json`, registry configuration, publish
-  targets.
+- **Build evidence** — `uv.lock`, `package-lock.json`, `package.json`, `Cargo.lock`,
+  `Cargo.toml`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `pyproject.toml`,
+  `setup.py`, and predicates over them such as `pyproject.toml#tool.uv.package==false`.
+  This list must cover everything the [Level 1](#level-1--technology) table names, since
+  that is the table Step 0 walks the repository for; a test compares them.
+- **Shipping evidence** — `.claude-plugin/`, and the registry configuration and publish
+  targets that carry no build fact of their own: `.npmrc`, `.goreleaser.yml`,
+  `.goreleaser.yaml`. Naming these concretely is what gives the build direction of the
+  rule anything to match on; "registry configuration" as a phrase matched nothing.
 
 **This rule exists because the contract already walked into the failure it warned about.**
 `.claude-plugin/plugin.json` — a fact about what ships — was a `git-tag-only` fingerprint
@@ -90,30 +94,44 @@ Adding a fourth adapter filled in the missing square. It did not remove the caus
 this rule the manifest has no path by which to reach `build_command`, which is a stronger
 claim than "the missing adapter now exists".
 
-**The rule is refined by selector, not by path, because Maven and Cargo have exactly one
-manifest each.** `pom.xml` and `Cargo.toml` are simultaneously build evidence (they carry
-the project's version) and the only place their ecosystem records a shipping fact —
-`<project><distributionManagement>` and `package.publish` respectively. There is no second
-file to redirect a distribution adapter's fingerprint to, the way `.claude-plugin/` sits
-apart from `package.json`. So the evidence sets name **facts**, not files, and what
-distinguishes "this fingerprint reads the manifest's build identity" from "this fingerprint
-reads a shipping fact recorded inside it" is whether the fingerprint names a **selector**:
+**The rule is refined by selector, not by path, because three ecosystems have exactly one
+manifest each.** `pom.xml`, `Cargo.toml` and `package.json` are simultaneously build
+evidence (they carry the project's version) and the only place their ecosystem records a
+shipping fact — `<project><distributionManagement>`, `package.publish`, and
+`private` / `publishConfig` respectively. There is no second file to redirect a
+distribution adapter's fingerprint to, the way `.claude-plugin/` sits apart from
+`package.json`. Call those three the **shared manifests**. So the evidence sets name
+**facts**, not files, and what distinguishes "this fingerprint reads the manifest's build
+identity" from "this fingerprint reads a shipping fact recorded inside it" is whether the
+fingerprint names a **shipping selector into a shared manifest**:
 
 - A distribution adapter fingerprinting a **bare** build-evidence path (`pom.xml`,
-  `Cargo.toml`) is still a violation — that is reading the file's identity, which is a
-  build fact.
-- A distribution adapter fingerprinting a **selector** into a build-evidence file
-  (`pom.xml#/project/distributionManagement`, `Cargo.toml#package.publish`) is reading a
-  named shipping fact recorded inside a shared manifest, not the file's build identity, and
-  is not a violation.
-- The build direction gets no matching latitude: `SHIPPING_EVIDENCE` stays matched on the
-  whole path regardless of selector, because `.claude-plugin/` carries no build fact at any
-  selector for one to disambiguate. A build adapter naming
-  `.claude-plugin/plugin.json#.version` is still a violation.
+  `Cargo.toml`, `package.json`) is still a violation — that is reading the file's identity,
+  which is a build fact.
+- A distribution adapter fingerprinting a **shipping selector** into a shared manifest
+  (`pom.xml#/project/distributionManagement`, `Cargo.toml#package.publish`,
+  `package.json#.private==false`) is reading a named shipping fact recorded inside it, not
+  the file's build identity, and is not a violation.
+- **The carve-out reaches no further than the shared manifests, and no further than the
+  named shipping facts inside them.** A distribution adapter fingerprinting
+  `pyproject.toml#project.version` or `uv.lock#anything` is a violation with or without a
+  selector: Python and its lockfiles have shipping evidence of their own to point at, so
+  the one justification for the carve-out — no second file exists — does not apply. Adding
+  a fourth shared manifest means arguing that case here first.
+- The build direction is constrained by the same two clauses, read the other way.
+  `SHIPPING_EVIDENCE` is matched on the whole path regardless of selector, because
+  `.claude-plugin/` and an `.npmrc` carry no build fact at any selector for one to
+  disambiguate — a build adapter naming `.claude-plugin/plugin.json#.version` is still a
+  violation. **And a build adapter fingerprinting a shipping selector inside a shared
+  manifest is a violation too**: deciding how a component builds from
+  `pom.xml#/project/distributionManagement` is the incident's exact shape at selector
+  granularity — a shipping fact answering a build question. Ruling 1 taught this contract
+  that a shared manifest carries named shipping facts; the build direction has to learn it
+  as well, or half the rule reads facts while the other half reads files.
 
-That asymmetry is the point, not an inconsistency: the two evidence sets are not
-structurally symmetric, because the shipping side has a file that carries no build facts and
-the build side (for these two ecosystems) does not have the reverse.
+What remains asymmetric is only *where the shared manifests are*: the shipping side has
+files that carry no build facts, and the build side, for those three ecosystems, has no
+equivalent. Both directions read facts.
 
 ### Where the axes tangle
 
@@ -600,12 +618,13 @@ different directories, carry different field sets, and are detected differently.
    target where the tag *is* the whole release declares it `null` rather than inventing a
    forge step.
 3. Write the `fingerprint` under [the separation rule](#the-separation-rule), which
-   constrains it by **fact, not by file**. A build adapter fingerprints build evidence
-   only, matched on the whole path regardless of selector. A distribution adapter
-   fingerprints shipping evidence only — and where the only manifest its ecosystem has is
-   also build evidence, it must name a **selector** into the shipping fact it reads:
-   `pom.xml#/project/distributionManagement` and `Cargo.toml#package.publish` pass, bare
-   `pom.xml` and bare `Cargo.toml` do not.
+   constrains it by **fact, not by file**, in both directions. A build adapter fingerprints
+   build evidence only — never a shipping-evidence path at any selector, and never a
+   shipping selector inside a shared manifest. A distribution adapter fingerprints shipping
+   evidence only — and where the only manifest its ecosystem has is also build evidence, it
+   must name the **shipping selector** it reads: `pom.xml#/project/distributionManagement`,
+   `Cargo.toml#package.publish` and `package.json#.private==false` pass; bare `pom.xml`,
+   bare `Cargo.toml` and any selector into a manifest outside those three do not.
 4. Declare [`status: stub`](#status-stub) unless you authored it by running every command
    on a real repository first. The marker means "sketched, never exercised" — it is not a
    probation the core lets you serve, since it refuses to run against a stub at all.

@@ -110,17 +110,54 @@ LOCKFILE_CARRIES_OWN_VERSION = (
 # `build_command: null` for a repository with a setuptools backend and a console
 # script — one that builds a wheel perfectly well. Adding a fourth adapter filled
 # in the missing square; it did not remove the cause.
+#
+# Both tuples are tied to the contract's own prose by the two guards below:
+# `test_build_evidence_covers_the_contracts_level_one_table` and
+# `test_the_evidence_lists_match_the_contracts_separation_rule`. They had drifted
+# apart with nothing comparing them — `package.json` and `build.gradle.kts` are
+# named by the Level 1 table and were absent here, so a distribution adapter
+# could fingerprint bare `package.json` and this guard said nothing.
 BUILD_EVIDENCE = (
     "uv.lock",
     "package-lock.json",
+    "package.json",
     "Cargo.lock",
     "Cargo.toml",
     "pom.xml",
     "build.gradle",
+    "build.gradle.kts",
     "pyproject.toml",
     "setup.py",
 )
-SHIPPING_EVIDENCE = (".claude-plugin",)
+
+# Files that record only how a repository ships. Matched on the whole path, at any
+# selector, in the build direction — `.claude-plugin/` and an `.npmrc` carry no
+# build fact for a selector to disambiguate.
+SHIPPING_EVIDENCE = (
+    ".claude-plugin",
+    ".npmrc",
+    ".goreleaser.yml",
+    ".goreleaser.yaml",
+)
+
+# The ecosystems whose ONE manifest carries both kinds of fact, which is the whole
+# and only justification for the selector carve-out below. Maven, Cargo and npm
+# each have no second file to redirect a distribution fingerprint to, the way
+# `.claude-plugin/` sits apart from `package.json`. Any other build-evidence file
+# has one, so the carve-out does not reach it: a distribution adapter
+# fingerprinting `pyproject.toml#project.version` or `uv.lock#anything` is a
+# violation, selector or no selector.
+SHARED_MANIFESTS = ("pom.xml", "Cargo.toml", "package.json")
+
+# The named shipping facts each shared manifest records. Prefix-matched, so a
+# predicate form (`.private==false`) reads the same as the bare selector. A
+# selector into a shared manifest that is NOT one of these is a build fact, and
+# naming it from either axis is an offence in that axis's direction.
+SHIPPING_SELECTORS = {
+    "pom.xml": ("/project/distributionManagement",),
+    "Cargo.toml": ("package.publish",),
+    "package.json": (".private", ".publishConfig", ".files"),
+}
 
 
 _FRONTMATTER_KEY_VALUE = re.compile(r"^([A-Za-z0-9_-]+):\s?(.*)$")
@@ -237,6 +274,49 @@ def level_two_rows(contract_text):
             continue
         rows.append((technology, toolchain))
     return rows
+
+
+def level_one_fingerprints(contract_text):
+    """Every backticked path in the Level 1 detection table's fingerprint cells.
+
+    This is the contract's *other* definition of build evidence, and the one Step
+    0 tells the agent to walk for. It and `BUILD_EVIDENCE` had drifted apart with
+    no test comparing them.
+    """
+    section = _section_after(contract_text, "### Level 1")
+    paths = set()
+    for line in section.splitlines():
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if len(cells) != 2:
+            continue
+        fingerprint_cell, technology = cells
+        if technology in ("", "Technology") or set(technology) <= {"-"}:
+            continue
+        paths.update(re.findall(r"`([^`]+)`", fingerprint_cell))
+    return paths
+
+
+def evidence_bullet_paths(contract_text, label):
+    """Bare backticked paths from one bullet of the separation rule's evidence lists.
+
+    Selector-bearing examples (`pyproject.toml#tool.uv.package==false`) are
+    dropped: the tuples they are compared against hold paths.
+    """
+    section = _section_after(contract_text, "### The separation rule")
+    collected = []
+    capturing = False
+    for line in section.splitlines():
+        if line.startswith(f"- **{label}"):
+            capturing = True
+        elif capturing and (not line.startswith("  ") or not line.strip()):
+            break
+        if capturing:
+            collected.append(line)
+    return {
+        token
+        for token in re.findall(r"`([^`]+)`", " ".join(collected))
+        if "#" not in token
+    }
 
 
 def level_two_fingerprints(contract_text):
@@ -1138,11 +1218,10 @@ def _fingerprint_clause_parts(fields):
 
     A bare `pom.xml` and a selecting `pom.xml#/project/distributionManagement`
     name the same *path* but are not the same *claim*: the second names a
-    shipping fact recorded inside a file that also carries build facts. Maven
-    and Cargo have exactly one manifest each, so the path alone cannot tell the
-    two kinds of fact apart — the selector is what does. `_fingerprint_paths`
-    below collapses this pair for the direction that does not care (a build
-    adapter naming any selector into shipping evidence is still a violation).
+    shipping fact recorded inside a file that also carries build facts. Maven,
+    Cargo and npm have exactly one manifest each, so the path alone cannot tell
+    the two kinds of fact apart — the selector is what does, in both directions.
+    See `separation_violations` below.
     """
     parts = []
     for entry in fingerprint_selectors(str(fields.get("fingerprint", ""))):
@@ -1152,78 +1231,176 @@ def _fingerprint_clause_parts(fields):
     return parts
 
 
-def _fingerprint_paths(fields):
-    """Every bare path named by a fingerprint, predicates and conjunctions unwrapped."""
-    return {path for path, _selector in _fingerprint_clause_parts(fields)}
+def names_a_shipping_fact(path, selector):
+    """Is this clause a *named shipping fact* recorded inside a shared manifest?
+
+    The one carve-out ruling 1 grants, and it is bounded by
+    `SHARED_MANIFESTS`: only an ecosystem with a single manifest has no second
+    file to redirect a fingerprint to, and only the selectors `SHIPPING_SELECTORS`
+    names are shipping facts. `pyproject.toml#project.version` is not one of them
+    at any selector, because Python's shipping evidence lives elsewhere.
+    """
+    if selector is None or path not in SHARED_MANIFESTS:
+        return False
+    return any(
+        selector.startswith(shipping) for shipping in SHIPPING_SELECTORS.get(path, ())
+    )
+
+
+def separation_violations(fields, axis):
+    """Every separation-rule offence this `fingerprint` commits, as readable lines.
+
+    The single implementation of the rule, called by both the real guard over the
+    shipped adapters and the synthetic mutation proof below. They used to re-type
+    the predicate independently, so weakening the real condition left both green —
+    the real one passing vacuously, because no adapter violates it today.
+
+    Both directions read *facts*, not files, but they are not symmetric and the
+    asymmetry is the point:
+
+    - **distribution → build evidence.** A bare build-evidence path is an
+      offence: that reads the file's build identity. A `SHIPPING_SELECTORS`
+      selector into a `SHARED_MANIFESTS` file is not: `pom.xml`, `Cargo.toml` and
+      `package.json` are each their ecosystem's only manifest, carrying publish
+      eligibility in the same file as the version.
+    - **build → shipping evidence.** A `SHIPPING_EVIDENCE` path offends at any
+      selector — `.claude-plugin/plugin.json#.version` is still the incident. And
+      a build adapter naming a *shipping selector inside a shared manifest*
+      offends too: deciding how a repository builds from
+      `pom.xml#/project/distributionManagement` is the incident's exact shape at
+      selector granularity. Ruling 1 taught the contract that a shared manifest
+      carries named shipping facts; the build direction has to learn it as well,
+      or half the rule reads files while the other half reads facts.
+    """
+    assert axis in ("build", "distribution"), f"unknown axis: {axis}"
+    offences = []
+    for path, selector in _fingerprint_clause_parts(fields):
+        clause = path if selector is None else f"{path}#{selector}"
+        if axis == "build":
+            if any(path.startswith(marker) for marker in SHIPPING_EVIDENCE):
+                offences.append(
+                    f"build adapter fingerprints on shipping evidence {clause!r}"
+                )
+            elif names_a_shipping_fact(path, selector):
+                offences.append(
+                    "build adapter fingerprints on the shipping fact "
+                    f"{clause!r} recorded inside a shared manifest"
+                )
+        elif path in BUILD_EVIDENCE and not names_a_shipping_fact(path, selector):
+            offences.append(
+                f"distribution adapter fingerprints on build evidence {clause!r}"
+            )
+    return offences
 
 
 def test_neither_adapter_kind_fingerprints_on_the_others_evidence():
-    """The separation rule, refined for the direction where the split is real.
-
-    A distribution adapter fingerprinting a bare build-evidence path is a
-    violation regardless. But `pom.xml` and `Cargo.toml` are each the *only*
-    manifest their ecosystem has, so they carry both the project's version
-    (a build fact) and its publish eligibility (a shipping fact) in the same
-    file — unlike `.claude-plugin/`, which carries no build facts at any
-    selector. A distribution adapter naming a *selector* into a build-evidence
-    file is reading a shipping fact recorded there, not the file's build
-    identity, so only a bare, selector-less build-evidence path offends.
-
-    The build direction is not given the same latitude: `SHIPPING_EVIDENCE`
-    stays prefix-matched on the whole path, selector or not, because there is
-    no shipping-evidence file that also carries a build fact for a selector to
-    disambiguate.
-    """
+    """The separation rule over every adapter this repository actually ships."""
     offenders = []
-    for adapter in adapter_files():
+    for adapter, axis in [(path, "build") for path in adapter_files()] + [
+        (path, "distribution") for path in distribution_files()
+    ]:
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
-        for path in _fingerprint_paths(fields):
-            if any(path.startswith(marker) for marker in SHIPPING_EVIDENCE):
-                offenders.append(
-                    f"{adapter.relative_to(REPO_ROOT)}: build adapter fingerprints "
-                    f"on shipping evidence {path!r}"
-                )
-    for adapter in distribution_files():
-        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
-        for path, selector in _fingerprint_clause_parts(fields):
-            if path in BUILD_EVIDENCE and selector is None:
-                offenders.append(
-                    f"{adapter.relative_to(REPO_ROOT)}: distribution adapter "
-                    f"fingerprints on bare build evidence {path!r}"
-                )
+        offenders += [
+            f"{adapter.relative_to(REPO_ROOT)}: {offence}"
+            for offence in separation_violations(fields, axis)
+        ]
     assert not offenders, "the separation rule is violated:\n" + "\n".join(offenders)
 
 
 def test_separation_rule_catches_a_synthetic_violation():
-    """The rule must be observable, or it is decoration."""
-    plugin_fingerprinted_build = {"fingerprint": "uv.lock+.claude-plugin/plugin.json"}
-    paths = _fingerprint_paths(plugin_fingerprinted_build)
-    assert any(path.startswith(".claude-plugin") for path in paths)
+    """The mutation proof, now sharing its implementation with the real guard.
 
-    lock_fingerprinted_distribution = {"fingerprint": "uv.lock"}
-    assert "uv.lock" in _fingerprint_paths(lock_fingerprinted_distribution)
-
-    # Distribution direction, selector-sensitive: a bare build-evidence path is
-    # still a violation ...
-    bare_pom = {"fingerprint": "pom.xml"}
-    assert any(
-        path in BUILD_EVIDENCE and selector is None
-        for path, selector in _fingerprint_clause_parts(bare_pom)
+    No shipped adapter violates the rule, so the guard above never executes its
+    failure branch. This drives `separation_violations` directly — the same
+    function, not a re-typed copy of its predicate.
+    """
+    # Build direction: shipping evidence, at any selector and inside a conjunction.
+    assert separation_violations(
+        {"fingerprint": "uv.lock+.claude-plugin/plugin.json"}, "build"
     )
-    # ... but a selector into the same file naming a shipping fact is not.
-    selecting_pom = {"fingerprint": "pom.xml#/project/distributionManagement"}
-    assert not any(
-        path in BUILD_EVIDENCE and selector is None
-        for path, selector in _fingerprint_clause_parts(selecting_pom)
+    assert separation_violations(
+        {"fingerprint": "uv.lock+.claude-plugin/plugin.json#.version"}, "build"
+    )
+    assert separation_violations({"fingerprint": ".npmrc"}, "build")
+    # Build direction, at selector granularity: a shipping fact inside a shared
+    # manifest decides nothing about how the component builds.
+    assert separation_violations(
+        {"fingerprint": "pom.xml#/project/distributionManagement"}, "build"
+    )
+    assert separation_violations(
+        {"fingerprint": "package.json#.private==false"}, "build"
+    )
+    # ... while the build fact in the same file is exactly what a build adapter
+    # is for.
+    assert not separation_violations({"fingerprint": "pom.xml"}, "build")
+    assert not separation_violations(
+        {"fingerprint": "pyproject.toml#tool.uv.package==false"}, "build"
     )
 
-    # Build direction, not selector-sensitive: `.claude-plugin/` carries no
-    # build facts at any selector, so a selector does not launder it.
-    selecting_plugin_manifest = {
-        "fingerprint": "uv.lock+.claude-plugin/plugin.json#.version"
-    }
-    paths = _fingerprint_paths(selecting_plugin_manifest)
-    assert any(path.startswith(".claude-plugin") for path in paths)
+    # Distribution direction: a bare build-evidence path is a violation ...
+    assert separation_violations({"fingerprint": "uv.lock"}, "distribution")
+    assert separation_violations({"fingerprint": "pom.xml"}, "distribution")
+    assert separation_violations({"fingerprint": "package.json"}, "distribution")
+    # ... and so is a selector into a build-evidence file that is NOT one of the
+    # single-manifest ecosystems the carve-out was justified for. This is the
+    # half an unbounded `selector is None` test let through.
+    assert separation_violations(
+        {"fingerprint": "pyproject.toml#project.version"}, "distribution"
+    )
+    assert separation_violations({"fingerprint": "uv.lock#anything"}, "distribution")
+    # ... but a named shipping fact inside a shared manifest is not.
+    assert not separation_violations(
+        {"fingerprint": "pom.xml#/project/distributionManagement"}, "distribution"
+    )
+    assert not separation_violations(
+        {"fingerprint": "Cargo.toml#package.publish"}, "distribution"
+    )
+    assert not separation_violations(
+        {"fingerprint": "package.json#.private==false"}, "distribution"
+    )
+    assert not separation_violations(
+        {"fingerprint": ".claude-plugin/plugin.json"}, "distribution"
+    )
+
+
+def test_build_evidence_covers_the_contracts_level_one_table():
+    """Two definitions of "build evidence" existed with nothing comparing them.
+
+    Step 0 tells the agent to walk for the paths the Level 1 table names, so a
+    path the table calls build evidence and this tuple omits is a path a
+    distribution adapter may fingerprint with the guard silent. `package.json`
+    and `build.gradle.kts` were both in that gap.
+    """
+    missing = sorted(
+        path
+        for path in level_one_fingerprints(ADAPTER_CONTRACT.read_text(encoding="utf-8"))
+        if path not in BUILD_EVIDENCE
+    )
+    assert not missing, (
+        "the contract's Level 1 table names build evidence the separation guard "
+        f"does not know about: {missing}"
+    )
+
+
+def test_the_evidence_lists_match_the_contracts_separation_rule():
+    """The rule's own prose and the tuples that enforce it, tied together."""
+    text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+
+    build = evidence_bullet_paths(text, "Build evidence")
+    assert build, "the contract no longer lists its build evidence"
+    assert not sorted(
+        path for path in build if path not in BUILD_EVIDENCE
+    ), f"contract build evidence missing from BUILD_EVIDENCE: {sorted(build)}"
+
+    shipping = evidence_bullet_paths(text, "Shipping evidence")
+    assert shipping, "the contract no longer lists its shipping evidence"
+    uncovered = sorted(
+        path for path in shipping if path.rstrip("/") not in SHIPPING_EVIDENCE
+    )
+    assert not uncovered, (
+        "the contract names shipping evidence the guard does not match on, so a "
+        f"build adapter may fingerprint it: {uncovered}"
+    )
 
 
 def test_contract_states_the_separation_rule():
