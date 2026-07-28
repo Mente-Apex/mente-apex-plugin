@@ -65,6 +65,31 @@ empty square, where it builds, it tags, and nothing further mirrors or ships.
 | `install_verify_command` | Proves the *shipped* thing arrived. | no |
 | `release_command` | Creates the forge's release *object* from the pushed tag. | yes — targets where the tag is the whole release |
 
+### The separation rule
+
+> A build adapter may fingerprint only on **build evidence**. A distribution adapter may
+> fingerprint only on **shipping evidence**. Neither may look at the other's.
+
+- **Build evidence** — `uv.lock`, `package-lock.json`, `Cargo.lock`, `Cargo.toml`,
+  `pom.xml`, `build.gradle`, `pyproject.toml`, `setup.py`, and predicates over them such
+  as `pyproject.toml#tool.uv.package==false`.
+- **Shipping evidence** — `.claude-plugin/plugin.json`, registry configuration, publish
+  targets.
+
+**This rule exists because the contract already walked into the failure it warned about.**
+`.claude-plugin/plugin.json` — a fact about what ships — was a `git-tag-only` fingerprint
+entry, so it decided a question about how a repository builds. The answer it produced,
+`build_command: null`, was wrong: that repository has a setuptools backend and a console
+script and builds a wheel perfectly well. `/release` cut a tag and never built it.
+
+The release survived only because that project installs from source at the tag, so nothing
+consumed the wheel that was never built. The safety came from an unrelated implementation
+detail, not from this contract.
+
+Adding a fourth adapter filled in the missing square. It did not remove the cause. Under
+this rule the manifest has no path by which to reach `build_command`, which is a stronger
+claim than "the missing adapter now exists".
+
 ### Where the axes tangle
 
 Two fields do not cleanly belong to one side, and pretending otherwise would be the same
