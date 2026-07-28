@@ -47,9 +47,9 @@ its single-literal check, its stamp, and its release commit for such a target; t
 created on the existing `HEAD` and nothing else changes.
 
 A `null` `distribution_names` is likewise a positive claim: nothing this adapter runs needs
-to name the installed thing. `python/git-tag-only` verifies with `claude plugin list`,
-which names no distribution, so it declares `null`. Any adapter whose commands contain
-`<distribution-name:…>` must declare every role it references.
+to name the installed thing. `python/uv-nobuild` builds no wheel and names no distribution,
+so it declares `null`. Any adapter whose commands contain `<distribution-name:…>` must
+declare every role it references.
 
 ## Distribution adapter fields
 
@@ -78,16 +78,17 @@ coincidence is not evidence.
 
 **`install_verify_command` goes on both, and both run.** `uv tool install --force . && which
 <distribution-name:binary>` verifies what the build produced; `claude plugin list` verifies
-what the distribution shipped. They are two checks of two different things, and
-`uv-plugin.md`'s own verification section already treats them that way — *"Three things
-were released, so check all three."* Forcing them into one field is what made that command
-a compound in the first place.
+what the distribution shipped. They are two checks of two different things — a repository
+running both is a `python/uv` build resolving alongside a `claude-plugin` distribution, and
+each names only its own half. Forcing them into one field is what made that command a
+compound in the first place.
 
 **`version_source` always comes from the build adapter — which changes this repository's
-canonical version file.** The two existing plugin adapters disagreed about direction, and
-the disagreement was principled: `python/uv-plugin` makes `pyproject.toml` canonical because
-`uv build` reads it, while `python/git-tag-only` used to make
-`.claude-plugin/plugin.json#.version` canonical. So which file leads depends on what *reads*
+canonical version file.** Before the axes were split, the two plugin-shaped adapters
+disagreed about direction, and the disagreement was principled: `python/uv-plugin` made
+`pyproject.toml` canonical because `uv build` reads it, while `python/git-tag-only` made
+`.claude-plugin/plugin.json#.version` canonical, because a repository that builds nothing
+has no toolchain reading `pyproject.toml` either. So which file led depended on what *reads*
 the version, which is a shipping fact, not a build fact.
 
 It collapses. In a `package = false` repository nothing builds, so no toolchain reads either
@@ -142,13 +143,13 @@ thing — *this mirror is legitimately absent in some repositories of this adapt
 and the core stamps it when the file is there, skips it when it is not, and reports which
 it did.
 
-The marker exists because one adapter shape spans repositories that differ in which
+The marker exists because one distribution shape spans repositories that differ in which
 mirrors they carry. A plugin repo that is also its own marketplace source has three
-manifests; one that publishes through somebody else's marketplace has two. Both are
-`python/uv-plugin`. Without the marker the list forces a choice between an adapter that
-fails the stamp on the two-manifest repo and one that lets the third repo's literal read as
-undeclared drift — and the second failure lands at Step 3, mid-release, after the gate has
-already run.
+manifests; one that publishes through somebody else's marketplace has two. Both resolve
+`distributions/claude-plugin.md`. Without the marker the list forces a choice between an
+adapter that fails the stamp on the two-manifest repo and one that lets the third repo's
+literal read as undeclared drift — and the second failure lands at Step 3, mid-release,
+after the gate has already run.
 
 **Why a marker rather than "skip any absent entry".** Silently skipping absence would make
 a *typo* — `marketplaces.json`, `.plugin/` — indistinguishable from a legitimately absent
@@ -180,15 +181,17 @@ one entry may write it inline — `fingerprint: uv.lock` — which is the same l
 
 **The list is OR; `+` is the AND the list cannot express.** Entries are alternatives —
 *any* match selects the adapter — which is right for a target reachable by several
-independent signals. It cannot say "this repo is both a uv project *and* a plugin", and
-that conjunction is exactly what distinguishes `python/uv-plugin` from a plugin repo built
-by setuptools or poetry. Without it that adapter would have to fingerprint
-`.claude-plugin/plugin.json` alone and would **confidently claim** every non-uv Python
+independent signals. No build adapter needs the conjunction today: build evidence and
+shipping evidence now fingerprint on separate axes, each alone. It earned its place in the
+vocabulary all the same — `python/uv-plugin`, before the axes were split, had to say "this
+repo is both a uv project *and* a plugin" with `uv.lock+.claude-plugin/plugin.json`, because
+`.claude-plugin/plugin.json` alone would have **confidently claimed** every non-uv Python
 plugin repo — running `uv sync`, then `uv lock`, creating a lockfile in a repo that
 deliberately has none, and refusing at Step 5a after the gate. A repo that no adapter fits
 must reach "no toolchain matches → ask the user"; a fingerprint too weak to exclude it
 converts that clean refusal into a confident wrong answer, which is the failure the
-detection table's ordering rules already spend three paragraphs on.
+detection table's ordering rules already spend three paragraphs on. The form stays
+available for the next adapter that needs it.
 
 Keep clauses to the minimum that excludes what must be excluded. A conjunction is a
 narrowing tool, not a description of the repository: piling on clauses that happen to be
@@ -196,19 +199,22 @@ true of the one repo you are looking at turns a shape into a fingerprint of a si
 checkout, and the next repo of that shape silently falls through.
 
 The field was originally a single file path while the Level 2 table already listed a
-non-file selector for `python/git-tag-only`. That contradiction left an adapter author with
+non-file selector for `python/uv-nobuild`. That contradiction left an adapter author with
 no rule and the detection table making a promise the field could not keep: a `uv` project
 declaring `[tool.uv] package = false` with no `.claude-plugin/` directory was told to use
-`git-tag-only`, whose fingerprint was demonstrably absent. The list closes it — the table
-now mirrors the field, entry for entry, and a test fails if they drift.
+that adapter's predecessor, whose fingerprint was demonstrably absent. The list closes it —
+the table now mirrors the field, entry for entry, and a test fails if they drift.
 
 **A fingerprint match is not a fit.** An adapter selected by a predicate can still address
-manifests this repository does not have — `git-tag-only` names
-`.claude-plugin/plugin.json#.version`, which a plain `package = false` project lacks. So
-detection has a second, cheap check: **if the resolved adapter's `version_source` file does
-not exist, refuse and ask.** Guessing a substitute path here would stamp a version into a
-file the adapter never declared, which is the whole class of error this contract exists to
-prevent.
+manifests this repository does not have. Before the axes were split, `git-tag-only` named
+`.claude-plugin/plugin.json#.version`, which a plain `package = false` project lacks — the
+concrete case that motivated this check, and the one the split has since closed by giving
+that project's build adapter (`python/uv-nobuild`) a `version_source` it always has
+(`pyproject.toml#project.version`) and letting distribution resolve separately, or not at
+all. The check stays as the general safety net for any future adapter whose fingerprint
+outruns its own fields: **if the resolved adapter's `version_source` file does not exist,
+refuse and ask.** Guessing a substitute path here would stamp a version into a file the
+adapter never declared, which is the whole class of error this contract exists to prevent.
 
 ### Why a map and not a single name
 
@@ -439,37 +445,24 @@ Each row's fingerprint cell lists that adapter's `fingerprint` entries verbatim,
 
 | Technology | Fingerprint | Toolchain |
 |---|---|---|
-| `python` | `pyproject.toml#tool.uv.package==false` | `git-tag-only` |
-| `python` | `uv.lock+.claude-plugin/plugin.json` | `uv-plugin` |
+| `python` | `pyproject.toml#tool.uv.package==false` | `uv-nobuild` |
 | `python` | `uv.lock` | `uv` |
 | `typescript` | `package-lock.json` | `npm` |
 | `java` | `pom.xml` | `maven` |
 | `rust` | `Cargo.lock` | `cargo` |
 
-Note the ordering within `python` is load-bearing: all three rows can match one repository,
-because every uv project has a `uv.lock`. The three python rows read as one question asked
-in narrowing order — **does it build? and does it also ship a plugin?**
+Note the ordering within `python` is load-bearing: both rows can match one repository,
+because every uv project has a `uv.lock`. The two python rows read as one question asked in
+narrowing order — **does it build a wheel at all?**
 
 1. `package = false` → it builds no wheel at all, so `uv`'s `build_command` and
-   `artifact_pattern` would both be wrong. This very repo. `git-tag-only`.
-2. Otherwise a `uv.lock` **and** a `.claude-plugin/plugin.json` → it builds a wheel *and*
-   mirrors the version into a plugin manifest that must be stamped in lockstep.
-   `uv-plugin`. Both clauses are load-bearing: the plugin manifest alone would claim
-   setuptools- and poetry-built plugin repos, whose release this adapter's uv commands
-   would not survive.
-3. Otherwise → an ordinary wheel-building uv project. `uv`.
+   `artifact_pattern` would both be wrong. This very repo. `uv-nobuild`.
+2. Otherwise → an ordinary wheel-building uv project. `uv`.
 
 The ordering also settles the `package = false` case that carries no `.claude-plugin/`
-directory: it matches row 1's predicate and row 3's `uv.lock`, and the first row wins.
-
-**Row 2 is the one that was missing, and its absence was not visible as a gap.**
-`.claude-plugin/plugin.json` used to be a `git-tag-only` fingerprint entry, on the reading
-that a plugin repo ships no package. A repo doing both was therefore *claimed* by row 1
-rather than falling through to a refusal — detection resolved confidently and the
-resulting plan would have cut a tag while skipping the build entirely. The failure of a
-too-broad fingerprint is not that nothing matches; it is that the wrong thing matches
-silently. Weigh a new row's fingerprint by what it would wrongly claim, not only by what it
-correctly selects.
+directory: it matches row 1's predicate and row 2's `uv.lock`, and the first row wins. That
+repository resolves a build adapter and no distribution adapter — a legitimate shape, not a
+gap: it builds nothing, tags, and ships nothing further.
 
 **The resolved adapter's `version_source` file does not exist** → refuse and ask which
 adapter to use. A fingerprint match is a signal, not proof of fit; see
@@ -481,6 +474,16 @@ listing what is available.
 **No technology matches at all** → refuse, and point the user at this file to write an
 adapter. `/release` does not generate adapters interactively; authoring one is a separate,
 deliberate act.
+
+### Distribution detection
+
+Distribution adapters resolve independently, by shipping evidence at the repository root —
+`references/distributions/<kind>.md`'s own `fingerprint`, checked the same way a build
+adapter's is. **Any** number may match, including **none**: a repository that builds and
+tags but ships nothing further beyond the tag is a complete, legitimate shape, not a
+detection failure. Where one does match, its `derived_manifests` are stamped from the
+resolved build adapter's `version_source`, and its `release_command` and
+`install_verify_command` run after the build side's own steps.
 
 ## Adding an adapter
 

@@ -104,7 +104,7 @@ Stop here if:
 Report the resolution before continuing, so a wrong detection is visible immediately:
 
 ```
-Target : python / git-tag-only   (fingerprint: .claude-plugin/plugin.json)
+Target : python / uv-nobuild   (fingerprint: pyproject.toml#tool.uv.package==false)
 ```
 
 ## Step 1 — Inspect
