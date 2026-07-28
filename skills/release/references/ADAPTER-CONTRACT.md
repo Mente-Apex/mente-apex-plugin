@@ -20,9 +20,9 @@ actual command set). One file is exactly one command set — one reason to chang
 `python.md` branching uv-versus-poetry would have two, which is why the tree has two
 levels.
 
-## The eleven fields
+## The thirteen fields
 
-Declared as YAML frontmatter. Every field is required; five may be `null`.
+Declared as YAML frontmatter. Every field is required; six may be `null`.
 
 | Field | Meaning | `null` allowed |
 |---|---|---|
@@ -34,7 +34,9 @@ Declared as YAML frontmatter. Every field is required; five may be `null`.
 | `gate_command` | Clean rebuild from the lockfile, then the red/green check. | no |
 | `build_command` | Produce distributable artifacts. | yes — no-build targets |
 | `artifact_pattern` | Glob the build must emit. Verified, never assumed. | yes — iff no build |
+| `tag_pattern` | The tag this target's ecosystem expects. Expands to `<tag>`. | no |
 | `publish_command` | The outward-facing step. | no |
+| `release_command` | Creates the forge's release *object* from the pushed tag. | yes — targets where the tag is the whole release |
 | `install_verify_command` | Proves the installed thing is what was just cut. | no |
 | `distribution_names` | Map of *role* → `path/to/file#selector`, naming the installed thing. | yes — iff no command references `<distribution-name:…>` |
 
@@ -71,14 +73,70 @@ distribution_names:
 -Dartifact=<distribution-name:group>:<distribution-name:artifact>:<version>
 ```
 
-Role names are the adapter's own vocabulary. A new naming role is a new key, never a
-twelfth field.
+Role names are the adapter's own vocabulary. A new naming role is a new key, never a new
+contract field.
 
 **A selector may address a table rather than a value** — `python/uv`'s binary name is the
 *key* under `[project.scripts]`, not a value anywhere. When a selector resolves to a
 mapping, the role's value is that mapping's single key. **If it holds more than one entry,
 refuse and ask which** — do not pick. Guessing here is the whole failure this field exists
 to prevent, and it would arrive at Step 10 where nothing else is checking.
+
+### `tag_pattern` — the tag convention is the target's, not the core's
+
+`v<version>` looks universal and is not. A Go module at the repository root wants exactly
+that; a Go **submodule** wants `sub/module/v1.2.3`, and the path prefix is not decoration —
+the proxy resolves the module by it. `maven-release-plugin` defaults to
+`<artifactId>-<version>`. Ruby gems and many monorepo conventions differ again.
+
+So the pattern is the adapter's, and the core reads it as `<tag>` wherever it names a tag:
+the annotated tag itself, the release commit's subject, the confirmation checkpoint, the
+rollback commands, and the report. **`tag_pattern` is expanded once**, as soon as the
+version settles in Step 4 — before the tag exists — because Step 4's "this tag is already
+taken" refusal needs the resolved string too.
+
+The pattern may use any placeholder in the vocabulary below **except `<tag>` itself**,
+which is what it defines. Nothing else in the vocabulary is self-referential, so the
+substitution has no cycle detection and is not going to grow any.
+
+There is no `null` case. A target that builds nothing is ordinary; a target that publishes
+nothing outward is conceivable; a release with no tag is not a release.
+
+### `release_command` — the forge is a detail too
+
+`publish_command` sends the version outward. What follows it — the *release object* on
+GitHub, GitLab, Gitea, or a self-hosted forge — is a separate act, and it is the one the
+core used to perform itself with a hardcoded `gh release create`. That made every non-
+GitHub repository unreleasable without editing the core, which is precisely what this
+contract exists to prevent.
+
+`null` is a real value here, and a positive claim: **the tag is the whole release.** A
+target publishing to a registry that has no notion of a release page declares `null`, and
+the core skips the step exactly as it skips a `null` `build_command`.
+
+```yaml
+# GitHub
+release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
+
+# GitLab — illustrative, never exercised here; verify the flags against your `glab`
+release_command: glab release create <tag> --name <tag> --notes-file <release-notes-file>
+
+# a registry-only target with no release page
+release_command: null
+```
+
+**A failure here is not a failed release.** `release_command` runs after the push, so by
+the time it can fail the tag is public and the version is installable. The core reports it
+as a release that shipped without its release object — never as a release to re-cut. That
+degradation is the core's rule, not the adapter's, so an adapter does not restate it.
+
+**The known wart of putting this in the technology adapter.** The forge is genuinely
+orthogonal to the language: a Python project and a Go project on the same GitLab instance
+want the identical command, and here each would declare its own copy. That is accepted for
+now — a second resolution axis costs a second detection procedure, a second precedence
+table, and a merge rule, for a duplication that today spans four adapters and one forge. If
+a third forge arrives and the copies start disagreeing, this field is the thing that gets
+hoisted into a forge adapter; nothing here has to be unpicked first.
 
 ## The placeholder vocabulary
 
@@ -92,7 +150,15 @@ point where nobody is checking.
 | `<remote>` | the resolution in [../../../docs/git-remote-resolution.md](../../../docs/git-remote-resolution.md) |
 | `<default>` | the same resolution — the default branch |
 | `<version>` | the version being released, as computed in Step 4 |
+| `<tag>` | expanding this adapter's own `tag_pattern`; unavailable *inside* `tag_pattern` |
+| `<release-notes-file>` | a path the core writes the grouped Conventional Commit notes to |
 | `<distribution-name:role>` | reading the `role` key of this adapter's `distribution_names` |
+
+`<release-notes-file>` is a *path* rather than the notes themselves for a reason worth
+stating: release notes are multi-line and routinely contain quotes, backticks and `$`.
+Substituting them into a command string would make every adapter author responsible for
+shell quoting, and the failure mode of getting it wrong is a release note that silently
+executes part of a commit message.
 
 Only roles the adapter actually declares are bound. `<distribution-name:binary>` in an
 adapter whose map has no `binary` key is an unbound token, exactly like `<tool-name>` would
@@ -168,7 +234,9 @@ deliberate act.
 
 ## Adding an adapter
 
-1. Create `references/targets/<technology>/<toolchain>.md` with all eleven fields.
+1. Create `references/targets/<technology>/<toolchain>.md` with all thirteen fields.
+   `tag_pattern` is the one people forget, because `v<version>` feels like a default
+   rather than a choice.
 2. Declare `status: stub` until you have cut a real release with it.
 3. Add its fingerprint row to the Level 2 table above, positioned so its precedence
    against existing adapters is explicit.

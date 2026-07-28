@@ -7,7 +7,9 @@ derived_manifests: []
 gate_command: npm ci && npm test && npm run lint
 build_command: npm run build && npm pack
 artifact_pattern: "*-<version>.tgz"
+tag_pattern: v<version>
 publish_command: npm publish && git push <remote> <default> --follow-tags
+release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
 install_verify_command: npm install -g <distribution-name:package>@<version> && which <distribution-name:binary>
 distribution_names:
   package: package.json#.name

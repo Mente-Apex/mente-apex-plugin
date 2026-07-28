@@ -9,7 +9,9 @@ derived_manifests:
 gate_command: uv sync && uv run pytest && uv run ruff check . && uv run black --check .
 build_command: null
 artifact_pattern: null
+tag_pattern: v<version>
 publish_command: git push <remote> <default> --follow-tags
+release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
 install_verify_command: claude plugin list
 distribution_names: null
 ---
