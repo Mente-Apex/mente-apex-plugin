@@ -68,6 +68,12 @@ CLAUDE_DIR = HOME / ".claude"
 CONFIG_FILE = CLAUDE_DIR / "config-sync-config.json"
 CONFIG_REPO = CLAUDE_DIR / "config-sync-repo"
 
+# The process environment, as a module global for the same reason HOME is one:
+# `default_registry` already takes `environ` injected, but the composition root
+# below hardwired `os.environ`, so the seam stopped at the module boundary and
+# tests could only reach it by mutating the real process environment.
+ENVIRON = os.environ
+
 # Directories we capture in a snapshot (relative to CLAUDE_DIR)
 SNAPSHOT_DIRS = ["memory", "rules", "skills", "agents"]
 SNAPSHOT_FILES = ["CLAUDE.md", "settings.json", "keybindings.json"]
@@ -131,8 +137,9 @@ def _safe_dest(rel: str):
 
 def _root_registry() -> config_sync_roots.RootRegistry:
     """This machine's root registry: HOME plus CONFIG_SYNC_ROOT_* declarations.
-    Built from the live globals so tests that monkeypatch HOME are honoured."""
-    return config_sync_roots.default_registry(HOME, os.environ)
+    Built from the live globals so tests that monkeypatch HOME or ENVIRON are
+    honoured."""
+    return config_sync_roots.default_registry(HOME, ENVIRON)
 
 
 def _machine_id() -> str:

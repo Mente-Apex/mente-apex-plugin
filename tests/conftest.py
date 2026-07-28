@@ -11,6 +11,37 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import config_sync  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def isolated_root_declarations(monkeypatch):
+    """Point the engine's environment at an isolated dict, like `claude_home`
+    does for every path global.
+
+    Named roots are declared through CONFIG_SYNC_ROOT_* variables, so a machine
+    that really declares one leaks it into every test. This repo's author
+    declares CONFIG_SYNC_ROOT_MENTE_APEX_MEMORY, and that repo ships its own
+    hooks/hooks.json — so a test declaring a single throwaway root saw the real
+    repo's hooks discovered alongside it, planned four registrations instead of
+    one, and tokenised the wrong command on export.
+
+    Substituting `config_sync.ENVIRON` rather than scrubbing `os.environ` uses
+    the seam the engine already exposes: `default_registry` takes `environ`
+    injected precisely so tests need not touch process globals. Tests declare
+    roots by writing to this dict via the `root_environ` fixture.
+
+    Autouse because of the failure mode: an ambient declaration makes the suite
+    green wherever nobody uses the feature and red only on the machines that do.
+    """
+    isolated_environ = {}
+    monkeypatch.setattr(config_sync, "ENVIRON", isolated_environ)
+    return isolated_environ
+
+
+@pytest.fixture
+def root_environ(isolated_root_declarations):
+    """The dict a test writes CONFIG_SYNC_ROOT_* declarations into."""
+    return isolated_root_declarations
+
+
 @pytest.fixture
 def claude_home(tmp_path, monkeypatch):
     """Point every engine path global at an isolated throwaway ~/.claude."""
