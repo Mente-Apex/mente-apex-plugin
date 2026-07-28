@@ -164,3 +164,39 @@ def test_behind_line_is_the_only_line_on_a_stale_default_branch(clone):
 
 def test_silent_on_the_default_branch_when_it_is_current(clone):
     assert merged_branch.report(clone) == []
+
+
+def test_lists_merged_branches_that_still_exist_locally(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    merge_into_main(clone, "feat/x")
+    lines = merged_branch.report(clone)
+    assert "Merged branches still present locally: feat/x." in lines
+
+
+def test_lists_lingering_branches_after_switching_back_to_the_default(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    merge_into_main(clone, "feat/x")
+    run("git", "checkout", "main", cwd=clone)
+    run("git", "merge", "--ff-only", "origin/main", cwd=clone)
+    lines = merged_branch.report(clone)
+    # Up to date and off the branch — the only thing left to say is cleanup.
+    assert lines == ["Merged branches still present locally: feat/x."]
+
+
+def test_the_default_branch_is_never_in_the_deletion_list(clone):
+    assert merged_branch.merged_local_branches(clone, "main", "origin/main") == []
+
+
+def test_lists_several_lingering_branches_in_ref_order(clone):
+    commit_on_new_branch(clone, "feat/a", "a.txt")
+    merge_into_main(clone, "feat/a")
+    run("git", "checkout", "main", cwd=clone)
+    run("git", "merge", "--ff-only", "origin/main", cwd=clone)
+    commit_on_new_branch(clone, "feat/b", "b.txt")
+    merge_into_main(clone, "feat/b")
+    run("git", "checkout", "main", cwd=clone)
+    run("git", "merge", "--ff-only", "origin/main", cwd=clone)
+    assert merged_branch.merged_local_branches(clone, "main", "origin/main") == [
+        "feat/a",
+        "feat/b",
+    ]
