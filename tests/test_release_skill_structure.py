@@ -16,24 +16,39 @@ GIT_RESOLUTION_DOC = REPO_ROOT / "docs" / "git-remote-resolution.md"
 SHIP_SKILL = REPO_ROOT / "skills" / "ship" / "SKILL.md"
 RELEASE_SKILL_DIR = REPO_ROOT / "skills" / "release"
 BUILD_DIR = RELEASE_SKILL_DIR / "references" / "build"
+DISTRIBUTIONS_DIR = RELEASE_SKILL_DIR / "references" / "distributions"
 ADAPTER_CONTRACT = RELEASE_SKILL_DIR / "references" / "ADAPTER-CONTRACT.md"
 
-# The abstraction the core workflow depends on. Order is the documented order.
-CONTRACT_FIELDS = (
+# How a component builds and tests itself. `distribution_names` is here despite
+# its name: every value it holds is a path the TOOLCHAIN determines
+# (pyproject.toml#project.scripts, package.json#.bin, pom.xml#/project/groupId).
+# The naming coincidence is not evidence. `tag_pattern` and `publish_command` are
+# repo-level in effect and read only from the root component.
+BUILD_FIELDS = (
     "technology",
     "toolchain",
     "fingerprint",
     "version_source",
-    "derived_manifests",
     "relock_command",
     "gate_command",
     "build_command",
     "artifact_pattern",
+    "distribution_names",
+    "install_verify_command",
     "tag_pattern",
     "publish_command",
-    "release_command",
+)
+
+# What the repository ships beyond the tag, and how you confirm it arrived.
+# `install_verify_command` is on BOTH field sets and both run: one proves the
+# built thing installs, the other proves the shipped thing arrived. Forcing them
+# into one field is what made that command a compound.
+DISTRIBUTION_FIELDS = (
+    "kind",
+    "fingerprint",
+    "derived_manifests",
     "install_verify_command",
-    "distribution_names",
+    "release_command",
 )
 
 # The closed placeholder vocabulary. A command may contain these and nothing
@@ -458,7 +473,10 @@ def test_ship_links_the_shared_doc_instead_of_restating_it():
 def test_adapter_contract_documents_every_field():
     assert ADAPTER_CONTRACT.is_file(), "ADAPTER-CONTRACT.md must exist"
     text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
-    missing = [field for field in CONTRACT_FIELDS if f"`{field}`" not in text]
+    # fingerprint and install_verify_command appear in both tuples; documenting
+    # each once in the contract is enough, so duplicates collapse via set().
+    fields = set(BUILD_FIELDS + DISTRIBUTION_FIELDS)
+    missing = [field for field in fields if f"`{field}`" not in text]
     assert not missing, f"contract does not document fields: {missing}"
 
 
@@ -489,16 +507,52 @@ def adapter_files():
     return sorted(BUILD_DIR.rglob("*.md"))
 
 
-def test_every_adapter_declares_all_contract_fields():
+def distribution_files():
+    """Every distribution adapter under references/distributions/, sorted."""
+    return sorted(DISTRIBUTIONS_DIR.rglob("*.md"))
+
+
+def test_every_build_adapter_declares_all_build_fields():
     adapters = adapter_files()
     assert adapters, "no adapters found under references/build/"
     offenders = []
     for adapter in adapters:
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
-        missing = [field for field in CONTRACT_FIELDS if field not in fields]
+        missing = [field for field in BUILD_FIELDS if field not in fields]
+        extra = [
+            field
+            for field in DISTRIBUTION_FIELDS
+            if field in fields and field not in BUILD_FIELDS
+        ]
         if missing:
             offenders.append(f"{adapter.relative_to(REPO_ROOT)}: missing {missing}")
-    assert not offenders, "adapters violate the contract:\n" + "\n".join(offenders)
+        if extra:
+            offenders.append(
+                f"{adapter.relative_to(REPO_ROOT)}: carries distribution fields "
+                f"{extra} — those belong in references/distributions/"
+            )
+    assert not offenders, "build adapters violate the contract:\n" + "\n".join(
+        offenders
+    )
+
+
+def test_every_distribution_adapter_declares_all_distribution_fields():
+    adapters = distribution_files()
+    assert adapters, "no adapters found under references/distributions/"
+    offenders = []
+    for adapter in adapters:
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        missing = [field for field in DISTRIBUTION_FIELDS if field not in fields]
+        if missing:
+            offenders.append(f"{adapter.relative_to(REPO_ROOT)}: missing {missing}")
+        if fields.get("kind") != adapter.stem:
+            offenders.append(
+                f"{adapter.relative_to(REPO_ROOT)}: kind {fields.get('kind')!r} "
+                f"!= filename {adapter.stem!r}"
+            )
+    assert not offenders, "distribution adapters violate the contract:\n" + "\n".join(
+        offenders
+    )
 
 
 def test_every_adapter_matches_its_location():
@@ -519,32 +573,42 @@ def test_every_adapter_matches_its_location():
     assert not offenders, "adapter location mismatch:\n" + "\n".join(offenders)
 
 
-def test_git_tag_only_adapter_stamps_all_three_version_mirrors():
-    """This repo's own adapter must name every manifest the lockstep guard checks."""
-    adapter = BUILD_DIR / "python" / "git-tag-only.md"
-    assert adapter.is_file(), "the dogfooded adapter must exist"
-    text = adapter.read_text(encoding="utf-8")
-    fields = parse_frontmatter(text)
+def test_claude_plugin_distribution_stamps_both_manifest_mirrors():
+    """This repo's own distribution adapter must name every manifest the guard checks."""
+    adapter = DISTRIBUTIONS_DIR / "claude-plugin.md"
+    assert adapter.is_file(), "the dogfooded distribution adapter must exist"
+    fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
     # Read the parsed fields, never the file text. A substring search is satisfied
-    # by the body prose that *discusses* these paths — and this adapter's traps
-    # name every one of them — so repointing `version_source` at pyproject.toml,
-    # the exact change its own prose forbids, passed a text-based assert.
-    assert (
-        fields.get("version_source") == ".claude-plugin/plugin.json#.version"
-    ), "the plugin manifest is this target's canonical version source"
+    # by body prose that *discusses* these paths, and this adapter's prose names
+    # every one of them.
     declared = {
         split_optional_marker(entry)[0].partition("#")[0]
         for entry in str(fields.get("derived_manifests") or "").split()
     }
     assert declared == {
+        ".claude-plugin/plugin.json",
         ".claude-plugin/marketplace.json",
-        "pyproject.toml",
-    }, f"the other two mirrors must be stamped; got {sorted(declared)}"
-    assert fields.get("build_command") == "null", "a plugin builds no artifact"
+    }, f"both plugin mirrors must be stamped; got {sorted(declared)}"
+    assert "status" not in fields, "the dogfooded adapter is not a stub"
+
+
+def test_the_no_build_adapter_makes_the_build_manifest_canonical():
+    """The version arrow points out of the build adapter, with no exception.
+
+    git-tag-only previously made .claude-plugin/plugin.json canonical while
+    uv-plugin made pyproject.toml canonical — a disagreement about direction that
+    reopened the axis tangle. Nothing reads either literal when there is no build,
+    so the direction is free, and uniform beats faithful.
+    """
+    adapter = BUILD_DIR / "python" / "git-tag-only.md"
+    fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+    assert fields.get("version_source") == "pyproject.toml#project.version"
+    assert (
+        fields.get("build_command") == "null"
+    ), "a package = false target builds nothing"
     assert (
         fields.get("artifact_pattern") == "null"
     ), "no build means no artifact pattern"
-    assert "status" not in fields, "the dogfooded adapter is not a stub"
 
 
 def test_uv_adapter_verifies_a_real_artifact_pattern():
@@ -793,7 +857,7 @@ def test_no_adapter_recommends_a_forbidden_python_toolchain():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
         if fields.get("technology") != "python":
             continue
-        commands = " ".join(str(fields.get(field, "")) for field in CONTRACT_FIELDS)
+        commands = " ".join(str(fields.get(field, "")) for field in BUILD_FIELDS)
         for forbidden in ("pip install", "pipx", "pyenv", "python -m build"):
             if forbidden in commands:
                 offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {forbidden}")
@@ -1130,7 +1194,7 @@ def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
     for adapter in adapter_files():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
         unbound = unbound_placeholders(
-            (str(fields.get(field, "")) for field in CONTRACT_FIELDS),
+            (str(fields.get(field, "")) for field in BUILD_FIELDS),
             declared_roles(fields.get("distribution_names")),
         )
         if unbound:

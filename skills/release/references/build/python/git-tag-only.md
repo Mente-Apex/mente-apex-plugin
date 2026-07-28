@@ -2,17 +2,13 @@
 technology: python
 toolchain: git-tag-only
 fingerprint: pyproject.toml#tool.uv.package==false
-version_source: .claude-plugin/plugin.json#.version
-derived_manifests:
-  - .claude-plugin/marketplace.json#.plugins[0].version?
-  - pyproject.toml#project.version
+version_source: pyproject.toml#project.version
 relock_command: uv lock
 gate_command: uv sync && uv run pytest && uv run ruff check . && uv run black --check .
 build_command: null
 artifact_pattern: null
 tag_pattern: v<version>
 publish_command: git push <remote> <default> --follow-tags
-release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
 install_verify_command: claude plugin list
 distribution_names: null
 ---

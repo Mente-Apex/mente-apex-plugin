@@ -20,38 +20,86 @@ actual command set). One file is exactly one command set — one reason to chang
 `python.md` branching uv-versus-poetry would have two, which is why the tree has two
 levels.
 
-## The fourteen fields
+## Build adapter fields
 
-Declared as YAML frontmatter. Every field is required; seven may be `null`.
+`references/build/<technology>/<toolchain>.md` — how a component builds and tests itself.
+Declared as YAML frontmatter. Every field is required; several may be `null`.
 
 | Field | Meaning | `null` allowed |
 |---|---|---|
 | `technology` | Must equal the parent directory name. | no |
 | `toolchain` | Must equal the filename stem. | no |
-| `fingerprint` | List of detection selectors; **any** match selects this adapter. See [Fingerprint selectors](#fingerprint-selectors). | no |
+| `fingerprint` | List of detection selectors; **any** match selects this adapter. Build evidence only. See [Fingerprint selectors](#fingerprint-selectors). | no |
 | `version_source` | `path/to/file#selector` — the one canonical version literal. Selector language is the file format's; see [Selector syntax](#selector-syntax). | yes — targets where the tag itself is the version and no manifest carries it |
-| `derived_manifests` | List of `path#selector` stamped *from* the source, same selector syntax. A trailing `?` marks an entry [optional](#optional-derived-manifests). | yes — empty list |
 | `relock_command` | Regenerates the lockfile the stamp just invalidated. | yes — targets whose lockfile does not record the project's own version |
 | `gate_command` | Clean rebuild from the lockfile, then the red/green check. | no |
 | `build_command` | Produce distributable artifacts. | yes — no-build targets |
 | `artifact_pattern` | Glob the build must emit. Verified, never assumed. | yes — iff no build |
-| `tag_pattern` | The tag this target's ecosystem expects. Expands to `<tag>`. | no |
-| `publish_command` | The outward-facing step. | no |
-| `release_command` | Creates the forge's release *object* from the pushed tag. | yes — targets where the tag is the whole release |
-| `install_verify_command` | Proves the installed thing is what was just cut. | no |
 | `distribution_names` | Map of *role* → `path/to/file#selector`, naming the installed thing. Same selector syntax. | yes — iff no command references `<distribution-name:…>` |
+| `install_verify_command` | Proves the *built* thing installs. | no |
+| `tag_pattern` | The tag this target's ecosystem expects. Expands to `<tag>`. Repo-level in effect — read only from the root component. | no |
+| `publish_command` | The outward-facing step. Repo-level in effect — read only from the root component. | no |
 
 A `null` `version_source` is not a shortcut for "we have not filled this in yet" — it is a
 positive claim that the repository stores the version nowhere, because the git tag *is*
 the version. Some ecosystems work this way: no manifest exists to stamp. The core skips
 its single-literal check, its stamp, and its release commit for such a target; the tag is
-created on the existing `HEAD` and nothing else changes. `derived_manifests` must then be
-the empty list, since there is no source for anything to be derived from.
+created on the existing `HEAD` and nothing else changes.
 
 A `null` `distribution_names` is likewise a positive claim: nothing this adapter runs needs
 to name the installed thing. `python/git-tag-only` verifies with `claude plugin list`,
 which names no distribution, so it declares `null`. Any adapter whose commands contain
 `<distribution-name:…>` must declare every role it references.
+
+## Distribution adapter fields
+
+`references/distributions/<kind>.md` — what the repository ships beyond the tag, and how
+you confirm it arrived. A repository may resolve **no** distribution adapter: that is the
+empty square, where it builds, it tags, and nothing further mirrors or ships.
+
+| Field | Meaning | `null` allowed |
+|---|---|---|
+| `kind` | Must equal the filename stem. | no |
+| `fingerprint` | List of detection selectors; **any** match selects this adapter. Shipping evidence only. See [Fingerprint selectors](#fingerprint-selectors). | no |
+| `derived_manifests` | List of `path#selector` stamped *from* the build adapter's `version_source`, same selector syntax. A trailing `?` marks an entry [optional](#optional-derived-manifests). | yes — empty list |
+| `install_verify_command` | Proves the *shipped* thing arrived. | no |
+| `release_command` | Creates the forge's release *object* from the pushed tag. | yes — targets where the tag is the whole release |
+
+### Where the axes tangle
+
+Two fields do not cleanly belong to one side, and pretending otherwise would be the same
+mistake at smaller scale.
+
+**`distribution_names` goes on the build adapter, not the distribution adapter** — despite
+the name. Every value it holds is a path the *toolchain* determines:
+`pyproject.toml#project.scripts`, `package.json#.name` and `#.bin`,
+`pom.xml#/project/groupId`. None is decided by what the repository ships. The naming
+coincidence is not evidence.
+
+**`install_verify_command` goes on both, and both run.** `uv tool install --force . && which
+<distribution-name:binary>` verifies what the build produced; `claude plugin list` verifies
+what the distribution shipped. They are two checks of two different things, and
+`uv-plugin.md`'s own verification section already treats them that way — *"Three things
+were released, so check all three."* Forcing them into one field is what made that command
+a compound in the first place.
+
+**`version_source` always comes from the build adapter — which changes this repository's
+canonical version file.** The two existing plugin adapters disagreed about direction, and
+the disagreement was principled: `python/uv-plugin` makes `pyproject.toml` canonical because
+`uv build` reads it, while `python/git-tag-only` used to make
+`.claude-plugin/plugin.json#.version` canonical. So which file leads depends on what *reads*
+the version, which is a shipping fact, not a build fact.
+
+It collapses. In a `package = false` repository nothing builds, so no toolchain reads either
+literal — both are stamped regardless, and only the arrow's direction differs. The direction
+is therefore a free choice, and the uniform rule is cheaper than the faithful one: the build
+adapter always supplies `version_source`, with no distribution-adapter override to reopen
+the tangle. The stamp direction follows whatever the toolchain actually reads, everywhere
+that rule has force.
+
+Consequence for this repository: `pyproject.toml#project.version` is now canonical and
+`.claude-plugin/plugin.json#.version` is derived, reversing the previous arrow. The same
+files are stamped to the same values; only authority moves.
 
 ### Selector syntax
 
