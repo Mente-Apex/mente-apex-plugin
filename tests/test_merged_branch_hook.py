@@ -11,7 +11,6 @@ import shlex
 import subprocess
 import sys
 import time
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -353,22 +352,22 @@ def declared_command():
     return shlex.split(commands[0].replace("${CLAUDE_PLUGIN_ROOT}", PLUGIN_ROOT))
 
 
-def test_the_declared_command_pins_an_interpreter_the_module_can_run_on():
+def test_the_declared_command_defers_to_the_operator_pin():
     """The module is written in 3.14 syntax (PEP 758 `except A, B:`), so a bare
     `python3` resolved from the end user's PATH is a SyntaxError on every
-    machine whose `python3` predates it — macOS still ships 3.9. Executing the
-    command (below) cannot catch that regression portably, because on a machine
-    where `python3` *is* new enough the reverted command still passes. This
-    reads the floor out of pyproject.toml instead, so the two cannot drift.
+    machine whose `python3` predates it — macOS still ships 3.9. uv is what
+    keeps that from happening.
+
+    Which interpreter uv then picks is deliberately NOT hardcoded here: a repo's
+    own .python-version wins, and the global pin (`uv python pin --global`)
+    answers everywhere else. Asserting the absence of `--python` is the point —
+    re-adding it would override the operator's pin, which is the behaviour this
+    contract gives up on purpose.
     """
     argv = declared_command()
-    pyproject = tomllib.loads(
-        Path(os.path.join(PLUGIN_ROOT, "pyproject.toml")).read_text()
-    )
-    floor = pyproject["project"]["requires-python"].removeprefix(">=")
     assert argv[0] == "uv"
     assert "--no-project" in argv, "must not adopt the session directory's project"
-    assert argv[argv.index("--python") + 1] == floor
+    assert "--python" not in argv, "the operator's pin decides, not this file"
 
 
 def test_the_declared_command_runs_the_hook(clone):

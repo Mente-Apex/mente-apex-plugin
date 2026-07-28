@@ -182,12 +182,13 @@ HOOKS_DIR = REPO_ROOT / "hooks"
 # macOS. Every Python this plugin ships targets requires-python >=3.14 and is
 # formatted by black at that target, which emits PEP 758 `except A, B:` — a
 # SyntaxError on anything older. So no shipped surface may reach for the system
-# interpreter; they all go through uv, which resolves a 3.14 for us.
+# interpreter; they all go through uv, which resolves the operator's pin (a
+# repo's own .python-version first, then `uv python pin --global`).
 # Only `python3` is flagged. The uv form ends in a bare `python`, and the word
 # on its own is ordinary prose ("Target : python / git-tag-only"); `python3` is
 # never anything but a reach for the system binary.
 SYSTEM_PYTHON = re.compile(r"(?<![\w./-])python3(?![\w.-])")
-UV_PYTHON_PREFIX = "uv run --no-project --python 3.14"
+UV_PYTHON_PREFIX = "uv run --no-project"
 
 
 def _shipped_invocation_surfaces():

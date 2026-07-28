@@ -41,10 +41,28 @@ fi
 
 # Never the interpreter the OS ships: it is 3.9 on stock macOS, and every
 # module this plugin ships is formatted at py314, which emits syntax older
-# interpreters reject outright. uv resolves a 3.14 whatever is on PATH.
+# interpreters reject outright. Which interpreter uv picks is the operator's
+# call, not this file's: a repo's own .python-version wins, then the global pin.
 # A function, not a variable — zsh does not word-split an unquoted expansion,
 # so a multi-word PY="..." would be looked up as one long command name.
-py() { uv run --no-project --python 3.14 python "$@"; }
+py() { uv run --no-project python "$@"; }
+
+# With no pin anywhere, uv picks whatever it can find, and "whatever it can
+# find" differs per machine — the drift this plugin exists to prevent. uv walks
+# up from $PWD for a .python-version before falling back to the global pin, so
+# this looks in the same order rather than only at the current directory.
+pinned() {
+  d=$PWD
+  while [ "$d" != "/" ]; do
+    [ -f "$d/.python-version" ] && return 0
+    d=$(dirname "$d")
+  done
+  [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/uv/.python-version" ]
+}
+if ! pinned; then
+  echo "No Python pin found — uv is choosing an interpreter for you. Pin one:"
+  echo "  uv python pin --global $(py -c 'import sys; print(sys.version.split()[0])')"
+fi
 CONFIG="$HOME/.claude/config-sync-config.json"
 
 # One-time, idempotent rename of any legacy open-memory-* paths. No-op otherwise.
