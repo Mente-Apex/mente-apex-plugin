@@ -4,7 +4,10 @@ Every test drives the real git CLI against a temp bare origin plus a clone.
 Mocking git here would test our idea of git's exit codes rather than git's.
 """
 
+import json
+import os
 import subprocess
+import sys
 
 import merged_branch
 import pytest
@@ -200,3 +203,58 @@ def test_lists_several_lingering_branches_in_ref_order(clone):
         "feat/a",
         "feat/b",
     ]
+
+
+HOOK_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(merged_branch.__file__))),
+    "hooks",
+    "merged_branch.py",
+)
+
+
+def invoke_hook(payload, cwd):
+    """Run the hook as Claude Code runs it: a JSON payload on stdin."""
+    return subprocess.run(
+        [sys.executable, HOOK_PATH],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+
+
+def test_hook_emits_additional_context_for_a_merged_branch(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    merge_into_main(clone, "feat/x")
+    completed = invoke_hook({"cwd": str(clone)}, cwd=clone)
+    assert completed.returncode == 0
+    emitted = json.loads(completed.stdout)
+    context = emitted["hookSpecificOutput"]["additionalContext"]
+    assert emitted["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert "Branch feat/x has been merged into main." in context
+
+
+def test_hook_emits_nothing_when_there_is_nothing_to_say(tmp_path):
+    completed = invoke_hook({"cwd": str(tmp_path)}, cwd=tmp_path)
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_hook_exits_silently_when_report_raises(monkeypatch, tmp_path):
+    def explode(_cwd):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(merged_branch, "report", explode)
+    assert merged_branch.main() == 0
+
+
+def test_hook_survives_malformed_stdin(tmp_path):
+    completed = subprocess.run(
+        [sys.executable, HOOK_PATH],
+        input="not json",
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 0
+    assert completed.stdout == ""

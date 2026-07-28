@@ -12,7 +12,10 @@ is invisible to this hook and to any local check; detecting those needs the
 forge API, which this hook deliberately does not depend on.
 """
 
+import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 GIT_TIMEOUT_SECONDS = 5
@@ -191,3 +194,33 @@ def report(cwd: str | Path) -> list[str]:
             "Merged branches still present locally: " + ", ".join(lingering) + "."
         )
     return lines
+
+
+def main() -> int:
+    """Read the SessionStart payload, emit context only when there is some.
+
+    Everything is inside one handler on purpose: a hook that raises at session
+    start is strictly worse than a hook that says nothing, and there is no
+    failure here worth interrupting the operator for.
+    """
+    try:
+        raw = sys.stdin.read()
+        payload = json.loads(raw) if raw.strip() else {}
+        lines = report(payload.get("cwd") or os.getcwd())
+        if lines:
+            json.dump(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "SessionStart",
+                        "additionalContext": "\n".join(lines),
+                    }
+                },
+                sys.stdout,
+            )
+    except Exception:
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
