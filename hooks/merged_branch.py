@@ -141,6 +141,20 @@ def behind_count(cwd: str | Path, default: str, tracking: str) -> int:
     return int(output)
 
 
+def merged_local_branches(cwd: str | Path, default: str, tracking: str) -> list[str]:
+    """Local branches that have landed on the remote default and are still
+    sitting in refs/heads. Independent of HEAD on purpose: the branches that
+    actually pile up are the ones you already switched away from."""
+    code, output = git(cwd, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+    if code != 0:
+        return []
+    return [
+        branch
+        for branch in output.splitlines()
+        if branch != default and is_merged(cwd, branch, tracking)
+    ]
+
+
 def report(cwd: str | Path) -> list[str]:
     """The lines to inject as session context. Empty means stay silent."""
     code, _ = git(cwd, "rev-parse", "--git-dir")
@@ -171,4 +185,9 @@ def report(cwd: str | Path) -> list[str]:
     if behind:
         plural = "" if behind == 1 else "s"
         lines.append(f"Local {default} is {behind} commit{plural} behind {tracking}.")
+    lingering = merged_local_branches(cwd, default, tracking)
+    if lingering:
+        lines.append(
+            "Merged branches still present locally: " + ", ".join(lingering) + "."
+        )
     return lines
