@@ -49,7 +49,7 @@ extend-exclude = [".venv", "graphify-out", "skills/*-workspace"]
 # `import config_sync` as a third-party package and sorts it among the installed
 # dependencies. Declaring the roots (rather than listing modules in
 # known-first-party) means a new module is classified correctly on creation.
-src = [".", "scripts", "tests", "skills/menteapex-deliverable/scripts"]
+src = [".", "hooks", "scripts", "tests", "skills/menteapex-deliverable/scripts"]
 
 [tool.ruff.lint]
 select = [
