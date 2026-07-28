@@ -9,7 +9,7 @@ build_command: null
 artifact_pattern: null
 tag_pattern: v<version>
 publish_command: git push <remote> <default> --follow-tags
-install_verify_command: claude plugin list
+install_verify_command: null
 distribution_names: null
 ---
 
@@ -73,12 +73,14 @@ early and on purpose.
 
 ## Verifying the install
 
-There is nothing built to install — `build_command` is `null`, so no `pytest`/`ruff`/
-`black` artifact reaches an index or a `PATH`. `claude plugin list` here confirms that a
-plugin marketplace entry mirroring this build adapter also resolved, and reads the version
-just cut. Where no distribution adapter resolves, there is nothing further to verify: the
-tag is the whole release.
+`install_verify_command` is `null`, and that is a positive claim, not an omission:
+`build_command` is also `null`, so there is no wheel to reach an index or a `PATH`, and
+nothing this adapter built can be verified as installed. Naming `claude plugin list` here —
+a check of what a *distribution* adapter shipped, not what this build adapter built — would
+be one side declaring the other half, and on a repository that also resolves
+`distributions/claude-plugin.md` it would run the identical command twice.
 
-If the version still shows the previous release, the marketplace has not re-fetched. That
-is a consumer-side cache, not a failed release: the tag and the manifests are correct, and
-the report should say so rather than implying the release failed.
+Where a distribution adapter resolves alongside this one, its own
+`install_verify_command` runs and is documented there — see
+[claude-plugin.md](../../distributions/claude-plugin.md#verifying). Where none resolves,
+there is nothing further to verify: the tag is the whole release.

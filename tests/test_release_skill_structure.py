@@ -617,6 +617,24 @@ def test_the_no_build_adapter_makes_the_build_manifest_canonical():
     ), "no build means no artifact pattern"
 
 
+def test_no_build_adapter_names_no_install_verify_command():
+    """A build adapter that builds nothing has nothing to install-verify.
+
+    `install_verify_command` proves the *built* thing installs — the contract's
+    own "Where the axes tangle" section says each of the two adapters that carry
+    this field names only its own half. `claude plugin list` verifies what a
+    *distribution* adapter shipped; declaring it here, on the build side, names
+    the other half, and duplicates `distributions/claude-plugin.md`'s identical
+    entry on any repository that resolves both.
+    """
+    adapter = BUILD_DIR / "python" / "uv-nobuild.md"
+    fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+    assert is_null(fields.get("install_verify_command")), (
+        "uv-nobuild builds nothing, so install_verify_command must be null, "
+        "not a distribution-side check like `claude plugin list`"
+    )
+
+
 def test_uv_adapter_verifies_a_real_artifact_pattern():
     """The wheel-name check is the whole point of artifact_pattern."""
     adapter = BUILD_DIR / "python" / "uv.md"
