@@ -1687,14 +1687,44 @@ def test_the_two_language_refusal_moved_inside_a_component():
     )
 
 
+PER_COMPONENT_PHRASES = ("every component", "each component", "per component")
+
+# Which step owns each field's loop. Anchoring here is a deliberate departure
+# from the plan's literal test, on a human ruling: the plan windowed ±400
+# characters around the *first* mention of each field, and `gate_command`'s first
+# mention is Step 0's field list — ~2400 characters from Step 2 — so deleting
+# Step 2's loop outright left that leg green.
+LOOPING_STEPS = {
+    "gate_command": "## Step 2 — Preflight",
+    "relock_command": "## Step 5a — Refresh the lockfile",
+    "build_command": "## Step 6 — Build and verify the artifacts",
+}
+
+
 def test_gate_relock_and_build_run_per_component():
-    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
-    for field in ("gate_command", "relock_command", "build_command"):
-        window = text[text.index(field) - 400 : text.index(field) + 400]
-        assert "component" in window, (
-            f"{field} must be scoped to a component; a single run of it is the "
-            "assumption this design removes"
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    for field, heading in LOOPING_STEPS.items():
+        # Emphasis markers are dropped so `**every** component` still reads as a
+        # phrase; the rule is about the words, not how they are bolded.
+        step = _section_after(text, heading).lower().replace("*", "")
+        assert field in step, f"{heading} no longer reads the adapter's {field}"
+        looped = [
+            phrase
+            for occurrence in _occurrences(step, field)
+            for phrase in PER_COMPONENT_PHRASES
+            if phrase in step[max(0, occurrence - 300) : occurrence + 300]
+        ]
+        assert looped, (
+            f"{field} must be scoped to a component where {heading} runs it; a "
+            "single run of it is the assumption this design removes"
         )
+
+
+def _occurrences(text, needle):
+    found = text.find(needle)
+    while found != -1:
+        yield found
+        found = text.find(needle, found + 1)
 
 
 def test_only_build_and_release_components_are_built():
