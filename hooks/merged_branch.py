@@ -131,6 +131,16 @@ def is_merged(cwd: str | Path, revision: str, tracking: str) -> bool:
     return code == 0
 
 
+def behind_count(cwd: str | Path, default: str, tracking: str) -> int:
+    """How many commits the local default branch is behind the remote one.
+    Zero when it is current, and zero when it does not exist locally at all —
+    a repo you only ever work in on feature branches has nothing to pull."""
+    code, output = git(cwd, "rev-list", "--count", f"{default}..{tracking}")
+    if code != 0 or not output.isdigit():
+        return 0
+    return int(output)
+
+
 def report(cwd: str | Path) -> list[str]:
     """The lines to inject as session context. Empty means stay silent."""
     code, _ = git(cwd, "rev-parse", "--git-dir")
@@ -157,4 +167,8 @@ def report(cwd: str | Path) -> list[str]:
     lines = []
     if branch != default and is_merged(cwd, "HEAD", tracking):
         lines.append(f"Branch {branch} has been merged into {default}.")
+    behind = behind_count(cwd, default, tracking)
+    if behind:
+        plural = "" if behind == 1 else "s"
+        lines.append(f"Local {default} is {behind} commit{plural} behind {tracking}.")
     return lines

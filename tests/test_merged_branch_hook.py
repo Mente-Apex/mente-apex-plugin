@@ -142,3 +142,25 @@ def test_unreachable_remote_does_not_raise(clone):
     # The fetch fails; the stale remote-tracking ref is still usable, and a
     # stale ref can only under-report a merge, never invent one.
     assert "Branch feat/x has been merged into main." in merged_branch.report(clone)
+
+
+def test_reports_how_far_behind_the_local_default_is(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    merge_into_main(clone, "feat/x")
+    assert "Local main is 2 commits behind origin/main." in merged_branch.report(clone)
+
+
+def test_behind_line_is_the_only_line_on_a_stale_default_branch(clone):
+    # Still on main, nothing merged, nothing lingering — one commit behind is
+    # the whole story, and the singular reads correctly.
+    (clone / "b.txt").write_text("b")
+    run("git", "add", "b.txt", cwd=clone)
+    run("git", "commit", "-m", "b", cwd=clone)
+    run("git", "push", "origin", "main", cwd=clone)
+    run("git", "reset", "--hard", "HEAD~1", cwd=clone)
+    assert merged_branch.behind_count(clone, "main", "origin/main") == 1
+    assert merged_branch.report(clone) == ["Local main is 1 commit behind origin/main."]
+
+
+def test_silent_on_the_default_branch_when_it_is_current(clone):
+    assert merged_branch.report(clone) == []
