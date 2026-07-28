@@ -1,0 +1,62 @@
+"""Behaviour of the SessionStart merged-branch hook (#94).
+
+Every test drives the real git CLI against a temp bare origin plus a clone.
+Mocking git here would test our idea of git's exit codes rather than git's.
+"""
+
+import subprocess
+
+import merged_branch
+import pytest
+
+
+def run(*args, cwd=None):
+    """Run a command, failing the test loudly if it fails. Test setup only —
+    the hook's own runner is deliberately silent, this one must not be."""
+    completed = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    assert completed.returncode == 0, f"{args} failed: {completed.stderr}"
+    return completed.stdout.strip()
+
+
+@pytest.fixture(autouse=True)
+def isolated_git(monkeypatch, tmp_path):
+    """Keep the author's real git identity, hooks, and aliases out of the temp
+    repos. Without this the suite is green or red depending on whose machine
+    it runs on."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig-none"))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(tmp_path / "gitconfig-none"))
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{role}_NAME", "Test")
+        monkeypatch.setenv(f"GIT_{role}_EMAIL", "test@example.com")
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """A work tree on `main`, tracking a bare origin, with one pushed commit."""
+    origin = tmp_path / "origin.git"
+    run("git", "init", "--bare", "--initial-branch=main", str(origin))
+    work = tmp_path / "work"
+    run("git", "clone", str(origin), str(work))
+    (work / "README.md").write_text("seed\n")
+    run("git", "add", "README.md", cwd=work)
+    run("git", "commit", "-m", "seed", cwd=work)
+    run("git", "push", "-u", "origin", "main", cwd=work)
+    return work
+
+
+def test_git_runner_reports_failure_instead_of_raising(tmp_path):
+    code, output = merged_branch.git(tmp_path, "rev-parse", "--git-dir")
+    assert code != 0
+    assert output == ""
+
+
+def test_silent_outside_a_git_repository(tmp_path):
+    assert merged_branch.report(tmp_path) == []
+
+
+def test_silent_when_the_repository_has_no_remote(tmp_path):
+    run("git", "init", "--initial-branch=main", str(tmp_path))
+    (tmp_path / "a.txt").write_text("a\n")
+    run("git", "add", "a.txt", cwd=tmp_path)
+    run("git", "commit", "-m", "a", cwd=tmp_path)
+    assert merged_branch.report(tmp_path) == []

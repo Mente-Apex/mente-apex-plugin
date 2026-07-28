@@ -8,6 +8,11 @@ import pytest
 # Make `import config_sync` resolve to scripts/config_sync.py
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+# Make `import merged_branch` resolve to hooks/merged_branch.py — the hook ships
+# in hooks/ because Claude Code loads a plugin's hooks from there, and like
+# scripts/ it is a bare directory rather than an installed package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hooks"))
+
 import config_sync  # noqa: E402
 
 
