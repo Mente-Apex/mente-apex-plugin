@@ -8,7 +8,10 @@ gate_command: npm ci && npm test && npm run lint
 build_command: npm run build && npm pack
 artifact_pattern: "*-<version>.tgz"
 publish_command: npm publish && git push <remote> <default> --follow-tags
-install_verify_command: npm install -g <package-name>@<version> && which <bin-name>
+install_verify_command: npm install -g <distribution-name:package>@<version> && which <distribution-name:binary>
+distribution_names:
+  package: package.json#.name
+  binary: package.json#.bin
 status: stub
 ---
 
@@ -41,3 +44,14 @@ registry step and a tag step and update the contract.
 **`artifact_pattern` is a guess.** `npm pack` names the tarball from `name` and `version`
 with scoped packages mangled (`@scope/pkg` → `scope-pkg-1.0.0.tgz`). Run a real `npm pack`
 and correct the pattern before this adapter is trusted.
+
+**npm needs two names, and they are declared as two roles.** `npm install -g` takes the
+*package* name (`package.json#.name`); `which` takes the *binary* name, a key under
+`package.json#.bin` that frequently differs — a package published as `@scope/my-tool` can
+install a binary called `mt`. Assuming the two match is a real failure mode, so the
+adapter declares `package` and `binary` separately rather than hoping one name serves.
+
+What still needs verifying before de-stubbing: `package.json#.bin` may be a **string**
+(shorthand, where the binary name equals the package name) rather than a table. Confirm
+the `binary` role resolves correctly in both shapes, and that a scoped package installs a
+binary whose name is unscoped.

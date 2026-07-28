@@ -20,9 +20,9 @@ actual command set). One file is exactly one command set — one reason to chang
 `python.md` branching uv-versus-poetry would have two, which is why the tree has two
 levels.
 
-## The ten fields
+## The eleven fields
 
-Declared as YAML frontmatter. Every field is required; four may be `null`.
+Declared as YAML frontmatter. Every field is required; five may be `null`.
 
 | Field | Meaning | `null` allowed |
 |---|---|---|
@@ -36,6 +36,7 @@ Declared as YAML frontmatter. Every field is required; four may be `null`.
 | `artifact_pattern` | Glob the build must emit. Verified, never assumed. | yes — iff no build |
 | `publish_command` | The outward-facing step. | no |
 | `install_verify_command` | Proves the installed thing is what was just cut. | no |
+| `distribution_names` | Map of *role* → `path/to/file#selector`, naming the installed thing. | yes — iff no command references `<distribution-name:…>` |
 
 A `null` `version_source` is not a shortcut for "we have not filled this in yet" — it is a
 positive claim that the repository stores the version nowhere, because the git tag *is*
@@ -44,8 +45,64 @@ its single-literal check, its stamp, and its release commit for such a target; t
 created on the existing `HEAD` and nothing else changes. `derived_manifests` must then be
 the empty list, since there is no source for anything to be derived from.
 
-`<remote>` and `<default>` appearing in a command are substituted from the resolution in
-[../../../docs/git-remote-resolution.md](../../../docs/git-remote-resolution.md).
+A `null` `distribution_names` is likewise a positive claim: nothing this adapter runs needs
+to name the installed thing. `python/git-tag-only` verifies with `claude plugin list`,
+which names no distribution, so it declares `null`. Any adapter whose commands contain
+`<distribution-name:…>` must declare every role it references.
+
+### Why a map and not a single name
+
+One ecosystem's "name" is often several. npm installs by *package* name
+(`package.json#.name`) and verifies the *binary* on `PATH`, which is a key under
+`package.json#.bin` and frequently differs — `@scope/my-tool` can install a binary called
+`mt`. Maven addresses a distribution by *two* coordinates, group and artifact.
+
+A single field forces those cases either to be wrong or to smuggle syntax into the value —
+encoding `groupId:artifactId` as one selector puts Maven's coordinate separator inside a
+field the contract defines as one path and one selector. The map keeps each role a clean
+selector and puts the ecosystem's joining syntax back in the command, where it belongs:
+
+```yaml
+distribution_names:
+  group:    pom.xml#/project/groupId
+  artifact: pom.xml#/project/artifactId
+```
+```
+-Dartifact=<distribution-name:group>:<distribution-name:artifact>:<version>
+```
+
+Role names are the adapter's own vocabulary. A new naming role is a new key, never a
+twelfth field.
+
+**A selector may address a table rather than a value** — `python/uv`'s binary name is the
+*key* under `[project.scripts]`, not a value anywhere. When a selector resolves to a
+mapping, the role's value is that mapping's single key. **If it holds more than one entry,
+refuse and ask which** — do not pick. Guessing here is the whole failure this field exists
+to prevent, and it would arrive at Step 10 where nothing else is checking.
+
+## The placeholder vocabulary
+
+Commands and patterns may contain these tokens and **no others**. The list is closed: a
+token outside it is a value the running agent has to guess, and a guessed distribution name
+is exactly the error `artifact_pattern` exists to catch, arriving one step later at the
+point where nobody is checking.
+
+| Placeholder | Substituted from |
+|---|---|
+| `<remote>` | the resolution in [../../../docs/git-remote-resolution.md](../../../docs/git-remote-resolution.md) |
+| `<default>` | the same resolution — the default branch |
+| `<version>` | the version being released, as computed in Step 4 |
+| `<distribution-name:role>` | reading the `role` key of this adapter's `distribution_names` |
+
+Only roles the adapter actually declares are bound. `<distribution-name:binary>` in an
+adapter whose map has no `binary` key is an unbound token, exactly like `<tool-name>` would
+be — which is also what makes a `null` map with a name-using command a failure rather than
+an omission.
+
+`tests/test_release_skill_structure.py` scans every field of every adapter for `<…>` tokens
+and fails on any this table does not bind, so the vocabulary cannot drift open again. It
+matches tokens permissively and subtracts the bound set — the inverse (matching only
+well-formed tokens) would let `<TOOL_NAME>` or `<gemName>` through as "not a placeholder".
 
 ### `status: stub`
 
@@ -111,7 +168,7 @@ deliberate act.
 
 ## Adding an adapter
 
-1. Create `references/targets/<technology>/<toolchain>.md` with all ten fields.
+1. Create `references/targets/<technology>/<toolchain>.md` with all eleven fields.
 2. Declare `status: stub` until you have cut a real release with it.
 3. Add its fingerprint row to the Level 2 table above, positioned so its precedence
    against existing adapters is explicit.
