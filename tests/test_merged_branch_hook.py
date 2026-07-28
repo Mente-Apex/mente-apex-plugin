@@ -7,12 +7,16 @@ Mocking git here would test our idea of git's exit codes rather than git's.
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
+import time
+import tomllib
 from pathlib import Path
 
-import merged_branch
 import pytest
+
+import merged_branch
 
 
 def run(*args, cwd=None):
@@ -207,6 +211,52 @@ def test_lists_several_lingering_branches_in_ref_order(clone):
     ]
 
 
+UNREACHABLE_REMOTE = "ssh://git@10.255.255.1:22/nobody/nothing.git"
+
+
+def test_the_budget_leaves_room_under_the_declared_hook_timeout():
+    # The two numbers are the whole point of the deadline: a hook that outruns
+    # its own declaration gets killed mid-run for output that was empty anyway.
+    assert merged_branch.TOTAL_BUDGET_SECONDS < merged_branch.HOOK_TIMEOUT_SECONDS
+    declared = json.loads(Path(HOOKS_JSON).read_text())
+    timeouts = [
+        hook["timeout"]
+        for groups in declared["hooks"].values()
+        for group in groups
+        for hook in group["hooks"]
+    ]
+    assert timeouts == [merged_branch.HOOK_TIMEOUT_SECONDS]
+
+
+def test_report_is_bounded_by_its_budget_when_the_remote_hangs(clone):
+    # A remote that neither answers nor refuses: every network call would spend
+    # its own ceiling if nothing bounded the sum.
+    run("git", "update-ref", "-d", "refs/remotes/origin/HEAD", cwd=clone)
+    run("git", "update-ref", "-d", "refs/remotes/origin/main", cwd=clone)
+    run("git", "remote", "set-url", "origin", UNREACHABLE_REMOTE, cwd=clone)
+    started = time.monotonic()
+    assert merged_branch.report(clone, budget=2.0) == []
+    # Generous on purpose: this asserts the bound exists, not its precision.
+    assert time.monotonic() - started < merged_branch.HOOK_TIMEOUT_SECONDS
+
+
+def test_an_exhausted_budget_says_nothing_at_all(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    merge_into_main(clone, "feat/x")
+    # The same repo that speaks three lines with a budget stays silent without
+    # one — a partial answer assembled from timed-out calls is worth nothing.
+    assert merged_branch.report(clone, budget=0.0) == []
+
+
+def test_child_processes_cannot_prompt_the_operator():
+    env = merged_branch._child_env()
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert "BatchMode=yes" in env["GIT_SSH_COMMAND"]
+    # Derived from the real environment, not a replacement for it: git still
+    # needs PATH and HOME to find its binaries and the user's config.
+    assert env["PATH"] == os.environ["PATH"]
+
+
 HOOK_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(merged_branch.__file__))),
     "hooks",
@@ -284,3 +334,53 @@ def test_every_declared_hook_script_exists():
             for hook in group["hooks"]:
                 relative = hook["command"].split("${CLAUDE_PLUGIN_ROOT}/", 1)[1]
                 assert os.path.exists(os.path.join(plugin_root, relative)), relative
+
+
+PLUGIN_ROOT = os.path.dirname(os.path.dirname(HOOKS_JSON))
+
+
+def declared_command():
+    """The SessionStart command exactly as it ships, with the one variable
+    Claude Code substitutes already substituted."""
+    declaration = json.loads(Path(HOOKS_JSON).read_text())
+    commands = [
+        hook["command"]
+        for group in declaration["hooks"]["SessionStart"]
+        for hook in group["hooks"]
+        if "merged_branch.py" in hook["command"]
+    ]
+    assert len(commands) == 1, commands
+    return shlex.split(commands[0].replace("${CLAUDE_PLUGIN_ROOT}", PLUGIN_ROOT))
+
+
+def test_the_declared_command_pins_an_interpreter_the_module_can_run_on():
+    """The module is written in 3.14 syntax (PEP 758 `except A, B:`), so a bare
+    `python3` resolved from the end user's PATH is a SyntaxError on every
+    machine whose `python3` predates it — macOS still ships 3.9. Executing the
+    command (below) cannot catch that regression portably, because on a machine
+    where `python3` *is* new enough the reverted command still passes. This
+    reads the floor out of pyproject.toml instead, so the two cannot drift.
+    """
+    argv = declared_command()
+    pyproject = tomllib.loads(
+        Path(os.path.join(PLUGIN_ROOT, "pyproject.toml")).read_text()
+    )
+    floor = pyproject["project"]["requires-python"].removeprefix(">=")
+    assert argv[0] == "uv"
+    assert "--no-project" in argv, "must not adopt the session directory's project"
+    assert argv[argv.index("--python") + 1] == floor
+
+
+def test_the_declared_command_runs_the_hook(clone):
+    commit_on_new_branch(clone, "feat/x", "x.txt")
+    merge_into_main(clone, "feat/x")
+    completed = subprocess.run(
+        declared_command(),
+        input=json.dumps({"cwd": str(clone)}),
+        capture_output=True,
+        text=True,
+        cwd=clone,
+    )
+    assert completed.returncode == 0, completed.stderr
+    context = json.loads(completed.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "Branch feat/x has been merged into main." in context

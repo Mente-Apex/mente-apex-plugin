@@ -56,7 +56,7 @@ section-aware merge when machines diverge (optional LLM merge via
 ## Hooks
 
 **SessionStart — merged-branch detector.** After a PR is merged in the forge UI, the plugin
-injects one line of context so the agent knows without being told: that the current branch
+injects up to three lines of context so the agent knows without being told: that the current branch
 has landed, how far the local default branch has fallen behind, and which merged branches
 are still sitting in `refs/heads`. It runs one single-branch `git fetch` and is silent on a
 clean repo, a non-repo directory, a detached HEAD, or an unmerged branch. Squash- and
