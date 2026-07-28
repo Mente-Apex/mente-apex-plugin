@@ -200,6 +200,32 @@ def level_two_rows(contract_text):
     return rows
 
 
+def level_two_fingerprints(contract_text):
+    """{(technology, toolchain): frozenset of selectors} from the Level 2 table.
+
+    The table's fingerprint cell must list exactly what the adapter's `fingerprint`
+    field lists. It did not, and could not: the field was one file path while the
+    cell already carried a second, non-file selector, so the document contradicted
+    itself and an adapter author had no rule to follow (#100.1).
+    """
+    section = _section_after(contract_text, "### Level 2")
+    fingerprints = {}
+    for line in section.splitlines():
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if len(cells) != 3:
+            continue
+        technology, fingerprint_cell, toolchain = cells
+        technology, toolchain = technology.strip("`"), toolchain.strip("`")
+        if technology in ("", "Technology") or set(technology) <= {"-"}:
+            continue
+        fingerprints[(technology, toolchain)] = frozenset(
+            token.strip().strip("`")
+            for token in fingerprint_cell.split(" or ")
+            if token.strip()
+        )
+    return fingerprints
+
+
 def _section_after(text, heading):
     """The text from `heading` up to the next heading of the same or higher level.
 
@@ -217,25 +243,108 @@ def _section_after(text, heading):
     return remainder
 
 
+def fingerprint_selectors(fingerprint_value):
+    """The individual detection selectors in a `fingerprint`, however it is written.
+
+    The field is a list (#100.1): an inline scalar is the one-entry shorthand, and
+    a written-out list reaches here folded to one space-joined string. Splitting on
+    whitespace is exact because the predicate form is spelled without spaces —
+    `pyproject.toml#tool.uv.package==false` — which is why the contract requires
+    that spelling rather than the `key == value` the detection table used to show.
+    """
+    return tuple(str(fingerprint_value or "").split())
+
+
 def unranked_shared_fingerprints(entries, ranked_toolchains):
-    """Toolchains in one technology sharing a fingerprint without being ranked.
+    """Toolchains in one technology sharing a selector without being ranked.
 
     `entries` is a list of (toolchain, fingerprint) pairs for one technology;
     `ranked_toolchains` is that technology's Level 2 rows in table order. A
     colliding toolchain absent from the table has no declared precedence, so it
     silently shadows its twin or is shadowed by it.
+
+    Collision is per *selector*, not per whole field. Comparing the folded field
+    would let two adapters share one selector out of several and read as disjoint
+    — a fail-open the field only acquired when it became a list.
     """
-    fingerprints = [fingerprint for _toolchain, fingerprint in entries]
+    selectors_by_toolchain = {
+        toolchain: fingerprint_selectors(fingerprint)
+        for toolchain, fingerprint in entries
+    }
+    all_selectors = [
+        selector
+        for selectors in selectors_by_toolchain.values()
+        for selector in selectors
+    ]
     duplicated = {
-        fingerprint
-        for fingerprint in fingerprints
-        if fingerprints.count(fingerprint) > 1
+        selector for selector in all_selectors if all_selectors.count(selector) > 1
     }
     return sorted(
         toolchain
-        for toolchain, fingerprint in entries
-        if fingerprint in duplicated and toolchain not in ranked_toolchains
+        for toolchain, selectors in selectors_by_toolchain.items()
+        if duplicated.intersection(selectors) and toolchain not in ranked_toolchains
     )
+
+
+# ── Selector syntax (#100.2) ──────────────────────────────────────────────────
+# The selector language is a property of the FILE FORMAT, never of the field or
+# the adapter's preference. Four adapters used three languages with the rule
+# visible only by example, so an author had nothing to follow and the core had no
+# way to know which parser a selector wanted.
+SELECTOR_LANGUAGE_BY_SUFFIX = {
+    ".json": "jq",
+    ".yaml": "jq",
+    ".yml": "jq",
+    ".toml": "dotted",
+    ".xml": "xpath",
+}
+
+SELECTOR_SHAPE_BY_LANGUAGE = {
+    "jq": re.compile(r"^\.[A-Za-z_]"),
+    "dotted": re.compile(r"^[A-Za-z_]"),
+    "xpath": re.compile(r"^/[A-Za-z_]"),
+}
+
+# `path/to/file#selector==value`, the predicate form of a fingerprint entry.
+_FINGERPRINT_PREDICATE = re.compile(r"^(\S+#\S+?)==(\S+)$")
+
+
+def selector_syntax_violation(reference):
+    """Why this `path#selector` misuses its file format's language, or None."""
+    if "#" not in reference:
+        return f"{reference}: not a path#selector reference"
+    path, _, selector = reference.partition("#")
+    suffix = Path(path).suffix
+    language = SELECTOR_LANGUAGE_BY_SUFFIX.get(suffix)
+    if language is None:
+        return (
+            f"{reference}: the contract declares no selector language for "
+            f"{suffix or path!r} — add a row to its Selector syntax table"
+        )
+    if not SELECTOR_SHAPE_BY_LANGUAGE[language].match(selector):
+        return f"{reference}: a {suffix} file takes a {language} selector"
+    return None
+
+
+def selector_references(fields):
+    """Every `path#selector` an adapter declares, from every field carrying one."""
+    references = []
+    if not is_null(fields.get("version_source")):
+        references.append(str(fields["version_source"]).strip())
+    derived = str(fields.get("derived_manifests") or "").strip()
+    if derived not in ("", "null", "[]"):
+        references.extend(derived.split())
+    references.extend(
+        selector
+        for _role, selector in _ROLE_DECLARATION.findall(
+            str(fields.get("distribution_names") or "")
+        )
+    )
+    for entry in fingerprint_selectors(fields.get("fingerprint")):
+        predicate = _FINGERPRINT_PREDICATE.match(entry)
+        if predicate:
+            references.append(predicate.group(1))
+    return references
 
 
 def is_null(field_value):
@@ -639,6 +748,160 @@ def test_fingerprint_ranking_rule_catches_a_synthetic_collision():
     assert unranked_shared_fingerprints(disjoint, []) == []
 
 
+def test_every_adapter_fingerprint_matches_its_detection_row():
+    """The field and the table must agree, entry for entry (#100.1).
+
+    They disagreed: `fingerprint` was documented as "the file whose presence
+    selects this adapter" while the table's `python/git-tag-only` row listed a
+    second selector that was not a file at all. A repo matching only the second
+    got contradictory instructions and the contract had no tiebreak.
+    """
+    rowed = level_two_fingerprints(ADAPTER_CONTRACT.read_text(encoding="utf-8"))
+    offenders = []
+    for adapter in adapter_files():
+        identity = (adapter.parent.name, adapter.stem)
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        declared = frozenset(fingerprint_selectors(fields.get("fingerprint")))
+        assert declared, f"{identity}: fingerprint declares no selector"
+        if identity not in rowed:
+            offenders.append(f"{identity[0]}/{identity[1]}: no Level 2 row")
+        elif declared != rowed[identity]:
+            offenders.append(
+                f"{identity[0]}/{identity[1]}: field declares {sorted(declared)}, "
+                f"table lists {sorted(rowed[identity])}"
+            )
+    assert (
+        not offenders
+    ), "fingerprint field and detection table disagree:\n" + "\n".join(offenders)
+
+
+def test_the_package_false_case_resolves_to_exactly_one_adapter():
+    """The concrete contradiction from #100, pinned as a resolution.
+
+    A uv project declaring `package = false` with no `.claude-plugin/` directory
+    matches `git-tag-only` by predicate and `uv` by `uv.lock`. Both are rowed, and
+    the table's order — first match wins — makes the outcome deterministic rather
+    than a coin toss between two adapters with incompatible build steps.
+    """
+    contract_text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    rowed = level_two_fingerprints(contract_text)
+    predicate = "pyproject.toml#tool.uv.package==false"
+    assert predicate in rowed[("python", "git-tag-only")]
+    assert predicate not in rowed[("python", "uv")]
+
+    python_order = [
+        toolchain
+        for technology, toolchain in level_two_rows(contract_text)
+        if technology == "python"
+    ]
+    assert python_order.index("git-tag-only") < python_order.index("uv")
+
+    # Resolution is only safe because a matched fingerprint is not assumed to fit:
+    # git-tag-only addresses three plugin manifests such a project has not got.
+    assert (
+        "`version_source` file does not exist" in contract_text
+    ), "the contract must refuse when the resolved adapter addresses absent files"
+
+
+def test_fingerprint_selectors_reads_both_written_forms():
+    assert fingerprint_selectors("uv.lock") == ("uv.lock",)
+    assert fingerprint_selectors(
+        ".claude-plugin/plugin.json pyproject.toml#tool.uv.package==false"
+    ) == (".claude-plugin/plugin.json", "pyproject.toml#tool.uv.package==false")
+    assert fingerprint_selectors(None) == ()
+
+
+def test_collision_rule_sees_a_shared_selector_inside_a_longer_list():
+    """The fail-open the list form would otherwise have introduced.
+
+    Comparing whole folded fields, `("uv", "a b")` and `("poetry", "b")` read as
+    disjoint even though both are selected by `b`.
+    """
+    partly_overlapping = [
+        ("uv", "pyproject.toml uv.lock"),
+        ("poetry", "pyproject.toml"),
+    ]
+    assert unranked_shared_fingerprints(partly_overlapping, []) == ["poetry", "uv"]
+    assert unranked_shared_fingerprints(partly_overlapping, ["uv", "poetry"]) == []
+    assert unranked_shared_fingerprints(partly_overlapping, ["uv"]) == ["poetry"]
+
+
+def test_contract_declares_a_selector_language_for_every_file_format():
+    """Rule stated, not merely demonstrated (#100.2)."""
+    text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    assert "### Selector syntax" in text, "the contract must state the selector rule"
+    section = _section_after(text, "### Selector syntax")
+    for language in ("jq", "dotted key path", "XPath"):
+        assert language in section, f"selector table omits: {language}"
+    for suffix in SELECTOR_LANGUAGE_BY_SUFFIX:
+        assert suffix in section, f"selector table omits the format: {suffix}"
+
+
+def test_every_adapter_selector_matches_its_file_formats_syntax():
+    """Four adapters, three selector languages, no stated rule — until now."""
+    offenders = []
+    for adapter in adapter_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        references = selector_references(fields)
+        assert references, f"{adapter.stem}: no selector references found to check"
+        offenders += [
+            f"{adapter.relative_to(REPO_ROOT)}: {violation}"
+            for violation in map(selector_syntax_violation, references)
+            if violation
+        ]
+    assert not offenders, "adapters misuse a selector language:\n" + "\n".join(
+        offenders
+    )
+
+
+def test_selector_syntax_rule_catches_each_wrong_language():
+    """Every branch, pinned without relying on an adapter being wrong."""
+    assert selector_syntax_violation("package.json#.version") is None
+    assert selector_syntax_violation("pyproject.toml#project.version") is None
+    assert selector_syntax_violation("pom.xml#/project/version") is None
+    assert selector_syntax_violation("galaxy.yml#.version") is None
+    assert selector_syntax_violation(".claude-plugin/plugin.json#.version") is None
+
+    # A jq selector in a TOML file, and a TOML path in a JSON file.
+    assert selector_syntax_violation("pyproject.toml#.project.version") is not None
+    assert selector_syntax_violation("package.json#version") is not None
+    # XPath outside XML, and a dotted path inside it.
+    assert selector_syntax_violation("package.json#/version") is not None
+    assert selector_syntax_violation("pom.xml#project.version") is not None
+    # A format with no declared language is a refusal, not an improvisation.
+    assert selector_syntax_violation("Gemfile#version") is not None
+    # And a reference with no selector at all is not a reference.
+    assert selector_syntax_violation("uv.lock") is not None
+
+
+def test_selector_references_collects_from_every_field_that_carries_one():
+    fields = {
+        "fingerprint": "uv.lock pyproject.toml#tool.uv.package==false",
+        "version_source": "pyproject.toml#project.version",
+        "derived_manifests": "a.json#.version b.json#.plugins[0].version",
+        "distribution_names": "binary: pyproject.toml#project.scripts",
+    }
+    assert selector_references(fields) == [
+        "pyproject.toml#project.version",
+        "a.json#.version",
+        "b.json#.plugins[0].version",
+        "pyproject.toml#project.scripts",
+        "pyproject.toml#tool.uv.package",
+    ]
+    # The null and empty-list spellings contribute nothing rather than erroring.
+    assert (
+        selector_references(
+            {
+                "fingerprint": "uv.lock",
+                "version_source": "null",
+                "derived_manifests": "[]",
+                "distribution_names": "null",
+            }
+        )
+        == []
+    )
+
+
 def test_level_two_rows_are_parsed_from_the_real_contract():
     """The rule above is only as good as this parse — pin it against the real file."""
     rows = level_two_rows(ADAPTER_CONTRACT.read_text(encoding="utf-8"))
@@ -944,6 +1207,107 @@ def test_exactly_one_confirmation_checkpoint_before_publishing():
     assert checkpoint_position > text.index(
         "## Step 8 — Tag"
     ), "the checkpoint must follow the local, reversible work"
+
+
+def test_tag_step_states_its_precondition_before_the_command():
+    """Step 8 read act-then-check: the `git tag -a` fence came first and the
+    "already exists → refuse" rule sat below it. Self-protecting in practice, but
+    backwards for a step whose entire purpose is a precondition (#102.1)."""
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    tag_step = text[
+        text.index("## Step 8 — Tag") : text.index("CONFIRMATION CHECKPOINT")
+    ]
+    assert (
+        "already exists" in tag_step
+    ), "Step 8 must carry the tag-already-exists refusal"
+    assert "git tag -a" in tag_step, "Step 8 must still show the tagging command"
+    assert tag_step.index("already exists") < tag_step.index(
+        "git tag -a"
+    ), "Step 8 states its precondition after the command it guards"
+
+
+def test_commit_template_prescribes_no_literal_co_author_trailer():
+    """The fenced template hardcoded one model's trailer while the sentence under
+    it said to use whatever the harness prescribes. An agent copies the fence
+    (#102.2), so the fence is where the placeholder has to live."""
+    commit_step = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    commit_step = commit_step[
+        commit_step.index("## Step 7 — Commit") : commit_step.index("## Step 8 — Tag")
+    ]
+    assert (
+        "Co-Authored-By: Claude" not in commit_step
+    ), "the commit template hardcodes a trailer that outlives the model it names"
+    assert (
+        "co-author trailer" in commit_step
+    ), "the commit template must still call for a trailer"
+    assert "harness" in commit_step, "and must say where the trailer comes from"
+
+
+def test_core_states_which_substitution_notation_means_what():
+    """Two notations for the same two values suggested a distinction that does not
+    exist: Step 1 uses `"$REMOTE"`, Step 9 and the checkpoint use `<remote>` (#102.3).
+    """
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    assert "## Notation" in text, "the core must state its substitution notation rule"
+    notation = _section_after(text, "## Notation")
+    assert (
+        "$REMOTE" in notation and "<remote>" in notation
+    ), "the notation rule must name both forms of the same value"
+    assert (
+        "bash" in notation
+    ), "the rule must say which notation belongs in a shell block"
+
+
+def test_checkpoint_does_not_overstate_reversibility_after_a_build():
+    """`git reset --hard` does not remove untracked build output, so the flat
+    "everything above was local and reversible" claimed more than the two rollback
+    commands deliver (#102.4)."""
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    checkpoint = text[
+        text.index("CONFIRMATION CHECKPOINT") : text.index("## Step 9 — Publish")
+    ]
+    assert (
+        "untracked" in checkpoint
+    ), "the checkpoint must qualify reversibility for build output git does not track"
+
+
+def test_single_literal_search_names_no_repository_specific_path():
+    """Step 3 excluded `docs/superpowers/` by name — this repo's plan directory —
+    from a workflow that otherwise names nothing specific to any project and is
+    meant to run against the user's repo (#102.5)."""
+    text = RELEASE_SKILL_MD.read_text(encoding="utf-8")
+    search_step = text[
+        text.index("## Step 3 — Verify") : text.index("## Step 4 — Decide")
+    ]
+    assert (
+        "superpowers" not in search_step
+    ), "the exclusion list names a directory particular to this repository"
+    for universal in ("Lockfiles", "Build output", "Documentation"):
+        assert (
+            universal in search_step
+        ), f"exclusion list dropped a category: {universal}"
+
+
+def test_core_prose_lines_stay_within_the_house_width():
+    """One line ran ~100 columns against the file's otherwise consistent ~95 (#102.6).
+
+    Table rows and fenced blocks are exempt: a Markdown table row cannot wrap, and
+    a wrapped command is a broken command.
+    """
+    house_width = 95
+    offenders = []
+    inside_fence = False
+    for line_number, line in enumerate(
+        RELEASE_SKILL_MD.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if line.lstrip().startswith("```"):
+            inside_fence = not inside_fence
+            continue
+        if inside_fence or line.lstrip().startswith("|"):
+            continue
+        if len(line) > house_width:
+            offenders.append(f"SKILL.md:{line_number}: {len(line)} columns")
+    assert not offenders, "prose exceeds the house width:\n" + "\n".join(offenders)
 
 
 def test_core_documents_the_rollback():

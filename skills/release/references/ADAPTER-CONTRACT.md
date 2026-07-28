@@ -28,9 +28,9 @@ Declared as YAML frontmatter. Every field is required; seven may be `null`.
 |---|---|---|
 | `technology` | Must equal the parent directory name. | no |
 | `toolchain` | Must equal the filename stem. | no |
-| `fingerprint` | The file whose presence selects this adapter. | no |
-| `version_source` | `path/to/file#selector` — the one canonical version literal. | yes — targets where the tag itself is the version and no manifest carries it |
-| `derived_manifests` | List of `path#selector` stamped *from* the source. | yes — empty list |
+| `fingerprint` | List of detection selectors; **any** match selects this adapter. See [Fingerprint selectors](#fingerprint-selectors). | no |
+| `version_source` | `path/to/file#selector` — the one canonical version literal. Selector language is the file format's; see [Selector syntax](#selector-syntax). | yes — targets where the tag itself is the version and no manifest carries it |
+| `derived_manifests` | List of `path#selector` stamped *from* the source, same selector syntax. | yes — empty list |
 | `relock_command` | Regenerates the lockfile the stamp just invalidated. | yes — targets whose lockfile does not record the project's own version |
 | `gate_command` | Clean rebuild from the lockfile, then the red/green check. | no |
 | `build_command` | Produce distributable artifacts. | yes — no-build targets |
@@ -39,7 +39,7 @@ Declared as YAML frontmatter. Every field is required; seven may be `null`.
 | `publish_command` | The outward-facing step. | no |
 | `release_command` | Creates the forge's release *object* from the pushed tag. | yes — targets where the tag is the whole release |
 | `install_verify_command` | Proves the installed thing is what was just cut. | no |
-| `distribution_names` | Map of *role* → `path/to/file#selector`, naming the installed thing. | yes — iff no command references `<distribution-name:…>` |
+| `distribution_names` | Map of *role* → `path/to/file#selector`, naming the installed thing. Same selector syntax. | yes — iff no command references `<distribution-name:…>` |
 
 A `null` `version_source` is not a shortcut for "we have not filled this in yet" — it is a
 positive claim that the repository stores the version nowhere, because the git tag *is*
@@ -52,6 +52,60 @@ A `null` `distribution_names` is likewise a positive claim: nothing this adapter
 to name the installed thing. `python/git-tag-only` verifies with `claude plugin list`,
 which names no distribution, so it declares `null`. Any adapter whose commands contain
 `<distribution-name:…>` must declare every role it references.
+
+### Selector syntax
+
+Four fields address a value *inside* a file: `version_source`, each entry of
+`derived_manifests`, each value of `distribution_names`, and the predicate form of
+`fingerprint` below. All four are written `path/to/file#selector`, and **the selector
+language is determined by the file's format** — not by the field, and not by the adapter's
+preference:
+
+| File format | Selector language | Shape | Example |
+|---|---|---|---|
+| JSON — `.json` | jq path | leading `.` | `package.json#.version` |
+| YAML — `.yaml`, `.yml` | jq path, as `yq` accepts it | leading `.` | `galaxy.yml#.version` |
+| TOML — `.toml` | dotted key path | bare key first | `pyproject.toml#project.version` |
+| XML — `.xml` | XPath | leading `/` | `pom.xml#/project/version` |
+
+Each is the idiom a reader of that format already knows, and — more to the point — the
+input the format's standard query tool already takes. The rule exists because it was
+previously visible only by example: four adapters used three languages, an author had
+nothing to follow, and the core had no way to know which parser a given selector wanted.
+
+A format not in this table has no declared selector language, which is a refusal rather
+than an invitation to improvise: add the row here first.
+`tests/test_release_skill_structure.py` checks every selector in every adapter against its
+file's row.
+
+### Fingerprint selectors
+
+`fingerprint` is a **list**, and each entry takes one of two forms:
+
+| Form | Matches when | Example |
+|---|---|---|
+| `path/to/file` | that path exists | `uv.lock` |
+| `path/to/file#selector==value` | that path exists **and** the selector resolves to `value` | `pyproject.toml#tool.uv.package==false` |
+
+The predicate form has no spaces, so a folded list is unambiguous, and its `path#selector`
+half obeys [Selector syntax](#selector-syntax) exactly like every other selector. An
+adapter with one entry may write it inline — `fingerprint: uv.lock` — which is the same
+list, shortened.
+
+The field was originally a single file path while the Level 2 table already listed a
+non-file selector for `python/git-tag-only`. That contradiction left an adapter author with
+no rule and the detection table making a promise the field could not keep: a `uv` project
+declaring `[tool.uv] package = false` with no `.claude-plugin/` directory was told to use
+`git-tag-only`, whose fingerprint was demonstrably absent. The list closes it — the table
+now mirrors the field, entry for entry, and a test fails if they drift.
+
+**A fingerprint match is not a fit.** An adapter selected by a predicate can still address
+manifests this repository does not have — `git-tag-only` names
+`.claude-plugin/plugin.json#.version`, which a plain `package = false` project lacks. So
+detection has a second, cheap check: **if the resolved adapter's `version_source` file does
+not exist, refuse and ask.** Guessing a substitute path here would stamp a version into a
+file the adapter never declared, which is the whole class of error this contract exists to
+prevent.
 
 ### Why a map and not a single name
 
@@ -253,9 +307,12 @@ First match wins:
 
 First match wins:
 
+Each row's fingerprint cell lists that adapter's `fingerprint` entries verbatim, joined by
+`or`. The two must agree entry for entry; a test enforces it.
+
 | Technology | Fingerprint | Toolchain |
 |---|---|---|
-| `python` | `.claude-plugin/plugin.json`, or `[tool.uv] package = false` | `git-tag-only` |
+| `python` | `.claude-plugin/plugin.json` or `pyproject.toml#tool.uv.package==false` | `git-tag-only` |
 | `python` | `uv.lock` | `uv` |
 | `typescript` | `package-lock.json` | `npm` |
 | `java` | `pom.xml` | `maven` |
@@ -263,8 +320,14 @@ First match wins:
 
 Note the ordering within `python` is load-bearing: this very repo matches **both**
 `git-tag-only` and `uv`. `git-tag-only` is listed first because it is the more specific
-signal — a repo with `[tool.uv] package = false` builds no wheel, so the `uv` adapter's
-`build_command` and `artifact_pattern` would both be wrong for it.
+signal — a repo declaring `package = false` under `[tool.uv]` builds no wheel, so the `uv`
+adapter's `build_command` and `artifact_pattern` would both be wrong for it. The ordering
+also settles the `package = false` case that carries no `.claude-plugin/` directory: it
+matches `git-tag-only`'s predicate entry and `uv`'s `uv.lock`, and the first row wins.
+
+**The resolved adapter's `version_source` file does not exist** → refuse and ask which
+adapter to use. A fingerprint match is a signal, not proof of fit; see
+[Fingerprint selectors](#fingerprint-selectors).
 
 **No toolchain matches** within a detected technology → ask the user which adapter to use,
 listing what is available.
@@ -281,7 +344,8 @@ deliberate act.
    lockfile records the project's *own* version before declaring it `null`.
 2. Declare `status: stub` until you have cut a real release with it.
 3. Add its fingerprint row to the Level 2 table above, positioned so its precedence
-   against existing adapters is explicit.
+   against existing adapters is explicit. The row's fingerprint cell must list the same
+   entries the field does — a test compares them.
 4. **If the technology is new** — the first adapter under that directory — add a Level 1
    row for it as well, again positioned deliberately. A Level 2 row alone is unreachable:
    detection resolves the technology first, so an adapter whose technology no Level 1

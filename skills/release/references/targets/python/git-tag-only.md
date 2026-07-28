@@ -1,7 +1,9 @@
 ---
 technology: python
 toolchain: git-tag-only
-fingerprint: .claude-plugin/plugin.json
+fingerprint:
+  - .claude-plugin/plugin.json
+  - pyproject.toml#tool.uv.package==false
 version_source: .claude-plugin/plugin.json#.version
 derived_manifests:
   - .claude-plugin/marketplace.json#.plugins[0].version
@@ -43,6 +45,15 @@ present in this repo — every uv project has one. `git-tag-only` wins on preced
 its fingerprint is the more specific signal. If you ever find `/release` proposing a
 `dist/*.whl` for this repo, detection picked the wrong adapter; fix the precedence table
 in the contract rather than editing this file.
+
+**The second fingerprint entry matches more repositories than this adapter fits.**
+`pyproject.toml#tool.uv.package==false` is the honest generalisation of "builds no wheel",
+and it selects this adapter for any such project — including one with no `.claude-plugin/`
+directory, whose `version_source` and both `derived_manifests` would then address files
+that do not exist. The contract's post-resolution check catches that and refuses. Do not
+answer it by pointing `version_source` at `pyproject.toml`: this adapter's whole shape is
+three mirrored plugin manifests, and a project without them wants a sibling adapter, not a
+weakened one.
 
 **`uv.lock` carries this project's own version, so the stamp makes it stale.** Even with
 `package = false` the root project has an entry in the lockfile, and it repeats the version
