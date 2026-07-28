@@ -8,7 +8,7 @@
     {
       "name": "mente-apex",
       "source": "./",
-      "version": "0.22.0",
+      "version": "0.23.0",
       "description": "Client onboarding (HubSpot + folder), a brand-book-first client-deliverable generator (/deliverable: offers, proposals, agreements, licences, DPAs, handovers, update briefs → on-brand HTML/PDF from Markdown), an invoice generator, a one-step ship (/ship: branch, commit, push, open PR), a clean-code review/writing standard (/clean-code), a SOLID analysis & guided-refactor workflow (/solid), a GoF design-pattern analysis & guided-refactor workflow (/gof), and Claude config sync (config-sync-setup / config-sync) across machines via Git, plus a Domain-Driven Design modelling/build/analysis workflow (/ddd), a Clean Architecture component/dependency audit (/clean-architecture), a test-suite quality audit (/test-quality), and an umbrella full-audit (/code-quality) that runs all six review lenses at once and merges them into one deduplicated report, and a release pipeline (/release: gate, stamp, build, tag, publish, verify-install) driven by per-technology adapters."
     }
   ]
