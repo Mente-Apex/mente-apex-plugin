@@ -3,14 +3,12 @@ technology: rust
 toolchain: cargo
 fingerprint: Cargo.lock
 version_source: Cargo.toml#package.version
-derived_manifests: []
 relock_command: cargo generate-lockfile --offline
 gate_command: cargo build --locked && cargo test --locked && cargo clippy -- -D warnings
 build_command: cargo build --release
 artifact_pattern: target/release/<distribution-name:binary>
 tag_pattern: v<version>
 publish_command: cargo publish && git push <remote> <default> --follow-tags
-release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
 install_verify_command: cargo install --path . && which <distribution-name:binary>
 distribution_names:
   crate: Cargo.toml#package.name

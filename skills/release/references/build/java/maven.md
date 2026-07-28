@@ -3,14 +3,12 @@ technology: java
 toolchain: maven
 fingerprint: pom.xml
 version_source: pom.xml#/project/version
-derived_manifests: []
 relock_command: null
 gate_command: mvn -B clean verify
 build_command: mvn -B package
 artifact_pattern: target/*-<version>.jar
 tag_pattern: <distribution-name:artifact>-<version>
 publish_command: mvn -B deploy && git push <remote> <default> --follow-tags
-release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
 install_verify_command: mvn -B dependency:get -Dartifact=<distribution-name:group>:<distribution-name:artifact>:<version>
 distribution_names:
   group: pom.xml#/project/groupId

@@ -3,14 +3,12 @@ technology: python
 toolchain: uv
 fingerprint: uv.lock
 version_source: pyproject.toml#project.version
-derived_manifests: []
 relock_command: uv lock
 gate_command: uv sync && uv run pytest && uv run ruff check . && uv run black --check .
 build_command: uv build
 artifact_pattern: dist/*-<version>-py3-none-any.whl
 tag_pattern: v<version>
 publish_command: git push <remote> <default> --follow-tags
-release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
 install_verify_command: uv tool install --force . && which <distribution-name:binary>
 distribution_names:
   binary: pyproject.toml#project.scripts
