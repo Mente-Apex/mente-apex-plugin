@@ -1940,12 +1940,31 @@ def test_core_documents_the_rollback():
     assert "git reset --hard" in text, "rollback must show how to undo the commit"
 
 
-def test_core_verifies_the_install_not_just_the_build():
-    text = RELEASE_SKILL_MD.read_text(encoding="utf-8").lower()
-    assert "install_verify_command" in text
+def test_core_verifies_both_the_built_thing_and_the_shipped_thing():
+    """Step 10 must run both adapters' install checks, not one compound field.
+
+    Scoped to Step 10, on the same standing ruling as Step 3's guard above: an
+    unscoped scan is blind to whether these words are Step 10's own, or a
+    coincidence from elsewhere in the file. "distribution adapter" and "no
+    distribution adapter" both already occur in Step 0's adapter-resolution
+    prose, so an unscoped version of this test would pass against the OLD
+    single-command Step 10, unchanged.
+    """
+    step = _section_after(
+        RELEASE_SKILL_MD.read_text(encoding="utf-8"), "## Step 10 — Verify"
+    ).lower()
+    assert "install_verify_command" in step
     assert (
-        "outside" in text and "checkout" in text
+        "outside" in step and "checkout" in step
     ), "the install check must require the shim to resolve outside the checkout"
+    assert "distribution adapter" in step, (
+        "the shipped thing is verified by its own command; folding both into one "
+        "field is what made that command a compound"
+    )
+    assert "no distribution adapter" in step, (
+        "resolving none is legitimate and the step must say so rather than "
+        "failing on an absent field"
+    )
 
 
 RELEASE_EVALS = REPO_ROOT / "evals" / "release-evals.json"

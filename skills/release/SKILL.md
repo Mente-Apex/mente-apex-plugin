@@ -615,11 +615,22 @@ rollback.
 
 ## Step 10 — Verify the install
 
-Run the adapter's `install_verify_command`, substituting its placeholders as Step 0
-directs. This is the command most likely to carry `<distribution-name:role>` and
+Two adapters, two things to confirm, and both run: the build adapter proves what was
+built installs; the distribution adapter proves what shipped arrived. Folding both into
+one field is what made `install_verify_command` a compound in the first place — keep
+them separate here.
+
+Run the root component's build adapter `install_verify_command` first, substituting its
+placeholders as Step 0 directs. **A `null` value is not a failure** — a build adapter
+that builds nothing has nothing to install-verify, so skip straight to the distribution
+check. Otherwise this is the command most likely to carry `<distribution-name:role>` and
 `<version>`, so resolve those before running rather than pattern-matching past them.
 
-Confirm two things:
+Then, if a distribution adapter resolved, run its own `install_verify_command` the same
+way. **Resolving no distribution adapter runs only the build check above, and that is not
+a degraded release** — it is the same legitimate shape Step 0 already named.
+
+For whichever command or commands ran, confirm two things:
 
 1. The reported version is the one just cut.
 2. The resolved binary lives **outside** the development checkout.
@@ -628,8 +639,8 @@ Point 2 is the one people skip. A shim whose path or shebang points into the wor
 means the "installed" tool is your checkout: it works perfectly for you and is broken for
 everyone else. Building an artifact proves nothing about what a user ends up running.
 
-A failure here does not un-publish anything — the tag is out. Report it plainly as a
-release that shipped with an install problem, and say what is wrong.
+A failure at either command does not un-publish anything — the tag is out. Report it
+plainly as a release that shipped with an install problem, and say which check failed.
 
 ## Step 11 — Report
 
