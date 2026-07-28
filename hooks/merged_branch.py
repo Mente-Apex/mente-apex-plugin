@@ -52,6 +52,69 @@ def resolve_remote(cwd: str | Path) -> str | None:
     return "origin" if "origin" in remotes else remotes[0]
 
 
+def _default_from_gh(cwd: str | Path) -> str | None:
+    """Layer 3: ask GitHub. Opportunistic — gh missing, unauthenticated, or
+    pointed at a non-GitHub remote simply falls through to layer 4. This hook
+    must work on a repo with no forge at all."""
+    try:
+        completed = subprocess.run(
+            [
+                "gh",
+                "repo",
+                "view",
+                "--json",
+                "defaultBranchRef",
+                "-q",
+                ".defaultBranchRef.name",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=NETWORK_TIMEOUT_SECONDS,
+        )
+    except OSError, subprocess.SubprocessError:
+        return None
+    return completed.stdout.strip() or None if completed.returncode == 0 else None
+
+
+def resolve_default(cwd: str | Path, remote: str) -> str | None:
+    """Four layers, cheapest first — the canonical ladder from
+    docs/git-remote-resolution.md, transcribed into Python. The layer order is
+    the point: layer 1 exists only on a fresh clone, so a repo built with
+    `git init` + `git remote add` reaches the right answer only because the
+    later layers run."""
+    # 1. Local ref — instant, but only a freshly cloned repo has it.
+    code, output = git(cwd, "symbolic-ref", f"refs/remotes/{remote}/HEAD")
+    if code == 0 and output:
+        return output.rsplit("/", 1)[-1]
+    # 2. Ask the remote directly — a round-trip, always authoritative.
+    code, output = git(cwd, "remote", "show", remote, timeout=NETWORK_TIMEOUT_SECONDS)
+    if code == 0:
+        for line in output.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("HEAD branch:"):
+                name = stripped.split(":", 1)[1].strip()
+                if name and name != "(unknown)":
+                    return name
+    # 3. Ask GitHub — works when the remote is unreachable but gh is authenticated.
+    from_gh = _default_from_gh(cwd)
+    if from_gh:
+        return from_gh
+    # 4. Guess from local branches, last resort.
+    for candidate in ("main", "master"):
+        code, _ = git(cwd, "show-ref", "--verify", "--quiet", f"refs/heads/{candidate}")
+        if code == 0:
+            return candidate
+    return None
+
+
+def current_branch(cwd: str | Path) -> str | None:
+    """The checked-out branch, or None on a detached HEAD — where "the branch
+    was merged" has no meaning."""
+    code, output = git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    return output if code == 0 and output else None
+
+
 def report(cwd: str | Path) -> list[str]:
     """The lines to inject as session context. Empty means stay silent."""
     code, _ = git(cwd, "rev-parse", "--git-dir")
@@ -59,5 +122,11 @@ def report(cwd: str | Path) -> list[str]:
         return []
     remote = resolve_remote(cwd)
     if remote is None:
+        return []
+    default = resolve_default(cwd, remote)
+    if default is None:
+        return []
+    branch = current_branch(cwd)
+    if branch is None:
         return []
     return []
