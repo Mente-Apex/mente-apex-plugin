@@ -16,7 +16,8 @@
         "The built artifact dist/fixture-1.3.0.tar.gz is checked against artifact_pattern and confirmed present",
         "The workflow reaches the CONFIRMATION CHECKPOINT and asks via AskUserQuestion, showing the release plan (target, version, stamped files, artifacts, tag, will-push command) and the rollback commands",
         "Nothing is pushed and no GitHub release is created before the checkpoint is answered — Step 9 and Step 10 do not run until confirmation"
-      ]
+      ],
+      "illustrative": true
     },
     {
       "id": 1,
@@ -61,7 +62,8 @@
         "git tag is never run while `git status` would show a dirty tree — the commit from Step 7 always precedes the git tag command from Step 8",
         "The tag created is annotated (git tag -a, not a lightweight tag)",
         "The confirmation checkpoint is shown only after the tag already exists locally, not before"
-      ]
+      ],
+      "illustrative": true
     },
     {
       "id": 4,
@@ -91,7 +93,8 @@
         "The skill does not treat the tarball as an acceptable substitute for the declared wheel pattern",
         "The workflow does not reach Step 7 (commit), Step 8 (tag), or the confirmation checkpoint after this refusal",
         "The uncommitted stamp from Step 5 is not rolled back automatically or committed anyway — the refusal stops forward progress and hands the user the revert command (git checkout -- <version_source> <derived manifests>) so the leftover dirty tree is explained rather than abandoned"
-      ]
+      ],
+      "illustrative": true
     },
     {
       "id": 6,
