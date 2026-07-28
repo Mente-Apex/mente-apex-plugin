@@ -12,7 +12,7 @@ to stay technology-agnostic is a test failure, not a code-review opinion.
 ## Where adapters live
 
 ```
-references/targets/<technology>/<toolchain>.md
+references/build/<technology>/<toolchain>.md
 ```
 
 The directory is the technology (the detection axis). The filename is the toolchain (the
@@ -436,7 +436,7 @@ deliberate act.
 
 ## Adding an adapter
 
-1. Create `references/targets/<technology>/<toolchain>.md` with all fourteen fields.
+1. Create `references/build/<technology>/<toolchain>.md` with all fourteen fields.
    `tag_pattern` is the one people forget, because `v<version>` feels like a default
    rather than a choice. `relock_command` is the one people get wrong: check whether your
    lockfile records the project's *own* version before declaring it `null`.

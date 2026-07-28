@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GIT_RESOLUTION_DOC = REPO_ROOT / "docs" / "git-remote-resolution.md"
 SHIP_SKILL = REPO_ROOT / "skills" / "ship" / "SKILL.md"
 RELEASE_SKILL_DIR = REPO_ROOT / "skills" / "release"
-TARGETS_DIR = RELEASE_SKILL_DIR / "references" / "targets"
+BUILD_DIR = RELEASE_SKILL_DIR / "references" / "build"
 ADAPTER_CONTRACT = RELEASE_SKILL_DIR / "references" / "ADAPTER-CONTRACT.md"
 
 # The abstraction the core workflow depends on. Order is the documented order.
@@ -485,13 +485,13 @@ def test_adapter_contract_declares_detection_precedence():
 
 
 def adapter_files():
-    """Every adapter under references/targets/, recursively, sorted."""
-    return sorted(TARGETS_DIR.rglob("*.md"))
+    """Every build adapter under references/build/, recursively, sorted."""
+    return sorted(BUILD_DIR.rglob("*.md"))
 
 
 def test_every_adapter_declares_all_contract_fields():
     adapters = adapter_files()
-    assert adapters, "no adapters found under references/targets/"
+    assert adapters, "no adapters found under references/build/"
     offenders = []
     for adapter in adapters:
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
@@ -521,7 +521,7 @@ def test_every_adapter_matches_its_location():
 
 def test_git_tag_only_adapter_stamps_all_three_version_mirrors():
     """This repo's own adapter must name every manifest the lockstep guard checks."""
-    adapter = TARGETS_DIR / "python" / "git-tag-only.md"
+    adapter = BUILD_DIR / "python" / "git-tag-only.md"
     assert adapter.is_file(), "the dogfooded adapter must exist"
     text = adapter.read_text(encoding="utf-8")
     fields = parse_frontmatter(text)
@@ -549,7 +549,7 @@ def test_git_tag_only_adapter_stamps_all_three_version_mirrors():
 
 def test_uv_adapter_verifies_a_real_artifact_pattern():
     """The wheel-name check is the whole point of artifact_pattern."""
-    adapter = TARGETS_DIR / "python" / "uv.md"
+    adapter = BUILD_DIR / "python" / "uv.md"
     assert adapter.is_file(), "the uv adapter must exist"
     fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
     assert fields.get("build_command") == "uv build", "uv projects build with uv build"
@@ -780,7 +780,7 @@ def test_npm_adapter_body_records_that_it_shares_the_lockfile_shape():
     """`package-lock.json` carries the package's own version exactly as
     `Cargo.lock` does. The stub has never hit it; the body must say it will."""
     body = parse_frontmatter(
-        (TARGETS_DIR / "typescript" / "npm.md").read_text(encoding="utf-8")
+        (BUILD_DIR / "typescript" / "npm.md").read_text(encoding="utf-8")
     )["_body"]
     assert "package-lock.json" in body, "the npm body must name its own lockfile"
     assert "relock_command" in body, "the npm body must name the field that fixes it"
