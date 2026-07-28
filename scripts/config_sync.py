@@ -12,7 +12,7 @@ and nothing breaks across macOS (BSD) vs Linux (GNU) environments.
 Invoke through uv, never through the interpreter the OS ships — this module
 targets Python 3.14 and stock macOS still answers `python3` with 3.9:
 
-  py() { uv run --no-project --python 3.14 python "$@"; }
+  py() { uv run --no-project python "$@"; }
 
 Usage (`py config_sync.py <command>`):
   export               -> print JSON snapshot to stdout
