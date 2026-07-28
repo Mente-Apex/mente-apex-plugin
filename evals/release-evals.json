@@ -110,6 +110,38 @@
         "For \"cut a 0.22.0 release and publish it\", /release is the skill that activates, running its gate/stamp/build/tag/publish pipeline",
         "Neither skill fires for both prompts simultaneously — the two pipelines never both run for the same single request in this pair"
       ]
+    },
+    {
+      "id": 7,
+      "eval_name": "multi_component_repo_asks_before_proceeding",
+      "skill": "release",
+      "prompt": "/release — cut a release for this repo. Clean tree, on main, up to date with origin. The repo carries git-tracked build evidence in three directories: pyproject.toml plus uv.lock at the root, dashboard/package.json plus dashboard/package-lock.json, and worker/package.json plus worker/package-lock.json. There is also a .venv/ and a dashboard/node_modules/, both gitignored. I did not say which of the three should be built and released.",
+      "expected_output": "Detection Stage 1 walks the git-tracked build evidence, finds three components — the repository root, dashboard/, and worker/ — and stops before running anything. It names all three, explains that it cannot tell which is build and release and which are check only, and asks via AskUserQuestion. It does not default to the root component, does not assume the two package.json directories are check-only, and does not run a gate, stamp a version, build, commit, or tag while the question is open. The gitignored .venv/ and dashboard/node_modules/ are not offered as components at all, because only git-tracked build evidence counts.",
+      "files": [],
+      "assertions": [
+        "All three components — the repository root, dashboard/, and worker/ — are named explicitly in the question put to the user",
+        "The question asks which component is build and release and which are check only, and is asked via AskUserQuestion rather than assumed",
+        "The root component is not silently chosen as the one to release just because it is the root, and the subdirectories are not silently demoted to check-only",
+        "No gate_command, build, version-literal search, stamp, commit, or tag runs before the user answers",
+        "Neither .venv/ nor dashboard/node_modules/ is listed as a component — untracked and gitignored trees are excluded by the tracked-file rule, not by a hardcoded skip list",
+        "Level 1 technology detection does not refuse on python-and-typescript both matching: the two levels run inside one component, so a Python root beside a TypeScript dashboard is not a collision"
+      ]
+    },
+    {
+      "id": 8,
+      "eval_name": "plugin_manifest_never_decides_the_build",
+      "skill": "release",
+      "prompt": "/release — cut a release for this repo. Clean tree, on main, up to date with origin, last tag v0.4.0 with one feat commit since. It is a single-component repo whose root carries both uv.lock and .claude-plugin/plugin.json. pyproject.toml declares a setuptools build backend, a [project.scripts] console script, and no tool.uv.package setting at all — so nothing marks it as package = false. It also has .claude-plugin/marketplace.json.",
+      "expected_output": "Step 0 resolves the two axes independently. The build adapter comes from build evidence alone: uv.lock matches, the package = false predicate does not, so it resolves python/uv — an adapter whose build_command is `uv build` and whose artifact_pattern is a wheel. The presence of .claude-plugin/plugin.json plays no part in that decision; it is shipping evidence, and it resolves the claude-plugin distribution adapter instead, contributing derived_manifests (.claude-plugin/plugin.json#.version and the optional .claude-plugin/marketplace.json#.plugins[0].version) and a release_command. version_source stays pyproject.toml#project.version from the build adapter, and the manifests are stamped from it, never the reverse. Step 6 actually builds the wheel and checks it against artifact_pattern before any tag is created, so no tag is cut without an artifact.",
+      "files": [],
+      "assertions": [
+        "The resolved build adapter is python/uv — one that builds — and is never python/uv-nobuild or any adapter whose build_command is null",
+        "The presence of .claude-plugin/plugin.json is explicitly not used as an input to the build-adapter decision; it resolves the claude-plugin distribution adapter only",
+        "A build_command actually runs at Step 6 and the emitted wheel is matched against artifact_pattern — a tag is never created for a release that built nothing",
+        "version_source is pyproject.toml#project.version, taken from the build adapter, and .claude-plugin/plugin.json#.version is stamped as a derived manifest from it rather than leading it",
+        "Both install_verify_command values run and are reported separately — the build adapter's, which proves the built wheel installs, and the distribution adapter's, which proves the shipped plugin arrived",
+        "The .claude-plugin/marketplace.json entry being optional does not weaken the check on .claude-plugin/plugin.json, which is stamped unconditionally"
+      ]
     }
   ]
 }

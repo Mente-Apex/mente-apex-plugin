@@ -1022,7 +1022,7 @@ def adapters_by_technology():
 def test_every_adapter_is_registered_in_the_level_two_table():
     """An adapter absent from the detection table is unreachable.
 
-    The contract warns about this in "Adding an adapter" step 4 — detection
+    The contract warns about this in "Adding an adapter" step 6 — detection
     resolves technology first, so an unregistered adapter sits on disk while the
     run refuses with "nothing matches". Nothing checked it until now, and it is
     the invariant the collision rule below actually depends on.
@@ -1978,6 +1978,8 @@ REQUIRED_EVAL_NAMES = {
     "second-version-literal-refusal",
     "artifact-pattern-mismatch-refusal",
     "ship-release-trigger-boundary",
+    "multi_component_repo_asks_before_proceeding",
+    "plugin_manifest_never_decides_the_build",
 }
 
 
