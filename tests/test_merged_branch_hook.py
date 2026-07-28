@@ -60,3 +60,33 @@ def test_silent_when_the_repository_has_no_remote(tmp_path):
     run("git", "add", "a.txt", cwd=tmp_path)
     run("git", "commit", "-m", "a", cwd=tmp_path)
     assert merged_branch.report(tmp_path) == []
+
+
+def test_default_resolves_from_the_local_head_ref_on_a_clone(clone):
+    assert merged_branch.resolve_default(clone, "origin") == "main"
+
+
+def test_default_resolves_without_a_remote_head_ref(clone):
+    # `git init` + `git remote add` never writes refs/remotes/<remote>/HEAD;
+    # only a fresh clone does. Layer 1 must not be the only layer.
+    run("git", "update-ref", "-d", "refs/remotes/origin/HEAD", cwd=clone)
+    assert merged_branch.resolve_default(clone, "origin") == "main"
+
+
+def test_default_is_none_when_no_layer_has_a_signal(tmp_path):
+    run("git", "init", "--initial-branch=trunk", str(tmp_path))
+    # No commits, no remote, and neither main nor master exists locally, so the
+    # last-resort guess has nothing to offer either.
+    assert merged_branch.resolve_default(tmp_path, "origin") is None
+
+
+def test_current_branch_is_none_when_head_is_detached(clone):
+    head = run("git", "rev-parse", "HEAD", cwd=clone)
+    run("git", "checkout", "--detach", head, cwd=clone)
+    assert merged_branch.current_branch(clone) is None
+
+
+def test_silent_when_head_is_detached(clone):
+    head = run("git", "rev-parse", "HEAD", cwd=clone)
+    run("git", "checkout", "--detach", head, cwd=clone)
+    assert merged_branch.report(clone) == []
