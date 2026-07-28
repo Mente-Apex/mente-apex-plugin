@@ -476,7 +476,7 @@ def test_adapter_contract_documents_every_field():
     # fingerprint and install_verify_command appear in both tuples; documenting
     # each once in the contract is enough, so duplicates collapse via set().
     fields = set(BUILD_FIELDS + DISTRIBUTION_FIELDS)
-    missing = [field for field in fields if f"`{field}`" not in text]
+    missing = sorted(field for field in fields if f"`{field}`" not in text)
     assert not missing, f"contract does not document fields: {missing}"
 
 
@@ -581,14 +581,27 @@ def test_claude_plugin_distribution_stamps_both_manifest_mirrors():
     # Read the parsed fields, never the file text. A substring search is satisfied
     # by body prose that *discusses* these paths, and this adapter's prose names
     # every one of them.
-    declared = {
-        split_optional_marker(entry)[0].partition("#")[0]
-        for entry in str(fields.get("derived_manifests") or "").split()
+    entries = str(fields.get("derived_manifests") or "").split()
+    optionality = {
+        split_optional_marker(entry)[0].partition("#")[0]: split_optional_marker(entry)[
+            1
+        ]
+        for entry in entries
     }
-    assert declared == {
+    assert set(optionality) == {
         ".claude-plugin/plugin.json",
         ".claude-plugin/marketplace.json",
-    }, f"both plugin mirrors must be stamped; got {sorted(declared)}"
+    }, f"both plugin mirrors must be stamped; got {sorted(optionality)}"
+    # The `?` is load-bearing (see the adapter's own "the `?` is load-bearing"
+    # section): plugin.json is this shape's defining mirror and must stay
+    # required, while marketplace.json is legitimately absent in some repos of
+    # this shape and must stay optional.
+    assert (
+        optionality[".claude-plugin/plugin.json"] is False
+    ), "plugin.json must be required, not optional"
+    assert (
+        optionality[".claude-plugin/marketplace.json"] is True
+    ), "marketplace.json must be optional"
     assert "status" not in fields, "the dogfooded adapter is not a stub"
 
 
@@ -663,9 +676,14 @@ def test_optional_marker_is_confined_to_derived_manifests():
 
     The contract names all three exclusions. An earlier version of this test
     checked only two, and `fingerprint: …?` passed the whole suite.
+
+    Runs over both adapter kinds: a distribution adapter has no `version_source`
+    or `distribution_names` (those checks are simply no-ops for it), but it does
+    have `fingerprint`, and the rule against an optional fingerprint entry binds
+    there exactly as it does on a build adapter.
     """
     offenders = []
-    for adapter in adapter_files():
+    for adapter in adapter_files() + distribution_files():
         identity = f"{adapter.parent.name}/{adapter.stem}"
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
         if str(fields.get("version_source") or "").strip().endswith("?"):
@@ -1105,9 +1123,16 @@ def test_contract_declares_a_selector_language_for_every_file_format():
 
 
 def test_every_adapter_selector_matches_its_file_formats_syntax():
-    """Four adapters, three selector languages, no stated rule — until now."""
+    """Four build adapters, one distribution adapter, three selector languages.
+
+    `selector_references` is field-set agnostic — it reads whichever of
+    `version_source`, `derived_manifests`, `distribution_names` and `fingerprint`
+    a given file's frontmatter carries — so a distribution adapter's
+    `derived_manifests` selectors (the only place that field lives, post-split)
+    get exactly the same check as a build adapter's `version_source`.
+    """
     offenders = []
-    for adapter in adapter_files():
+    for adapter in adapter_files() + distribution_files():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
         references = selector_references(fields)
         assert references, f"{adapter.stem}: no selector references found to check"
@@ -1189,6 +1214,18 @@ def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
     Because a `<distribution-name:role>` token is bound only by a role the
     adapter declares, this also enforces the contract's `null`-iff rule: a null
     `distribution_names` beside a name-using command leaves the token unbound.
+
+    A distribution adapter has no `distribution_names` map of its own — that
+    field stays on the build adapter (see "Where the axes tangle" in the
+    contract) — so no role is ever declared for one, and any
+    `<distribution-name:role>` token appearing in a distribution adapter's
+    fields would be unbound unconditionally. No adapter today writes one:
+    `claude-plugin.md`'s `release_command` and `install_verify_command` use only
+    `<tag>` and `<release-notes-file>`, both bound without a role. The binding
+    rule for a distribution-side `<distribution-name:role>` is therefore
+    genuinely undefined pending a real need — this test enforces what is true of
+    the one adapter that exists rather than inventing a mechanism nothing calls
+    for yet.
     """
     offenders = []
     for adapter in adapter_files():
@@ -1196,6 +1233,13 @@ def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
         unbound = unbound_placeholders(
             (str(fields.get(field, "")) for field in BUILD_FIELDS),
             declared_roles(fields.get("distribution_names")),
+        )
+        if unbound:
+            offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {unbound}")
+    for adapter in distribution_files():
+        fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
+        unbound = unbound_placeholders(
+            str(fields.get(field, "")) for field in DISTRIBUTION_FIELDS
         )
         if unbound:
             offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {unbound}")
