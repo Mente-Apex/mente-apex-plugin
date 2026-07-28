@@ -457,10 +457,12 @@ not releasing with it:
 
 - **Author from a procedure already run by hand**, adapter-first: perform every command on
   the real repository, in order, and write down what actually happened. `python/uv` shipped
-  unstubbed this way. So did `python/uv-plugin` — its inherited half was `python/uv`'s, and
-  its three genuinely new parts (a second stamped manifest, two JavaScript suites in the
-  gate, a plugin-list check) were each run against `mente-apex-memory` before being
-  declared.
+  unstubbed this way. So did the plugin-shaped Python adapter this contract used to carry,
+  `python/uv-plugin`, before the two axes were split and it was dissolved — its inherited
+  half was `python/uv`'s, and its three genuinely new parts (a second stamped manifest, two
+  JavaScript suites in the gate, a plugin-list check) were each run against
+  `mente-apex-memory` before being declared. It is named here as history, not as an adapter
+  you can go and read.
 - **Declare `status: stub` when you have *not* done that** — a target sketched from an
   ecosystem's documentation, or from another adapter by analogy. `typescript/npm`,
   `java/maven` and `rust/cargo` are all this kind. Clearing the marker means going and
