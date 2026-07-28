@@ -37,7 +37,7 @@ first thing that leaves the machine — never a second.
 
 This workflow names no technology and no forge. It knows only the fourteen-field adapter
 contract in [references/ADAPTER-CONTRACT.md](references/ADAPTER-CONTRACT.md); the concrete
-commands live in `references/targets/<technology>/<toolchain>.md`.
+commands live in `references/build/<technology>/<toolchain>.md`.
 
 That is deliberate and it is enforced: `tests/test_release_skill_structure.py` fails if
 this file names a build tool. **Adding a release target means adding an adapter file, never

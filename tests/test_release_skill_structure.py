@@ -1272,7 +1272,7 @@ def test_core_workflow_contains_no_technology_specific_command():
     offenders = [literal for literal in TECHNOLOGY_LITERALS if literal in body]
     assert not offenders, (
         f"core SKILL.md names technology-specific commands {offenders} — "
-        "these belong in references/targets/, not the core"
+        "these belong in references/build/, not the core"
     )
 
 
@@ -1554,12 +1554,12 @@ def test_release_evals_valid_schema():
 
 
 def test_cases_narrating_a_fixture_declare_themselves_illustrative():
-    """Three cases narrate a fixture adapter at `references/targets/fixture/echo.md`
+    """Three cases narrate a fixture adapter at `references/build/fixture/echo.md`
     that does not exist, with an empty `files` array — against a real checkout
     Step 0's "nothing matches → refuse" fires instead of the asserted behaviour.
 
     Shipping the fixture for real is the wrong fix: anything under
-    `references/targets/` is a live adapter that detection can select during an
+    `references/build/` is a live adapter that detection can select during an
     actual release. So a case that narrates one must say it cannot execute.
 
     Keying the requirement to the narration is what gives it teeth: the earlier
