@@ -176,6 +176,70 @@ def test_version_mirrors_match():
     )
 
 
+HOOKS_DIR = REPO_ROOT / "hooks"
+
+# `python3` on an end user's PATH is whatever the OS ships — 3.9.6 on current
+# macOS. Every Python this plugin ships targets requires-python >=3.14 and is
+# formatted by black at that target, which emits PEP 758 `except A, B:` — a
+# SyntaxError on anything older. So no shipped surface may reach for the system
+# interpreter; they all go through uv, which resolves a 3.14 for us.
+# Only `python3` is flagged. The uv form ends in a bare `python`, and the word
+# on its own is ordinary prose ("Target : python / git-tag-only"); `python3` is
+# never anything but a reach for the system binary.
+SYSTEM_PYTHON = re.compile(r"(?<![\w./-])python3(?![\w.-])")
+UV_PYTHON_PREFIX = "uv run --no-project --python 3.14"
+
+
+def _shipped_invocation_surfaces():
+    """The files whose text is executed on a user's machine: the skills the
+    agent runs and the hook declarations Claude Code runs. Excludes evals and
+    reference material, which describe other people's projects rather than
+    invoking ours."""
+    for skill_file in sorted(SKILLS_DIR.rglob("SKILL.md")):
+        if "-workspace/" in str(skill_file.relative_to(REPO_ROOT)):
+            continue
+        yield skill_file
+    yield from sorted(HOOKS_DIR.glob("*.json"))
+
+
+def test_no_shipped_surface_invokes_the_system_interpreter():
+    offenders = []
+    for surface in _shipped_invocation_surfaces():
+        for number, line in enumerate(surface.read_text().splitlines(), start=1):
+            if SYSTEM_PYTHON.search(line):
+                offenders.append(
+                    f"{surface.relative_to(REPO_ROOT)}:{number}: {line.strip()}"
+                )
+    assert not offenders, (
+        "Shipped surfaces reaching for the system interpreter — use "
+        f"`{UV_PYTHON_PREFIX} python ...` instead:\n" + "\n".join(offenders)
+    )
+
+
+def _shipped_python_modules():
+    """Every Python module this plugin ships to a user's machine. Excludes the
+    test suite, which only ever runs under uv here."""
+    for directory in (HOOKS_DIR, REPO_ROOT / "scripts", SKILLS_DIR):
+        for module in sorted(directory.rglob("*.py")):
+            relative = str(module.relative_to(REPO_ROOT))
+            if "-workspace/" in relative or "__pycache__" in relative:
+                continue
+            yield module
+
+
+def test_no_shipped_module_carries_a_shebang():
+    """A `#!/usr/bin/env python3` line is a promise the module cannot keep: none
+    of these carry the exec bit, and black formats them at py314, whose syntax
+    the OS interpreter rejects outright. They are launched through uv or not at
+    all, so the shebang can only mislead."""
+    offenders = [
+        str(module.relative_to(REPO_ROOT))
+        for module in _shipped_python_modules()
+        if module.read_text().startswith("#!")
+    ]
+    assert not offenders, "Shipped modules with a shebang:\n" + "\n".join(offenders)
+
+
 OVERLAP_MAP = DOCS_DIR / "lens-overlap.md"
 
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 config_sync.py — cross-platform core for Claude config sync.
 
@@ -10,19 +9,24 @@ This is NOT the knowledge brain — for capturing/recalling facts use the
 All file manipulation lives here so that SKILL.md files stay clean
 and nothing breaks across macOS (BSD) vs Linux (GNU) environments.
 
-Usage:
-  python3 config_sync.py export               -> print JSON snapshot to stdout
-  python3 config_sync.py import <snapshot>    -> apply snapshot to local Claude state
-  python3 config_sync.py backup               -> save timestamped backup, print path
-  python3 config_sync.py status               -> print human-readable inventory
-  python3 config_sync.py merge <a> <b>        -> smart-merge two snapshots, print result
-  python3 config_sync.py apply-shared <repo>  -> install shared artifacts from repo shared/ dir
-  python3 config_sync.py log-sync <repo> [action] [summary]  -> append sync entry to meta/sync-log.json
-  python3 config_sync.py scan                 -> check all exportable files for secret-like content, print JSON report
-  python3 config_sync.py promote              -> analyse memory, print promotion suggestions as JSON
-  python3 config_sync.py machine-id           -> print or create stable machine ID
-  python3 config_sync.py clean-settings <f>   -> strip secrets from settings JSON, print cleaned version
-  python3 config_sync.py migrate              -> rename legacy open-memory-* paths to config-sync-* (idempotent)
+Invoke through uv, never through the interpreter the OS ships — this module
+targets Python 3.14 and stock macOS still answers `python3` with 3.9:
+
+  py() { uv run --no-project --python 3.14 python "$@"; }
+
+Usage (`py config_sync.py <command>`):
+  export               -> print JSON snapshot to stdout
+  import <snapshot>    -> apply snapshot to local Claude state
+  backup               -> save timestamped backup, print path
+  status               -> print human-readable inventory
+  merge <a> <b>        -> smart-merge two snapshots, print result
+  apply-shared <repo>  -> install shared artifacts from repo shared/ dir
+  log-sync <repo> [action] [summary]  -> append sync entry to meta/sync-log.json
+  scan                 -> check all exportable files for secret-like content, print JSON report
+  promote              -> analyse memory, print promotion suggestions as JSON
+  machine-id           -> print or create stable machine ID
+  clean-settings <f>   -> strip secrets from settings JSON, print cleaned version
+  migrate              -> rename legacy open-memory-* paths to config-sync-* (idempotent)
 """
 
 import contextlib

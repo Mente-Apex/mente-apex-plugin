@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Insert a pre-formatted Markdown block at the end of a named heading's section.
 
 Single responsibility: deterministic, mechanical placement — the testable seam so

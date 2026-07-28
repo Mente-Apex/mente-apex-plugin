@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Render a Mente Apex client deliverable: Legal/ Markdown (source of truth) → on-brand HTML/PDF.
 
 Zero third-party dependencies (stdlib only) — the plugin is config-synced across

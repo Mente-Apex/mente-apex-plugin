@@ -103,7 +103,13 @@ a private Git remote you control):
   `/menteapex-deliverable` reads the live brand from `$BRAND_ROOT` (default
   `$BUSINESS_ROOT/Brand`, holding `tokens/tokens.css`), falling back to vendored brand
   assets beside the skill if the source is unreachable. Override either to run on another machine.
-- `git` + `python3` (standard library only — no pip installs) for the config-sync skills, plus a private Git repository to hold your config
+- `git` + [`uv`](https://docs.astral.sh/uv/) for the config-sync skills, plus a private Git repository to hold your config
+- `uv` for everything Python this plugin runs on your machine — the config-sync engine, the
+  deliverable renderer, and the SessionStart hook. Every module targets Python 3.14, so they
+  are invoked as `uv run --no-project --python 3.14`, never as the `python3` your OS ships
+  (3.9 on current macOS, which cannot parse them). No pip installs: standard library only,
+  and uv fetches the interpreter itself. The first such run on a machine with no 3.14
+  present downloads one, and is slower than every run after it.
 
 ## Development
 

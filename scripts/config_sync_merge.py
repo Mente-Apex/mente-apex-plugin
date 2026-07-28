@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 config_sync_merge.py — the text/JSON merge engine for config sync.
 
