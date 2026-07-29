@@ -54,12 +54,21 @@ def as_report_payload(result, scope):
         "unresolved": list(result.unresolved),
         "unclaimed": list(result.unclaimed),
         "baseline_failures": list(result.baseline_failures),
+        "baseline_error": result.baseline_error,
     }
 
 
 def render_markdown(result, scope):
     """The Mutation-gate section body for the report."""
     lines = [f"**Scope:** {scope}", ""]
+
+    if result.baseline_error:
+        lines.append(
+            "**Baseline did not complete** — the clean-run baseline never "
+            "finished, so the survived/unreliable split below is unverified, "
+            f"not clean: {result.baseline_error}"
+        )
+        lines.append("")
 
     survived = [s for s in result.survivors if s.status == "survived"]
     if survived:

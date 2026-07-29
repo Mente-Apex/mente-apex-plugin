@@ -176,14 +176,18 @@ def test_pytest_run_suite_invokes_uv_run_pytest(tmp_path, monkeypatch):
     assert output == "ok\n"
 
 
-def test_pytest_run_suite_warns_rather_than_silently_reporting_a_clean_baseline_on_a_broken_run(
+def test_pytest_run_suite_raises_rather_than_silently_reporting_a_clean_baseline_on_a_broken_run(
     tmp_path, monkeypatch
 ):
-    """A collection error or internal pytest crash exits neither 0 nor 1.
-    Reading that silently as an empty (all-clean) baseline would let every
-    survivor in the run be trusted at face value despite the baseline never
-    having actually completed -- the exact silence this feature exists to
-    close."""
+    """A collection error or internal pytest crash exits neither 0 nor 1. A
+    non-{0,1} exit means the baseline produced NO DATA AT ALL -- unlike a
+    missing tool (an honest partial answer), a baseline that never ran must
+    not be laundered into "no survivors were unreliable" for the rest of the
+    report. Reading it as an empty (all-clean) baseline -- even with a
+    warning attached -- lets every survivor in the run be trusted at face
+    value in the rendered report, where nothing captures Python warnings.
+    Raising instead forces the caller to make that failure a first-class,
+    operator-visible part of the result."""
 
     def fake_run(argv, cwd, capture_output, text):
         return subprocess.CompletedProcess(
@@ -192,5 +196,80 @@ def test_pytest_run_suite_warns_rather_than_silently_reporting_a_clean_baseline_
 
     monkeypatch.setattr(mutation_gate.subprocess, "run", fake_run)
 
-    with pytest.warns(UserWarning, match="usage error"):
+    with pytest.raises(mutation_gate.BaselineRunFailedError, match="usage error"):
         mutation_gate._pytest_run_suite(tmp_path)
+
+
+def test_record_baseline_turns_a_clean_run_into_failures_with_no_error(tmp_path):
+    def fake_run_suite(repo_root):
+        return "FAILED tests/test_a.py::test_flaky\n"
+
+    failures, error = mutation_gate._record_baseline(tmp_path, fake_run_suite)
+
+    assert failures == ("tests/test_a.py::test_flaky",)
+    assert error == ""
+
+
+def test_record_baseline_turns_a_broken_run_into_an_error_with_no_failures(tmp_path):
+    """The reviewer's live reproduction: a repo whose suite hits a collection
+    error must surface as an explicit error, not as an empty, falsely-clean
+    baseline."""
+
+    def fake_run_suite(repo_root):
+        raise mutation_gate.BaselineRunFailedError("collection error: bad_module.py")
+
+    failures, error = mutation_gate._record_baseline(tmp_path, fake_run_suite)
+
+    assert failures == ()
+    assert "collection error" in error
+
+
+def test_a_broken_baseline_reaches_the_rendered_markdown_and_the_json_payload(
+    tmp_path,
+):
+    """End to end through the reviewer's exact concern: a collection error
+    (exit 2) during the baseline run must not degrade to a silent warning
+    only visible to something that captures Python warnings -- it must show
+    up in both operator-facing outputs, distinguishing "the baseline was
+    clean" from "the baseline never ran"."""
+    from mutation_gate_report import as_report_payload, render_markdown
+
+    def collection_error_run_suite(repo_root):
+        raise mutation_gate.BaselineRunFailedError(
+            "uv run pytest exited 2 in "
+            f"{repo_root}: ERROR collecting tests/test_broken.py"
+        )
+
+    baseline_failures, baseline_error = mutation_gate._record_baseline(
+        tmp_path, collection_error_run_suite
+    )
+    survivor = Survivor(
+        artifact="a.py",
+        location="a.py:1",
+        mutant="x -> y",
+        associated_tests=("tests/test_a.py::test_sound",),
+        backend="mutmut",
+        granularity="line",
+    )
+    result = run_gate(
+        tmp_path,
+        ["a.py"],
+        [FakeBackend(survivors=(survivor,))],
+        baseline_failures=baseline_failures,
+        baseline_error=baseline_error,
+    )
+
+    assert result.baseline_error != ""
+    assert result.survivors[0].status == "survived"
+
+    payload = as_report_payload(result, scope="merge-base")
+    assert payload["baseline_error"] != ""
+    assert "ERROR collecting tests/test_broken.py" in payload["baseline_error"]
+
+    markdown = render_markdown(result, scope="merge-base")
+    assert "ERROR collecting tests/test_broken.py" in markdown
+    assert (
+        "never ran" in markdown
+        or "did not run" in markdown
+        or "did not complete" in markdown
+    )

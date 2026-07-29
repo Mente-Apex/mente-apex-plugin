@@ -12,7 +12,12 @@ from mutation_gate_report import as_report_payload, render_markdown
 
 
 def result_with(
-    *survivors, unavailable=(), unresolved=(), unclaimed=(), baseline_failures=()
+    *survivors,
+    unavailable=(),
+    unresolved=(),
+    unclaimed=(),
+    baseline_failures=(),
+    baseline_error="",
 ):
     return GateResult(
         survivors=tuple(survivors),
@@ -20,6 +25,7 @@ def result_with(
         unresolved=unresolved,
         unclaimed=unclaimed,
         baseline_failures=baseline_failures,
+        baseline_error=baseline_error,
     )
 
 
@@ -127,6 +133,39 @@ def test_baseline_failures_are_stated_not_swallowed():
 
     assert "already failing" in markdown
     assert "tests/test_a.py::test_flaky" in markdown
+
+
+def test_the_json_payload_carries_a_broken_baseline_too():
+    """A baseline that never ran is a different, more urgent fact than an
+    empty `baseline_failures` -- the machine-readable payload must not
+    collapse the two."""
+    payload = as_report_payload(
+        result_with(baseline_error="uv run pytest exited 2: collection error"),
+        scope="merge-base",
+    )
+
+    assert payload["baseline_error"] == "uv run pytest exited 2: collection error"
+    assert payload["baseline_failures"] == []
+
+
+def test_a_broken_baseline_is_stated_not_reduced_to_a_warning():
+    """Reproduces the reviewer's live finding: a collection error during the
+    baseline run must reach the rendered markdown, distinguishing "the
+    baseline was clean" from "the baseline never ran" -- not degrade to a
+    warning only visible to something that captures Python warnings."""
+    markdown = render_markdown(
+        result_with(baseline_error="uv run pytest exited 2: collection error"),
+        scope="merge-base",
+    )
+
+    assert "did not complete" in markdown
+    assert "collection error" in markdown
+
+
+def test_a_clean_baseline_does_not_render_the_broken_baseline_section():
+    markdown = render_markdown(result_with(), scope="merge-base")
+
+    assert "did not complete" not in markdown
 
 
 @pytest.mark.covers(
