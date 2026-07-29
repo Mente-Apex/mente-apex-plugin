@@ -17,14 +17,6 @@ into one label would hide the second behind the first.
 """
 
 from mutation_gate import is_survivor
-from mutation_gate_mutmut import MutmutBackend
-from mutation_gate_prose import ProseBackend
-from mutation_gate_stryker import StrykerBackend
-
-
-def default_backends():
-    """The backends a normal run dispatches over."""
-    return (MutmutBackend(), StrykerBackend(), ProseBackend())
 
 
 def as_report_payload(result, scope):

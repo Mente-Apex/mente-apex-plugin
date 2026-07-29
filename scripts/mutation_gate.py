@@ -357,7 +357,11 @@ def main(argv=None):
     )
     arguments = parser.parse_args(argv)
 
-    from mutation_gate_report import as_report_payload, default_backends
+    # Deferred on purpose — do not hoist to module top. Both modules import
+    # this one back: the backend modules need `Survivor`, and the reporter
+    # needs `is_survivor`. A module-level import here closes that cycle.
+    from mutation_gate_backends import default_backends
+    from mutation_gate_report import as_report_payload
 
     paths = changed_paths(arguments.repo_root, scope=arguments.scope)
     dirty = arguments.scope == "working-tree"
