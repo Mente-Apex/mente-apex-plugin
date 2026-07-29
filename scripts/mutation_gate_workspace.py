@@ -13,6 +13,7 @@ of a possibly dirty tree, which would diverge from the worktree path's
 "isolated copy at HEAD" contract without telling anyone.
 """
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -21,6 +22,19 @@ from contextlib import contextmanager
 from pathlib import Path
 
 _NOT_A_GIT_REPO = "not a git repository"
+
+
+def _c_locale_env():
+    """The process environment with git's output pinned to English.
+
+    `_try_worktree` tells "not a git repository" (fall back to a copy) apart
+    from every other git failure (raise) by matching git's stderr text. Under a
+    localized git that message is translated, the match fails, and a plain
+    non-git directory raises `WorkspaceSetupError` instead of falling back --
+    the gate broken by nothing worse than the operator's LANG. `LC_ALL=C`
+    makes the string we parse locale-independent.
+    """
+    return {**os.environ, "LC_ALL": "C"}
 
 
 class WorkspaceSetupError(RuntimeError):
@@ -39,6 +53,7 @@ def _try_worktree(repo_root, destination):
         cwd=repo_root,
         capture_output=True,
         text=True,
+        env=_c_locale_env(),
     )
     if result.returncode == 0:
         return True
@@ -69,6 +84,16 @@ def _link_node_modules(repo_root, destination):
     current. `shutil.rmtree` does not follow a symlinked directory when
     cleaning up the workspace afterwards, so the operator's real
     `node_modules` is never touched by teardown.
+
+    CAVEAT, unproven and deliberately stated: teardown safety is verified, but
+    nothing PREVENTS a tool invoked with `cwd=workspace` from writing THROUGH
+    this symlink -- a plugin cache, npm reinstalling a peer dep -- which would
+    breach the byte-identical guarantee for `node_modules` and only for
+    `node_modules`. This repo has no JS project, so the path has never been
+    exercised end to end by a real Stryker run. The guarantee therefore holds
+    unconditionally for every other path in the tree and is UNVERIFIED here
+    until a real JS audit exercises it. Do not restate it as unconditional in
+    operator-facing prose while that is true.
     """
     source = Path(repo_root) / "node_modules"
     if source.is_dir():

@@ -62,6 +62,14 @@ it is never the default. The run happens in a **scratch** workspace, so this sta
 **read-only** with respect to the operator's tree — mutation writes files, and
 none of them may land in the tree they are working in.
 
+One stated exception, so the guarantee is not oversold: on a JS/TS repo the
+scratch workspace reaches the already-installed toolchain through a **symlink
+to the operator's real `node_modules`**. Teardown is proven not to follow it,
+but nothing stops a tool run inside the workspace from writing through it, and
+that path is **unexercised** — no JS project has yet run this end to end. Treat
+`node_modules` as the one directory whose byte-identical state is unverified;
+everywhere else it holds unconditionally.
+
 Turn the JSON it prints into findings:
 
 - A survivor whose `associated_tests` include a test in scope → a **rubric 11**
