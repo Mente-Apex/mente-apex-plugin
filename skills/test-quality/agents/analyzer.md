@@ -50,6 +50,38 @@ One entry per finding: `## [T<n>] title` with **Kind** (rubric dimension), **Loc
 section (which test files you examined, which you skipped, and how you searched for dead
 references).
 
+## Mutation sweep
+
+Before drafting findings, run the mutation gate over the audit scope:
+
+    uv run python scripts/mutation_gate.py --repo-root <path> --scope merge-base
+
+Default scope is the **merge-base** diff, so the sweep does not change its answer
+as the operator commits mid-audit; `--scope full` exists and is slow enough that
+it is never the default. The run happens in a **scratch** workspace, so this stays
+**read-only** with respect to the operator's tree — mutation writes files, and
+none of them may land in the tree they are working in.
+
+Turn the JSON it prints into findings:
+
+- A survivor whose `associated_tests` include a test in scope → a **rubric 11**
+  tending finding, "vacuous test": the mutant survived, and these tests should
+  have killed it. Quote the mutant and the test; never a score.
+- A prose guard with no `@pytest.mark.covers` marker → **Minor**,
+  "unverifiable by construction" — the gate cannot check a guard that does not
+  declare what it guards.
+- An `inconclusive` entry (timeout, or a test that failed on the clean baseline)
+  → report it as inconclusive with the test named. Never let it read as a pass.
+- An `unavailable` entry → state the stack and the declared-install command the
+  payload carries. Do not install anything; the audit continues without it.
+- An `unclaimed` entry (a file in a known partition for which no backend is
+  registered) → **Minor**, operator-fixable misconfiguration: name the file and
+  the stack that has no backend registered. Distinct from `unresolved` (no
+  backend claims this file type at all, which may be perfectly fine).
+
+You run the gate; you do not act on it. Every survivor still goes to the reviewer
+for verification against the real test, like any other finding.
+
 ## Limits
 
 - Prefer the few findings a human will act on. Change nothing you audit — not a single

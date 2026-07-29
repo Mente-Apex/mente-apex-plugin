@@ -64,6 +64,8 @@ Follows the shared workflow, Phases 0–3; apply (4–5) is opt-in and guarded.
 2. **Phase 1 — Analyzer** ([agents/analyzer.md](agents/analyzer.md); read-only over the
    suite, writes its own draft) reads
    `references/rubric.md` and the `tdd` references, drafts findings → `draft-findings.md`.
+   The analyzer also runs the **mutation sweep** over the diff — this is what
+   catches *born-vacuous* tests, which no post-refactor gate would ever reach.
 3. **Phase 2 — Reviewer** ([agents/reviewer.md](agents/reviewer.md)) re-verifies every
    finding against the real tests, tiers Critical/Major/Minor, cross-references the hub,
    and writes `docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md` per
@@ -78,9 +80,10 @@ proof is *worthless* here — a weakened **or deleted** test also leaves the sui
 the opt-in [agents/implementer.md](agents/implementer.md) never trusts green alone:
 
 - **Refactor a test** (rename, split, merge, restructure, de-mock) → the TDD refactor
-  engine **plus a mutation gate**: temporarily break the code under test and confirm the
-  refactored test *fails*, then restore. Proves the test still catches its bug, not just
-  that it still passes.
+  engine **plus the mutation gate** (`scripts/mutation_gate.py`): mutate the code under
+  test mechanically and confirm the refactored test *fails*. Proves the test still catches
+  its bug, not just that it still passes. The manual break-and-restore loop stays as the
+  fallback where no mutation tool is available.
 - **Delete a stale test** → the **inverse, coverage-non-regression gate**: never
   auto-delete; remove the candidate, run coverage on the SUT, and keep it unless its
   *uniquely-covered* lines/branches are still covered elsewhere. If coverage drops, the
