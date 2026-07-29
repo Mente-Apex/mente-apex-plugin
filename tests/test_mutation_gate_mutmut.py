@@ -9,6 +9,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from mutation_gate_mutmut import (
     MutmutBackend,
     _configure_source_paths,
@@ -66,6 +68,74 @@ def test_carries_the_diff_when_mutmut_show_supplied_one():
     )
 
     assert diff in survivors[0].mutant_diff
+
+
+def test_killed_is_silently_dropped():
+    results = "    money.x_discount__mutmut_1: killed\n"
+
+    survivors = survivors_from_output(results, {}, diffs={})
+
+    assert survivors == ()
+
+
+def test_single_word_inconclusive_statuses_reach_the_operator():
+    """timeout/suspicious/skipped/segfault match RESULT_LINE but were
+    previously silently dropped by the `!= "survived"` check -- they must
+    surface as Survivors carrying their real status, not vanish."""
+    results = "\n".join(
+        [
+            "    money.x_a__mutmut_1: timeout",
+            "    money.x_b__mutmut_1: suspicious",
+            "    money.x_c__mutmut_1: skipped",
+            "    money.x_d__mutmut_1: segfault",
+        ]
+    )
+
+    survivors = survivors_from_output(results, {}, diffs={})
+
+    assert [s.status for s in survivors] == [
+        "timeout",
+        "suspicious",
+        "skipped",
+        "segfault",
+    ]
+
+
+def test_multi_word_statuses_are_parsed_not_invisible():
+    """Multi-word statuses (space-separated) never matched RESULT_LINE's
+    \\w+ at all -- structurally invisible, not just mis-tagged."""
+    results = "\n".join(
+        [
+            "    money.x_a__mutmut_1: no tests",
+            "    money.x_b__mutmut_1: not checked",
+            "    money.x_c__mutmut_1: caught by type check",
+            "    money.x_d__mutmut_1: check was interrupted by user",
+        ]
+    )
+
+    survivors = survivors_from_output(results, {}, diffs={})
+
+    assert [s.status for s in survivors] == [
+        "no tests",
+        "not checked",
+        "caught by type check",
+        "check was interrupted by user",
+    ]
+
+
+def test_survived_status_is_still_the_default_survived():
+    results = "    money.x_discount__mutmut_1: survived\n"
+
+    survivors = survivors_from_output(results, {}, diffs={})
+
+    assert survivors[0].status == "survived"
+
+
+def test_an_unrecognised_status_raises_rather_than_vanishing():
+    results = "    money.x_discount__mutmut_1: some_new_status\n"
+
+    with pytest.raises(ValueError, match="some_new_status"):
+        survivors_from_output(results, {}, diffs={})
 
 
 def test_an_unmapped_function_yields_no_tests_rather_than_an_exception():

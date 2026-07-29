@@ -8,6 +8,21 @@ Spike 2026-07-29, mutmut 3.6.0 on 3.14.6. Two things shape this module:
    no per-line mapping, unlike Stryker. So a survivor reads as "a mutant in
    discount() survived; these tests exercise it", which is still enough to name
    a vacuous guard.
+
+Status handling, fix round 2: verified against `status_by_exit_code` in the
+installed mutmut 3.6.0's `mutmut/__main__.py`. The full vocabulary is
+`killed`, `survived`, `skipped`, `suspicious`, `timeout`, `segfault` (single
+word) and `no tests`, `not checked`, `caught by type check`, `check was
+interrupted by user` (space-separated, multi-word). `RESULT_LINE` used to
+match only word characters, so the multi-word statuses never matched at all, and
+`survivors_from_output` used to keep only `status == "survived"`, silently
+dropping every other single-word status too -- exactly the silence this gate
+exists to prevent. `killed` is now the only status silently dropped, as the
+clean success case; every other recognised status becomes a Survivor whose
+`status` names it, landing in the report's Inconclusive section like
+Stryker's non-Survived statuses. A status this module has never seen raises,
+matching `mutation_gate_stryker.py`'s ruling: an unrecognised status means the
+parser misunderstands its own data source, not a missing tool.
 """
 
 import json
@@ -22,8 +37,29 @@ from pathlib import Path
 
 from mutation_gate import Survivor
 
-RESULT_LINE = re.compile(r"^\s*(?P<mutant>\S+):\s*(?P<status>\w+)\s*$", re.MULTILINE)
+RESULT_LINE = re.compile(r"^\s*(?P<mutant>\S+):\s*(?P<status>.+?)\s*$", re.MULTILINE)
 MUTANT_SUFFIX = re.compile(r"__mutmut_\d+$")
+
+KILLED_STATUS = "killed"
+SURVIVED_STATUS = "survived"
+
+# Every status mutmut 3.6.0 emits, verified against `status_by_exit_code` in
+# the installed `mutmut/__main__.py`. `killed` and `survived` are handled by
+# name above; everything else here is neither a kill nor a clean survival --
+# each becomes a Survivor carrying this exact status. Anything not in this
+# set (nor `killed`/`survived`) is unrecognised and raises.
+KNOWN_INCONCLUSIVE_STATUSES = frozenset(
+    {
+        "skipped",
+        "suspicious",
+        "timeout",
+        "segfault",
+        "no tests",
+        "not checked",
+        "caught by type check",
+        "check was interrupted by user",
+    }
+)
 
 
 def _function_of(mutant_name):
@@ -85,12 +121,30 @@ def survivors_from_output(results_text, stats, diffs, source_paths=()):
     `source_paths` is the selection the backend invoked mutmut over — the same
     `paths` a `MutmutBackend.survivors(repo_root, paths)` receives — used only
     to resolve each survivor's `artifact` back to a real file path.
+
+    `killed` is the only status silently dropped -- the clean success case.
+    `survived` becomes an ordinary Survivor. Every other recognised status
+    (see `KNOWN_INCONCLUSIVE_STATUSES`) also becomes a Survivor, but carrying
+    its own `status`, so it reaches the operator as inconclusive rather than
+    vanishing. A status this module has never seen raises, exactly as
+    `mutation_gate_stryker.py`'s `survivors_from_report` does for an
+    unrecognised Stryker status.
     """
     tests_by_function = stats.get("tests_by_mangled_function_name", {})
     survivors = []
     for match in RESULT_LINE.finditer(results_text):
-        if match.group("status") != "survived":
+        raw_status = match.group("status")
+        if raw_status == KILLED_STATUS:
             continue
+        if (
+            raw_status != SURVIVED_STATUS
+            and raw_status not in KNOWN_INCONCLUSIVE_STATUSES
+        ):
+            raise ValueError(
+                f"unrecognized mutmut mutant status {raw_status!r} for mutant "
+                f"{match.group('mutant')!r}; KNOWN_INCONCLUSIVE_STATUSES needs "
+                "updating"
+            )
         mutant = match.group("mutant")
         function = _function_of(mutant)
         survivors.append(
@@ -102,6 +156,7 @@ def survivors_from_output(results_text, stats, diffs, source_paths=()):
                 associated_tests=tuple(tests_by_function.get(function, ())),
                 backend="mutmut",
                 granularity="function",
+                status=raw_status,
             )
         )
     return tuple(survivors)

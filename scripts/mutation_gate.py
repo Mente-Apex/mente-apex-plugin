@@ -34,9 +34,9 @@ class Survivor:
 
     `status` is a CLOSED vocabulary. Every value the backends emit today:
 
-    - `survived` — the mutant lived and the finding is real. mutmut emits only
-      this (it drops every non-survived line); the prose backend emits it for
-      every operator except `invert`; Stryker maps `Survived` to it.
+    - `survived` — the mutant lived and the finding is real. mutmut emits it
+      for its own `survived` status; the prose backend emits it for every
+      operator except `invert`; Stryker maps `Survived` to it.
     - `survived_minor` — prose only, and only for the `invert` operator:
       presence-only guards legitimately survive inversion, so that operator
       reports at a lower tier.
@@ -45,6 +45,11 @@ class Survivor:
     - `timeout`, `no_coverage`, `compile_error`, `runtime_error`, `ignored`,
       `pending` — Stryker's `STATUS_MAP`. A status Stryker emits that the map
       does not know raises rather than being dropped.
+    - `skipped`, `suspicious`, `segfault`, `no tests`, `not checked`,
+      `caught by type check`, `check was interrupted by user` — mutmut's own
+      non-`killed`/non-`survived` statuses (`status_by_exit_code` in mutmut's
+      `__main__.py`); `killed` is mutmut's only silent drop. A status mutmut
+      emits that this module has never seen raises rather than being dropped.
 
     Use `is_survivor()` to classify — never compare `status` by hand, or the
     vocabulary drifts out of sync across the consumers again.
