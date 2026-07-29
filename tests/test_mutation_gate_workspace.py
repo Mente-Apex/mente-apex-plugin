@@ -9,7 +9,8 @@ import subprocess
 
 import pytest
 
-from mutation_gate_workspace import scratch_workspace
+import mutation_gate_workspace
+from mutation_gate_workspace import WorkspaceSetupError, scratch_workspace
 
 
 @pytest.fixture
@@ -51,3 +52,100 @@ def test_cleans_up_after_itself(git_repo):
         recorded = workspace
 
     assert not recorded.exists()
+
+
+@pytest.fixture
+def plain_dir(tmp_path):
+    """A directory with no git history at all -- not even `git init`."""
+    (tmp_path / "money.py").write_text("VALUE = 1\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_falls_back_to_a_plain_copy_when_there_is_no_git_repo(plain_dir):
+    """Finding 3: the non-git fallback path was previously untested."""
+    with scratch_workspace(plain_dir) as workspace:
+        assert workspace != plain_dir
+        assert (workspace / "money.py").read_text(encoding="utf-8") == "VALUE = 1\n"
+        (workspace / "money.py").write_text("MUTATED = 0\n", encoding="utf-8")
+
+    assert plain_dir.joinpath("money.py").read_text(encoding="utf-8") == "VALUE = 1\n"
+
+
+def test_plain_copy_fallback_also_cleans_up(plain_dir):
+    """Finding 3: cleanup was previously only verified on the worktree path."""
+    with scratch_workspace(plain_dir) as workspace:
+        recorded = workspace
+
+    assert not recorded.exists()
+
+
+def test_setup_failure_does_not_leak_the_temp_directory(plain_dir, monkeypatch):
+    """Finding 1: an exception raised while setting up the copy (before the
+    try/finally is entered) must not orphan the mkdtemp-created directory.
+    """
+    created = {}
+    real_mkdtemp = mutation_gate_workspace.tempfile.mkdtemp
+
+    def recording_mkdtemp(*args, **kwargs):
+        path = real_mkdtemp(*args, **kwargs)
+        created["parent"] = mutation_gate_workspace.Path(path)
+        return path
+
+    def failing_copytree(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(mutation_gate_workspace.tempfile, "mkdtemp", recording_mkdtemp)
+    monkeypatch.setattr(mutation_gate_workspace.shutil, "copytree", failing_copytree)
+
+    with pytest.raises(OSError), scratch_workspace(plain_dir):
+        pass
+
+    assert "parent" in created
+    assert not created["parent"].exists()
+
+
+def test_unexpected_git_failure_raises_instead_of_copying_the_dirty_tree(
+    git_repo, monkeypatch
+):
+    """Finding 2: for an actual git repo, a worktree failure that is NOT
+    "this isn't a git repository" must not silently degrade to the
+    copytree fallback -- that would copy uncommitted edits instead of HEAD,
+    diverging from the worktree path's semantics without telling anyone.
+    """
+    real_run = subprocess.run
+
+    def fake_run(cmd, **kwargs):
+        if cmd[:3] == ["git", "worktree", "add"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                returncode=128,
+                stdout="",
+                stderr="fatal: unable to create worktree\n",
+            )
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(mutation_gate_workspace.subprocess, "run", fake_run)
+
+    with pytest.raises(WorkspaceSetupError), scratch_workspace(git_repo):
+        pass
+
+
+def test_worktree_removal_failure_warns_instead_of_failing_silently(
+    git_repo, monkeypatch
+):
+    """Finding 4: a failed `git worktree remove` must surface, not vanish
+    into `ignore_errors=True`, so a stale registration is discoverable.
+    """
+    real_run = subprocess.run
+
+    def fake_run(cmd, **kwargs):
+        if cmd[:3] == ["git", "worktree", "remove"]:
+            return subprocess.CompletedProcess(
+                cmd, returncode=1, stdout="", stderr="fatal: could not remove\n"
+            )
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(mutation_gate_workspace.subprocess, "run", fake_run)
+
+    with pytest.warns(UserWarning, match="stale"), scratch_workspace(git_repo):
+        pass
