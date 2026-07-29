@@ -82,6 +82,11 @@ Turn the JSON it prints into findings:
 You run the gate; you do not act on it. Every survivor still goes to the reviewer
 for verification against the real test, like any other finding.
 
+You do **not** pass `--report`: no report file exists at your phase, and the gate
+refuses to guess where its section belongs. Your run feeds your draft. The
+section a human reads is written by the reviewer's own `--report` run — by the
+script, never by an agent pasting text.
+
 ## Limits
 
 - Prefer the few findings a human will act on. Change nothing you audit — not a single

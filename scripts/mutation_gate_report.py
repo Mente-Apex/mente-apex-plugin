@@ -33,6 +33,53 @@ replaces, and not the "signal" this report exists to provide.
 
 from mutation_gate import is_survivor
 
+# The contract between this renderer and `references/report-template.md`. The
+# gate does not append its section, and does not own the file: it replaces
+# exactly the span between these two markers and leaves every other byte of the
+# operator's report alone, so a re-run updates the section in place instead of
+# accumulating a stack of stale ones. Changing either string is a breaking
+# change to every report already carrying the pair.
+BEGIN_MARKER = "<!-- mutation-gate:begin -->"
+END_MARKER = "<!-- mutation-gate:end -->"
+
+
+def splice_into_report(report_text, section):
+    """Return `report_text` with `section` between the mutation-gate markers.
+
+    Every malformed case raises rather than degrading to "leave it alone" or
+    "append at the end": a report that silently keeps reading `_Not yet run._`
+    after a real run is exactly the silence-as-a-pass this lens exists to
+    stop, and it would be indistinguishable from a gate that found nothing.
+    """
+    begin = report_text.find(BEGIN_MARKER)
+    end = report_text.find(END_MARKER)
+    if begin == -1 or end == -1:
+        raise ValueError(
+            f"report has no mutation-gate markers ({BEGIN_MARKER} / "
+            f"{END_MARKER}); the gate will not guess where its section "
+            "belongs -- add the pair (see references/report-template.md)"
+        )
+    if end < begin:
+        raise ValueError(
+            f"mutation-gate markers are in the wrong order: {END_MARKER} "
+            f"precedes {BEGIN_MARKER}"
+        )
+    if (
+        report_text.find(BEGIN_MARKER, begin + 1) != -1
+        or report_text.find(END_MARKER, end + 1) != -1
+    ):
+        raise ValueError(
+            "a mutation-gate marker appears more than once; the gate will "
+            "not guess which pair delimits the section"
+        )
+    return (
+        report_text[: begin + len(BEGIN_MARKER)]
+        + "\n"
+        + section.strip("\n")
+        + "\n"
+        + report_text[end:]
+    )
+
 
 def as_report_payload(result, scope):
     """A JSON-serialisable view for the calling agent."""

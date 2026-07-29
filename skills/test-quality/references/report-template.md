@@ -69,10 +69,17 @@ deletion gate).
 
 ## Mutation gate
 
-Written by `scripts/mutation_gate.py`. Records the scope that produced this
-result, every survivor with the tests that should have killed it, and anything
-inconclusive or unverifiable. Never a score — a percentage is gameable and tells
-a reader nothing they can act on.
+Written by `scripts/mutation_gate.py --report <this file>`, which replaces the
+span between the two markers below and leaves every other byte of the report
+alone — so re-running the gate updates this section in place rather than
+stacking stale copies. The script does the writing, never the agent: the marker
+contract is then covered by a test, and a guard that lives only in prose is the
+unverifiable guard this lens exists to catch. Without `--report` the gate writes
+no file at all, and this section keeps reading `_Not yet run._`.
+
+Records the scope that produced this result, every survivor with the tests that
+should have killed it, and anything inconclusive or unverifiable. Never a score
+— a percentage is gameable and tells a reader nothing they can act on.
 
 <!-- mutation-gate:begin -->
 _Not yet run._

@@ -11,6 +11,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from mutation_gate_scope import changed_paths
@@ -382,11 +383,38 @@ def _pytest_run_suite(repo_root):
 
 
 def main(argv=None):
-    """Run the gate and print the result as JSON for the calling agent."""
+    """Run the gate, print the JSON payload, and (with `--report`) write the
+    report section.
+
+    Both outputs, not one: the JSON on stdout is what the analyzer agent
+    parses, and the spliced markdown is what a human reads. This lens holds
+    the report to be the single source of truth, so a survivor that only ever
+    reached stdout would be invisible to the person the finding is for.
+
+    Writing the report is the CLI's job rather than an instruction to the
+    reviewer agent, deliberately. The marker contract is then exercised by a
+    test (`tests/test_mutation_gate_cli_report.py`) instead of resting on
+    prose an agent may or may not follow -- which is precisely the
+    unverifiable-guard failure mode this whole feature exists to catch. A
+    prose instruction to "paste the section in" is a guard nothing can check.
+
+    `--report` is opt-in, so a default run still writes nothing anywhere near
+    the operator's tree: the byte-identical guarantee is unchanged for every
+    invocation that does not explicitly name a file to update.
+    """
     parser = argparse.ArgumentParser(description="Run the test-quality mutation gate.")
     parser.add_argument("--repo-root", default=".")
     parser.add_argument(
         "--scope", choices=("merge-base", "working-tree", "full"), default="merge-base"
+    )
+    parser.add_argument(
+        "--report",
+        default=None,
+        help=(
+            "Path to a report carrying the mutation-gate markers; the gate "
+            "replaces the span between them with this run's section. Omitted, "
+            "the gate writes no file at all."
+        ),
     )
     arguments = parser.parse_args(argv)
 
@@ -394,7 +422,11 @@ def main(argv=None):
     # this one back: the backend modules need `Survivor`, and the reporter
     # needs `is_survivor`. A module-level import here closes that cycle.
     from mutation_gate_backends import default_backends
-    from mutation_gate_report import as_report_payload
+    from mutation_gate_report import (
+        as_report_payload,
+        render_markdown,
+        splice_into_report,
+    )
 
     paths = changed_paths(arguments.repo_root, scope=arguments.scope)
     dirty = arguments.scope == "working-tree"
@@ -410,6 +442,20 @@ def main(argv=None):
             baseline_error=baseline_error,
         )
     print(json.dumps(as_report_payload(result, scope=arguments.scope), indent=2))
+    if arguments.report is not None:
+        # After the JSON, never before: a missing report file or a report with
+        # no markers raises, and the analyzer's copy of the result must not be
+        # lost to a report-writing problem. The raise itself stays uncaught --
+        # a gate that silently fails to write its findings is the exact
+        # silence this feature exists to remove.
+        report_path = Path(arguments.report)
+        report_path.write_text(
+            splice_into_report(
+                report_path.read_text(encoding="utf-8"),
+                render_markdown(result, scope=arguments.scope),
+            ),
+            encoding="utf-8",
+        )
     return 0
 
 
