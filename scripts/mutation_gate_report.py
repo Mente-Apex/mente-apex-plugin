@@ -42,6 +42,68 @@ from mutation_gate import is_survivor
 BEGIN_MARKER = "<!-- mutation-gate:begin -->"
 END_MARKER = "<!-- mutation-gate:end -->"
 
+# A `run_errors` message can carry a raw tool dump (a crash traceback, or one
+# `not checked` line per mutant collection never got to) many KB long. The
+# JSON payload keeps that in full -- it is the analyzer's channel. This
+# renderer is the operator's channel, so it bounds the dump to a head/tail
+# excerpt: enough real lines to see WHAT failed, never the whole thing, and
+# never silence about how much was cut.
+_RUN_ERROR_HEAD_LINES = 15
+_RUN_ERROR_TAIL_LINES = 15
+_RUN_ERROR_LINE_MAX_CHARS = 300
+
+
+def _clip_line(line):
+    """Bound one line's length so a single absurd line can't dominate."""
+    if len(line) <= _RUN_ERROR_LINE_MAX_CHARS:
+        return line
+    omitted = len(line) - _RUN_ERROR_LINE_MAX_CHARS
+    return f"{line[:_RUN_ERROR_LINE_MAX_CHARS]}... [{omitted} more chars]"
+
+
+def _render_run_error(message):
+    """Render one `run_errors` entry as real, bounded lines.
+
+    A short, single-line message (no attached tool dump) renders exactly as
+    before: `- {message}`. A message with an attached multi-line dump keeps
+    its first line (the human summary) as the bullet, then bounds the dump
+    to a head/tail excerpt inside a collapsed, fenced code block -- stating
+    the full size and line count so nothing is hidden by accident.
+    """
+    lines = message.splitlines()
+    if len(lines) <= 1:
+        return [f"- {message}"]
+
+    summary, *dump_lines = lines
+    dump_lines = [_clip_line(line) for line in dump_lines]
+    total_chars = len(message)
+    total_dump_lines = len(dump_lines)
+
+    budget = _RUN_ERROR_HEAD_LINES + _RUN_ERROR_TAIL_LINES
+    if total_dump_lines <= budget:
+        excerpt = dump_lines
+    else:
+        omitted = total_dump_lines - budget
+        excerpt = (
+            dump_lines[:_RUN_ERROR_HEAD_LINES]
+            + [f"... [{omitted} more lines elided] ..."]
+            + dump_lines[-_RUN_ERROR_TAIL_LINES:]
+        )
+
+    out = [
+        f"- {summary}",
+        f"  ({total_chars} bytes, {total_dump_lines} raw output line"
+        f"{'' if total_dump_lines == 1 else 's'} — truncated below; full "
+        "detail is in the JSON payload)",
+        "",
+        "  <details><summary>tool output (truncated)</summary>",
+        "",
+        "  ```",
+    ]
+    out.extend(f"  {line}" for line in excerpt)
+    out.extend(["  ```", "", "  </details>", ""])
+    return out
+
 
 def splice_into_report(report_text, section):
     """Return `report_text` with `section` between the mutation-gate markers.
@@ -139,7 +201,7 @@ def render_markdown(result, scope):
         )
         lines.append("")
         for message in result.run_errors:
-            lines.append(f"- {message}")
+            lines.extend(_render_run_error(message))
         lines.append("")
 
     survived = [s for s in result.survivors if is_survivor(s)]

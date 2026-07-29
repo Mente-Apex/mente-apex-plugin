@@ -299,16 +299,27 @@ class MutmutBackend:
         stats_path = Path(repo_root) / "mutants" / "mutmut-stats.json"
         if not stats_path.is_file():
             not_checked_count = len(RESULT_LINE.findall(results_result.stdout))
-            self._run_errors = (
+            summary = (
                 f"mutmut run did not complete in {repo_root} -- its baseline "
                 "stats collection never finished, so no per-mutant result "
                 f"below is real ({not_checked_count} mutant"
                 f"{'' if not_checked_count == 1 else 's'} not checked as a "
-                "consequence) "
-                f"(`mutmut run` exit {run_result.returncode}: "
-                f"{run_result.stderr.strip() or run_result.stdout.strip()!r}; "
-                f"`mutmut results` exit {results_result.returncode}: "
-                f"{results_result.stdout.strip()!r})",
+                "consequence)"
+            )
+            # Real newlines, never repr(): this string is the analyzer's full-
+            # detail channel (surfaced verbatim in the JSON payload), but a
+            # repr() here would turn every newline into a literal backslash-n,
+            # collapsing a multi-KB traceback into one unreadable line for
+            # every consumer downstream, including render_markdown's own
+            # line-based bounding.
+            run_output = run_result.stderr.strip() or run_result.stdout.strip()
+            results_output = results_result.stdout.strip()
+            self._run_errors = (
+                f"{summary}\n"
+                f"`mutmut run` exit {run_result.returncode}:\n"
+                f"{run_output}\n"
+                f"`mutmut results` exit {results_result.returncode}:\n"
+                f"{results_output}",
             )
             warnings.warn(self._run_errors[0], stacklevel=2)
             return ()

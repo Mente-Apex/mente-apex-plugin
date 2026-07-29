@@ -151,6 +151,35 @@ def test_no_run_errors_does_not_render_a_run_errors_section():
     assert "did not complete" not in markdown
 
 
+def test_a_run_error_with_a_large_multiline_tool_dump_renders_bounded():
+    """Reproduces the size-bomb defect: mutmut's raw run_errors message can
+    carry a multi-KB tool dump as real newlines (a traceback plus one
+    `not checked` line per uncollected mutant). render_markdown must not
+    splice that verbatim -- the short summary must survive in full, the raw
+    dump must be bounded to a head/tail excerpt of REAL lines inside a
+    fenced block (not one giant repr()-style line), and the full size and
+    line count must be stated so nothing is hidden by accident."""
+    summary = "mutmut run did not complete in /repo -- 400 mutants not checked"
+    dump_lines = [f"    money.x_discount__mutmut_{i}: not checked" for i in range(400)]
+    raw_dump = "\n".join(dump_lines)
+    message = f"{summary}\n{raw_dump}"
+
+    markdown = render_markdown(result_with(run_errors=(message,)), scope="merge-base")
+
+    assert summary in markdown
+    assert "%" not in markdown
+    # Bounded: not all 400 raw dump lines survive verbatim.
+    assert markdown.count("not checked") < 400
+    # Real lines, not a repr()-collapsed single giant line.
+    assert "\\n" not in markdown
+    longest_line = max(len(line) for line in markdown.splitlines())
+    assert longest_line < 500
+    # Nothing hidden by accident: size and mutant count stated.
+    assert str(len(raw_dump)) in markdown or str(len(dump_lines)) in markdown
+    assert "400" in markdown
+    assert "elided" in markdown or "truncated" in markdown
+
+
 def test_an_unavailable_tool_is_stated_with_its_install_command():
     markdown = render_markdown(
         result_with(unavailable=(("js", "npm install -D @stryker-mutator/core"),)),
