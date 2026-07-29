@@ -50,3 +50,43 @@ def partition(paths):
         else:
             partitions["unresolved"].append(path)
     return {stack: tuple(paths) for stack, paths in partitions.items()}
+
+
+@dataclass(frozen=True)
+class GateResult:
+    """What one gate run produced.
+
+    No score field, deliberately. A percentage gets gamed and tells an operator
+    nothing; the survivors and their associated tests are the whole signal.
+    """
+
+    survivors: tuple
+    unavailable: tuple
+    unresolved: tuple
+
+
+def run_gate(repo_root, paths, backends):
+    """Partition the selection, invoke each backend once, merge the results.
+
+    A backend whose partition is empty is never invoked — a repo with no JS is
+    simply a run where the Stryker partition is empty, not a failure. A backend
+    whose tool is missing yields an install hint and the run continues: the gate
+    never installs anything on the operator's behalf, and a missing tool
+    degrades a run rather than failing it.
+    """
+    partitions = partition(paths)
+    survivors = []
+    unavailable = []
+    for backend in backends:
+        selection = partitions.get(backend.stack, ())
+        if not selection:
+            continue
+        if not backend.available(repo_root):
+            unavailable.append((backend.stack, backend.install_hint(repo_root)))
+            continue
+        survivors.extend(backend.survivors(repo_root, selection))
+    return GateResult(
+        survivors=tuple(survivors),
+        unavailable=tuple(unavailable),
+        unresolved=partitions.get("unresolved", ()),
+    )
