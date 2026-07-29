@@ -320,3 +320,21 @@ def test_the_template_carries_the_markers_the_gate_writes_between(covered_slice)
     assert "<!-- mutation-gate:begin -->" in covered_slice
     assert "<!-- mutation-gate:end -->" in covered_slice
     assert "Never a score" in covered_slice
+    # Marker presence and the score rule both survive an inversion that flips
+    # this section's load-bearing directive ("the script does the writing,
+    # never the agent" -> "always the agent"), which would licence exactly the
+    # hand-pasted section the CLI splice exists to replace. Assert the
+    # directive itself, not just the keywords around it.
+    normalized = " ".join(covered_slice.split())
+    assert "never the agent" in normalized
+
+
+def test_gate_result_refuses_positional_construction():
+    """Seven tuple-shaped fields, several interchangeable at the type level:
+    `unresolved` and `unclaimed` are both tuple[str, ...], as are
+    `baseline_failures` and `run_errors`. Swapping any pair positionally would
+    silently misfile an entire category of finding and type-check clean.
+    Keyword-only construction makes that transposition impossible.
+    """
+    with pytest.raises(TypeError):
+        GateResult((), (), (), ())

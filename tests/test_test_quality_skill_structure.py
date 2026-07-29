@@ -48,3 +48,16 @@ def test_the_analyzer_files_survivors_as_rubric_eleven_findings(covered_slice):
 def test_gate_a_keeps_the_manual_loop_as_the_documented_fallback(covered_slice):
     assert "scripts/mutation_gate.py" in covered_slice
     assert "fallback" in covered_slice.lower()
+
+
+@pytest.mark.covers("skills/test-quality/agents/analyzer.md", section="Mutation sweep")
+def test_the_node_modules_symlink_caveat_is_not_oversold_as_a_guarantee(covered_slice):
+    """The isolation guarantee is unconditional everywhere except the
+    `node_modules` symlink, whose write-through risk no JS project has ever
+    exercised. Operator-facing prose must say so rather than claim a proof
+    that does not exist.
+    """
+    normalized = " ".join(covered_slice.split())
+    assert "node_modules" in normalized
+    assert "unexercised" in normalized
+    assert "unverified" in normalized

@@ -218,3 +218,28 @@ def test_worktree_removal_failure_warns_instead_of_failing_silently(
 
     with pytest.warns(UserWarning, match="stale"), scratch_workspace(git_repo):
         pass
+
+
+def test_the_non_git_case_is_detected_under_a_localized_git(tmp_path, monkeypatch):
+    """`_try_worktree` distinguishes "not a git repository" (fall back to a
+    copy) from any other git failure (raise) by matching git's ENGLISH stderr.
+    Under a localized git that string never appears, so a plain directory would
+    raise `WorkspaceSetupError` instead of falling back. Forcing `LC_ALL=C` on
+    the calls whose stderr is parsed makes the message locale-independent.
+    """
+    import mutation_gate_workspace
+
+    seen = {}
+    real_run = subprocess.run
+
+    def recording_run(argv, **kwargs):
+        seen.update(kwargs.get("env") or {})
+        return real_run(argv, **kwargs)
+
+    monkeypatch.setattr(mutation_gate_workspace.subprocess, "run", recording_run)
+    (tmp_path / "plain.txt").write_text("not a repo\n", encoding="utf-8")
+
+    with scratch_workspace(tmp_path) as workspace:
+        assert (workspace / "plain.txt").is_file()
+
+    assert seen.get("LC_ALL") == "C"

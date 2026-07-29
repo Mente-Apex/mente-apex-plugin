@@ -145,9 +145,15 @@ class Backend(Protocol):
     # it.
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class GateResult:
     """What one gate run produced.
+
+    Keyword-only, deliberately. Seven fields, several interchangeable at the
+    type level -- `unresolved` and `unclaimed` are both `tuple[str, ...]`, as
+    are `baseline_failures` and `run_errors` -- so a positional transposition
+    would misfile an entire category of finding, type-check clean, and render
+    a plausible-looking report. Every call site names its fields.
 
     No score field, deliberately. A percentage gets gamed and tells an operator
     nothing; the survivors and their associated tests are the whole signal.
