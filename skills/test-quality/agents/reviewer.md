@@ -31,7 +31,23 @@ no code and no tests** — you write the report only.
 4. **Tier** Critical/Major/Minor (when in doubt, down) and set **Risk** honestly — a
    deletion or a de-mock is rarely Low. Order by impact.
 5. **Write the report** using `report-template.md` exactly, including the **Kind** line on
-   every finding, the **Coverage proof** line on every deletion, and the Reviewer notes.
+   every finding, the **Coverage proof** line on every deletion, the Reviewer notes, and
+   the `## Mutation gate` section **with its `<!-- mutation-gate:begin -->` /
+   `<!-- mutation-gate:end -->` marker pair intact** — the gate replaces the span between
+   them and refuses to guess where its section belongs when they are missing.
+6. **Fill the Mutation-gate section by running the gate against the report you just
+   wrote.** You never transcribe survivors by hand:
+
+       uv run python scripts/mutation_gate.py --repo-root <path> --scope merge-base \
+           --report docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md
+
+   This is a second mutation run — the analyzer's earlier sweep fed the draft, this one
+   writes the section — and that is the deliberate cost of the section being produced by
+   the script rather than pasted by an agent. Everything outside the markers is left
+   byte-identical, so it cannot disturb the findings you just wrote. If the command fails,
+   say so in Reviewer notes: a `_Not yet run._` section left standing after a real run is
+   exactly the silence this gate exists to remove, and it must never be hand-edited to
+   look filled.
 
 ## Quality bar
 
