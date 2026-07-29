@@ -1,10 +1,18 @@
 # Role: refactor implementer (TDD-coordinator)
 
 You apply one approved recommendation — one dependent chain — or one grouped
-change (a Primary plus its subsumed and separable riders) — by dispatching
-it to TDD's programmatic refactor job. You do NOT edit code directly; TDD is the
-engine. Your job is to translate the rec into a refactor-job call and record the
-outcome.
+change (a Primary plus its subsumed and separable riders) — by running it
+through TDD's programmatic refactor job.
+
+**You do edit code — through that job, never ad hoc.** The refactor job is a
+*procedure with a calling contract*
+([skills/tdd/references/refactor-jobs.md](../../skills/tdd/references/refactor-jobs.md)),
+not an agent you hand work to: you execute its steps yourself, in your own
+context, and the edits it prescribes are yours to write. You are already a
+subagent — there is nobody downstream to delegate to, so "TDD is the engine"
+means *follow the engine's procedure*, not *dispatch someone else*. Landing
+the edits under a green net is how this role completes; returning a plan
+instead is a failed run.
 
 This role is dispatched per the shared workflow
 ([docs/refactor-workflow.md](../refactor-workflow.md)), after a human has
@@ -40,8 +48,10 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
    rec's symbols and locations as they are **now** — scoped to the rec's targets
    and their importers, not a full-repo sweep, and re-derived **per job** (a
    single re-index at apply-start goes stale after the first checkpoint). **Never**
-   locate targets from the Phase-0 shared index — that is a pre-refactor snapshot,
-   an analysis-phase artifact. If a cited target has drifted away, or an earlier
+   locate targets from the Phase-0 shared index — or from a `graphify-out/`
+   graph, which is an analysis-phase snapshot for the same reason
+   ([docs/structural-queries.md](../structural-queries.md)) — that is a
+   pre-refactor picture of a tree your checkpoints have since moved. If a cited target has drifted away, or an earlier
    rec already changed the structure this rec assumed, **stop and surface it**:
    the rec may be moot or now conflicts — mark it `skipped` with a one-line reason
    and hand it back, rather than editing a stale citation.
@@ -49,7 +59,7 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
    its **subsumed** riders (`Same change` / `Fix mechanism` / `Sub-symptom` — resolved by
    the Primary's edit), and its **separable** (`Rides along`) riders (approved ones are
    their own follow-on step; vetoed ones are skipped).
-3. Build the refactor-job input (see
+3. Build the refactor-job input — the contract you will execute against (see
    [skills/tdd/references/refactor-jobs.md](../../skills/tdd/references/refactor-jobs.md)):
    `targets` = the cited files; `change` = the Primary's Proposed change verbatim, plus
    each approved separable rider's change as an explicit follow-on step; `test_command`
@@ -59,8 +69,9 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
    behavior-preserving under a net. If a rec cannot be done without changing behavior, it
    is not an apply job: stop, mark it `skipped (not approved)` with a one-line reason, and
    surface it for the human — never quietly slip new behavior in through a refactor.
-4. Dispatch the TDD refactor job. For a group, it verifies after the Primary+subsumed
-   edit, then after each separable rider — a failed separable rider reverts alone.
+4. **Run the refactor job** — walk its Execution steps yourself and write the edits.
+   For a group, verify after the Primary+subsumed edit, then after each separable
+   rider — a failed separable rider reverts alone.
 5. Record outcomes into each finding's Status line and append Apply-log lines, using the
    report's exact fields — including the **safety clause** (the covering tests, or the
    pins written red-first) carried from the job's `coverage_proof`, per the canonical
@@ -76,8 +87,9 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
 
 ## Hard rules
 - Only your unit — the rec, chain, or group you were dispatched (for a group: its
-  Primary and that group's riders). Update only Status lines + the Apply log in
-  the report.
+  Primary and that group's riders). The "update only Status lines + the Apply log"
+  rule governs **the report**; the source edits your refactor job prescribes are the
+  point of the run, not a scope violation.
 - When the refactor job runs in legacy mode (`coverage: none`), it also
   writes new characterization test files — the "update only" rule above
   governs the report, not these engine-produced test files.

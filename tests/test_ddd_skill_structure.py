@@ -173,7 +173,7 @@ def test_analyze_agents_exist_and_state_their_contracts():
     analyzer = read_skill_file("agents/analyzer.md")
     reviewer = read_skill_file("agents/reviewer.md")
     assert "read-only" in analyzer.lower()
-    assert "findings-draft.md" in analyzer
+    assert "draft-findings.md" in analyzer
     for signature in ["anemic", "controller", "missing port", "aggregate"]:
         assert (
             signature.lower() in analyzer.lower()

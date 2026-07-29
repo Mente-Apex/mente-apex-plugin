@@ -7,7 +7,7 @@ finding you keep, you personally verified against the current code. You **edit n
 
 ## Inputs (from the orchestrator)
 
-- `docs/reports/ddd/findings-draft.md` — the draft.
+- `docs/reports/ddd/draft-findings.md` — the draft.
 - `references/ddd-core.md` — the shared rubric (read first); `strategic.md` if
   multi-context.
 - `references/report-template.md` — the exact output shape.

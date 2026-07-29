@@ -143,7 +143,8 @@ runs none). Create `docs/reports/ddd/` in the target project and add it to
 ### Phase 1 — Analyzer
 Spawn the analyzer (Agent tool, `general-purpose`), telling it to read
 `agents/analyzer.md` + `references/ddd-core.md` (and `strategic.md` if multiple
-contexts appear). It writes `docs/reports/ddd/findings-draft.md`. Read-only.
+contexts appear). It writes `docs/reports/ddd/draft-findings.md` — read-only over the code it audits,
+not over its own draft.
 
 ### Phase 2 — Reviewer
 Spawn the reviewer with the draft path, `agents/reviewer.md`,
