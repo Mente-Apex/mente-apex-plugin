@@ -150,12 +150,17 @@ class MutmutBackend:
 
         mutmut's own exit code is not a failure signal by itself -- it exits
         non-zero whenever a mutant survives, which is the normal, common case,
-        not a tool failure. But a genuine crash (bad config, a `mutmut run`
-        that never got as far as writing `mutants/mutmut-stats.json`) looks
-        identical to "zero survivors" if the run's stderr is simply discarded,
-        which is exactly the silence this lens exists to refuse. So when
-        nothing came back at all -- no stats file AND no parsed results -- the
-        run's stderr is surfaced via a warning rather than swallowed.
+        not a tool failure. But `mutants/mutmut-stats.json` is written as part
+        of mutmut's baseline stats collection, which happens before a single
+        mutant is ever executed -- so its absence is unconditionally a sign
+        the run never got past collection, whether or not `mutmut results`
+        still printed something (observed in practice: a collection crash can
+        still emit a `not_checked` line per mutant, which is not a result and
+        must not be mistaken for a clean zero-survivor run). Checking only
+        "no results parsed" would miss exactly that case, so the stats file's
+        existence is the one signal trusted here; its absence surfaces the
+        run's exit status and stderr via a warning rather than being
+        swallowed as silence.
         """
         _configure_source_paths(repo_root, paths)
         run_result = subprocess.run(
@@ -165,21 +170,22 @@ class MutmutBackend:
             ["mutmut", "results"], cwd=repo_root, capture_output=True, text=True
         )
         stats_path = Path(repo_root) / "mutants" / "mutmut-stats.json"
+        if not stats_path.is_file():
+            warnings.warn(
+                f"mutmut never wrote {stats_path} in {repo_root} -- its "
+                "baseline stats collection did not complete, so any results "
+                "below are incomplete, not a clean zero-survivor run "
+                f"(`mutmut run` exit {run_result.returncode}: "
+                f"{run_result.stderr.strip() or run_result.stdout.strip()!r}; "
+                f"`mutmut results` exit {results_result.returncode}: "
+                f"{results_result.stdout.strip()!r})",
+                stacklevel=2,
+            )
         stats = (
             json.loads(stats_path.read_text(encoding="utf-8"))
             if stats_path.is_file()
             else {}
         )
-        if not stats_path.is_file() and not results_result.stdout.strip():
-            warnings.warn(
-                f"mutmut produced no results and no {stats_path} in "
-                f"{repo_root} (`mutmut run` exit {run_result.returncode}, "
-                f"`mutmut results` exit {results_result.returncode}); this "
-                "may be a genuine crash rather than a clean zero-survivor run "
-                f"-- run stderr: {run_result.stderr.strip()!r}, "
-                f"results stderr: {results_result.stderr.strip()!r}",
-                stacklevel=2,
-            )
         return survivors_from_output(
             results_result.stdout, stats, diffs={}, source_paths=paths
         )
