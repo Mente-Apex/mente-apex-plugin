@@ -10,11 +10,20 @@ test is also green — so every rec passes one of two gates before it counts as 
 
 ## Gate A — refactoring a test (rename, split, merge, restructure, de-mock)
 
-Dispatch through the TDD refactor engine as usual, then add a **mutation gate**: after the
-refactor lands green, temporarily break the code under test (invert a condition, return a
-wrong value) and confirm the refactored test **fails**; then restore the code. A test that
-still passes against broken code has been hollowed out — revert the refactor and report it.
-Record the gate result in the safety clause of the apply-log line.
+Dispatch through the TDD refactor engine as usual, then run the **mutation gate**
+over the refactored test:
+
+    uv run python scripts/mutation_gate.py --repo-root . --scope working-tree
+
+If the test under audit appears in a survivor's `associated_tests`, the refactor
+hollowed it out — a mutant it should have killed is still alive. Revert the
+refactor and report it. Record the gate result in the safety clause of the
+apply-log line, quoting the mutant.
+
+The manual loop — break the code under test by hand, confirm the test fails,
+restore — remains the documented **fallback** for anything the gate cannot reach:
+a repo with no mutation tool declared, an unsupported language, or a guard with
+no marker. The automated gate is the sweep; the manual one is the spot check.
 
 ## Gate B — deleting a stale test (the inverse gate)
 
