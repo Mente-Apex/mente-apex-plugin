@@ -11,8 +11,10 @@ The three operators answer three different questions:
 """
 
 import json
+import os
 import re
 import subprocess
+import warnings
 from pathlib import Path, PurePosixPath
 
 from mutation_gate import Survivor
@@ -208,6 +210,46 @@ def prose_survivors(repo_root, declarations, run_test):
     return tuple(survivors)
 
 
+COVERS_PLUGIN = "mutation_gate_covers_plugin"
+
+_PLUGIN_DIR = str(Path(__file__).resolve().parent)
+
+
+def _collect_command(manifest_path):
+    """The pytest argv and env that make `--covers-manifest` exist anywhere.
+
+    The option is registered by `mutation_gate_covers_plugin`, which SHIPS
+    WITH THE GATE rather than being borrowed from the audited repo's
+    conftest. Loading it with `-p` (and putting `scripts/` on the
+    subprocess's `PYTHONPATH` so `-p` can import it) is what lets the prose
+    backend run against a repo that has never heard of this plugin: before
+    this, pytest exited 4 with "unrecognized arguments" everywhere except
+    this one repository.
+
+    `PYTHONPATH` is extended, never replaced -- an audited repo may well
+    depend on its own entry, and clobbering it would break its collection in
+    a way that looks exactly like "this repo has no markers".
+    """
+    existing = os.environ.get("PYTHONPATH", "")
+    env = {
+        **os.environ,
+        "PYTHONPATH": (
+            _PLUGIN_DIR + os.pathsep + existing if existing else _PLUGIN_DIR
+        ),
+    }
+    argv = [
+        "uv",
+        "run",
+        "pytest",
+        "--collect-only",
+        "-q",
+        "-p",
+        COVERS_PLUGIN,
+        f"--covers-manifest={manifest_path}",
+    ]
+    return argv, env
+
+
 def collect_declarations(repo_root):
     """Read @pytest.mark.covers declarations out of the suite.
 
@@ -224,24 +266,22 @@ def collect_declarations(repo_root):
     A nonzero exit is raised, not folded into `()`: an empty manifest means
     "no test declared a marker" (unverifiable by design), a pytest crash
     means something is actually broken, and collapsing the two hides the
-    second behind the first.
+    second behind the first. The raise is caught one level up, in
+    `ProseBackend.survivors`, and turned into a `run_errors` entry -- the
+    failure must be loud, but it must not abort a run whose other backends
+    have already produced findings.
     """
     import tempfile
 
     with tempfile.TemporaryDirectory() as scratch_dir:
         manifest_path = Path(scratch_dir) / "covers-manifest.json"
+        argv, env = _collect_command(manifest_path)
         result = subprocess.run(
-            [
-                "uv",
-                "run",
-                "pytest",
-                "--collect-only",
-                "-q",
-                f"--covers-manifest={manifest_path}",
-            ],
+            argv,
             cwd=repo_root,
             capture_output=True,
             text=True,
+            env=env,
         )
         if result.returncode != 0:
             raise RuntimeError(
@@ -287,6 +327,7 @@ class ProseBackend:
         """
         self._collect = collect or collect_declarations
         self._run_test = run_test or _pytest_still_green
+        self._run_errors = ()
 
     def available(self, repo_root):
         return True
@@ -294,12 +335,42 @@ class ProseBackend:
     def install_hint(self, repo_root):
         return ""
 
+    def run_errors(self, repo_root):
+        """Run-level facts from the most recent `survivors()` call.
+
+        Empty unless that call could not collect the audited repo's marker
+        declarations at all -- see `survivors()`. Same contract as the mutmut
+        and Stryker backends': one named fact, reported once.
+        """
+        return self._run_errors
+
     def survivors(self, repo_root, paths):
-        """Mutate every declared slice whose artifact is in this partition."""
+        """Mutate every declared slice whose artifact is in this partition.
+
+        A collection that never completed degrades to a `run_errors` entry
+        rather than propagating. It used to raise straight out of `run_gate`,
+        aborting the ENTIRE run and discarding every survivor the mutmut and
+        Stryker backends had already produced -- a whole audit lost to one
+        backend's environment. Every other external-tool failure in this
+        codebase degrades; this one did not. It stays loud (a named
+        `run_errors` fact and a warning, never an empty-and-therefore-clean
+        result), it just no longer takes the run down with it.
+        """
         normalized_selection = {_normalize_repo_path(path) for path in paths}
+        try:
+            collected = self._collect(repo_root)
+        except Exception as exc:  # noqa: BLE001 -- any collection failure degrades
+            self._run_errors = (
+                f"the prose backend could not collect @pytest.mark.covers "
+                f"declarations from {repo_root}, so no prose result from this "
+                f"run can be trusted -- no Markdown slice was mutated: {exc}",
+            )
+            warnings.warn(self._run_errors[0], stacklevel=2)
+            return ()
+        self._run_errors = ()
         declarations = [
             declaration
-            for declaration in self._collect(repo_root)
+            for declaration in collected
             if _normalize_repo_path(declaration[1]) in normalized_selection
         ]
 
