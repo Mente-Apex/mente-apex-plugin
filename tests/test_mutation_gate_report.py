@@ -8,15 +8,18 @@ exactly like a clean run, which is the failure this whole gate exists to stop.
 import pytest
 
 from mutation_gate import GateResult, Survivor
-from mutation_gate_report import render_markdown
+from mutation_gate_report import as_report_payload, render_markdown
 
 
-def result_with(*survivors, unavailable=(), unresolved=(), unclaimed=()):
+def result_with(
+    *survivors, unavailable=(), unresolved=(), unclaimed=(), baseline_failures=()
+):
     return GateResult(
         survivors=tuple(survivors),
         unavailable=unavailable,
         unresolved=unresolved,
         unclaimed=unclaimed,
+        baseline_failures=baseline_failures,
     )
 
 
@@ -103,6 +106,27 @@ def test_an_unresolved_file_is_named_and_distinguished_from_unclaimed():
     assert "Unresolved" in markdown
     assert "assets/logo.png" in markdown
     assert "Unclaimed" not in markdown
+
+
+def test_the_json_payload_carries_baseline_failures_too():
+    """Not just the markdown -- the machine-readable payload the CLI actually
+    prints is exactly as capable of silently dropping this signal."""
+    payload = as_report_payload(
+        result_with(baseline_failures=("tests/test_a.py::test_flaky",)),
+        scope="merge-base",
+    )
+
+    assert payload["baseline_failures"] == ["tests/test_a.py::test_flaky"]
+
+
+def test_baseline_failures_are_stated_not_swallowed():
+    markdown = render_markdown(
+        result_with(baseline_failures=("tests/test_a.py::test_flaky",)),
+        scope="merge-base",
+    )
+
+    assert "already failing" in markdown
+    assert "tests/test_a.py::test_flaky" in markdown
 
 
 @pytest.mark.covers(
