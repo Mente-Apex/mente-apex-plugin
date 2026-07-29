@@ -112,12 +112,17 @@ def as_report_payload(result, scope):
         "baseline_failures": list(result.baseline_failures),
         "baseline_error": result.baseline_error,
         "run_errors": list(result.run_errors),
+        "selected": result.selected,
     }
 
 
 def render_markdown(result, scope):
     """The Mutation-gate section body for the report."""
-    lines = [f"**Scope:** {scope}", ""]
+    lines = [
+        f"**Scope:** {scope}",
+        f"**Files selected:** {result.selected}",
+        "",
+    ]
 
     if result.baseline_error:
         lines.append(
@@ -155,6 +160,26 @@ def render_markdown(result, scope):
                 for diff_line in survivor.mutant_diff.splitlines():
                     lines.append(f"    {diff_line}")
                 lines.append("    ```")
+        lines.append("")
+    elif result.baseline_error or result.run_errors:
+        # Never "No survivors in scope." here. An empty survivor list under a
+        # broken baseline or a crashed backend is an ABSENCE OF DATA, and
+        # printing the clean-run sentence beneath the very banner explaining
+        # that nothing completed is how a failed run reads as a pass.
+        lines.append(
+            "**No survivors reported, but this run did not complete** — see "
+            "the errors above. An empty survivor list here means the gate "
+            "could not look, not that it looked and found nothing; this is "
+            "not a clean result."
+        )
+        lines.append("")
+    elif not result.selected:
+        # "Nothing to do" is a different fact from "nothing found", and an
+        # all-empty result cannot tell them apart on its own.
+        lines.append(
+            "**Nothing selected** — no files were selected for this scope, so "
+            "nothing was mutated. This is 'nothing to do', not 'nothing found'."
+        )
         lines.append("")
     else:
         lines.append("No survivors in scope.")

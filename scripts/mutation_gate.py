@@ -179,6 +179,12 @@ class GateResult:
     only for the run-level case where no individual mutant result can be
     trusted at all, so a single system failure is reported once instead of
     being fanned out into one row per mutant it never got to check.
+
+    `selected` is how many paths the run was actually handed. Without it, a
+    zero-file scope (a clean tree under `--scope working-tree`) is an all-empty
+    result indistinguishable from a scope full of files where nothing survived
+    -- "nothing to do" reading as "nothing found" is the same
+    silence-as-a-pass this dataclass exists to close, one level up.
     """
 
     survivors: tuple[Survivor, ...]
@@ -188,6 +194,7 @@ class GateResult:
     baseline_failures: tuple[str, ...] = ()
     baseline_error: str = ""
     run_errors: tuple[str, ...] = ()
+    selected: int = 0
 
 
 def run_gate(
@@ -240,6 +247,7 @@ def run_gate(
             )
         backends_by_stack[backend.stack] = backend
 
+    paths = tuple(paths)
     partitions = partition(paths)
     survivors = []
     unavailable = []
@@ -279,6 +287,7 @@ def run_gate(
         baseline_failures=tuple(baseline_failures),
         baseline_error=baseline_error,
         run_errors=tuple(run_errors),
+        selected=len(paths),
     )
 
 
