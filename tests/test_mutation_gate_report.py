@@ -19,6 +19,7 @@ def result_with(
     baseline_failures=(),
     baseline_error="",
     run_errors=(),
+    selected=1,
 ):
     return GateResult(
         survivors=tuple(survivors),
@@ -28,6 +29,7 @@ def result_with(
         baseline_failures=baseline_failures,
         baseline_error=baseline_error,
         run_errors=run_errors,
+        selected=selected,
     )
 
 
@@ -243,6 +245,72 @@ def test_a_clean_baseline_does_not_render_the_broken_baseline_section():
     markdown = render_markdown(result_with(), scope="merge-base")
 
     assert "did not complete" not in markdown
+
+
+class TestARunWhereNothingWorkedDoesNotRenderAsACleanRun:
+    """The renderer printed "No survivors in scope." unconditionally on an
+    empty survivor list -- including directly beneath a "Baseline did not
+    complete" banner and beneath "Run errors". Silence read as a pass, in the
+    renderer of the lens built to stop exactly that.
+    """
+
+    def test_no_survivors_in_scope_is_not_claimed_under_a_broken_baseline(self):
+        markdown = render_markdown(
+            result_with(baseline_error="uv run pytest exited 2"), scope="merge-base"
+        )
+
+        assert "No survivors in scope." not in markdown
+        assert "did not complete" in markdown
+
+    def test_no_survivors_in_scope_is_not_claimed_under_run_errors(self):
+        markdown = render_markdown(
+            result_with(run_errors=("mutmut crashed before any mutant ran",)),
+            scope="merge-base",
+        )
+
+        assert "No survivors in scope." not in markdown
+
+    def test_an_incomplete_run_says_so_where_the_survivor_list_would_be(self):
+        markdown = render_markdown(
+            result_with(run_errors=("mutmut crashed",)), scope="merge-base"
+        )
+
+        assert "not a clean result" in markdown
+
+    def test_a_genuinely_clean_run_still_says_no_survivors_in_scope(self):
+        markdown = render_markdown(result_with(), scope="merge-base")
+
+        assert "No survivors in scope." in markdown
+
+
+class TestNothingToDoIsDistinguishableFromNothingFound:
+    """A clean tree under `--scope working-tree` selects zero files and used to
+    emit an all-empty payload with no signal that nothing was ever looked at.
+    """
+
+    def test_the_markdown_carries_how_many_files_were_selected(self):
+        markdown = render_markdown(result_with(selected=7), scope="merge-base")
+
+        assert "7" in markdown
+        assert "%" not in markdown
+
+    def test_a_zero_file_scope_says_nothing_was_selected_not_nothing_found(self):
+        markdown = render_markdown(result_with(selected=0), scope="working-tree")
+
+        assert "No survivors in scope." not in markdown
+        assert "no files were selected" in markdown.lower()
+
+    def test_the_json_payload_carries_the_selected_count_too(self):
+        payload = as_report_payload(result_with(selected=0), scope="working-tree")
+
+        assert payload["selected"] == 0
+
+    def test_run_gate_reports_the_number_of_paths_it_was_given(self, tmp_path):
+        from mutation_gate import run_gate
+
+        result = run_gate(tmp_path, ["a.py", "b.ts", "c.md", "d.png"], [])
+
+        assert result.selected == 4
 
 
 @pytest.mark.covers(
