@@ -37,7 +37,7 @@
       "expected_output": "Enters analyze mode: analyzer->reviewer two-stage pass producing a tiered ddd-reports/DDD-REFACTOR-<date>.md plus a reverse-engineered docs/domain proposal, gated keep-or-discard. Report-only — no code changes.",
       "assertions": [
         "Creates gitignored ddd-reports/ and records the test command as context only",
-        "Runs a read-only analyzer that writes findings-draft.md with DDD smells (anemic model, logic in controllers/ORM, missing ports)",
+        "Runs an analyzer (code read-only) that writes draft-findings.md with DDD smells (anemic model, logic in controllers/ORM, missing ports)",
         "Runs an independent reviewer that verifies each finding and writes the tiered report using the report template",
         "Reverse-engineers the implicit ubiquitous language, bounded contexts, and aggregates into a proposed docs/domain",
         "Presents a keep-or-discard model review gate; discards delete the proposal",

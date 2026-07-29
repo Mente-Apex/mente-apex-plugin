@@ -30,7 +30,7 @@ and output path.
   fallback ladder and record one Coverage line, per
   [docs/structural-queries.md](../structural-queries.md).
 - **Report output path** — where to write your draft, e.g.
-  `<lens>-reports/draft-findings.md`.
+  `docs/reports/<lens>/draft-findings.md`.
 
 ## Process
 
