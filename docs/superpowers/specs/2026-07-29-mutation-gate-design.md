@@ -19,8 +19,8 @@ passes against deliberately broken code is not a test.
 
 `/test-quality` audits any codebase, and in almost every one of them the suite exercises
 **real source** — Python functions, TypeScript modules. That is the primary case and it is
-what the gate is built around: `mutmut` for Python, Stryker for JS/TS, both mature, both
-producing a mutant→covering-test mapping the lens can read.
+what the gate is built around: `mutmut` for Python, Stryker for JS/TS — both mature, both
+associating survivors with tests, though at different granularities (see the spike findings).
 
 This plugin repo is unusual: much of its suite asserts over **Markdown**, because its product
 *is* Markdown. That case gets a backend (below), and it is the case this repo will exercise
@@ -29,47 +29,79 @@ design decision that helps the prose backend at the cost of the code path is the
 
 ## Shape
 
-`scripts/mutation_gate.py` — one executor, several backends, two callers.
+`scripts/mutation_gate.py` — a selector, a set of backends, a merged report. Two callers.
 
-    select tests → pick backend → generate mutants → run the covering tests
-                 → record survived/killed → restore → report survivors
+The **backend contract is deliberately narrow**, because the two mature tools already do the
+mutating themselves:
 
-Restore is a `try/finally` over the original text held in memory, never a git operation: the
-harness must be safe on a dirty tree, and a `git checkout` would eat unrelated work. (`mutmut`
-and Stryker each manage their own workspace; the same guarantee is asserted by test.)
+    backend.survivors(selection) -> [Survivor]
 
-### Backend dispatch
+Given a selection of files and tests, a backend returns survivors. *How* it gets them is its
+own business — `mutmut` and Stryker are invoked and their output parsed; only the prose backend
+generates and applies mutants itself. An earlier draft put mutant generation in the executor,
+which left nowhere to plug the real tools in.
 
-The gate picks **per selected test**, by what that test actually exercises:
+    Survivor(artifact, location, mutant_description, associated_tests, backend, tier)
 
-- **Python source** → `mutmut`, scoped to the changed files.
-- **JS/TS source** → Stryker, scoped to the changed files, under fnm-selected Node.
-- **Prose artifact** → the built-in prose backend below.
-- **Nothing resolvable** → reported as *not verifiable*, never silently passed.
+Every backend fills the same shape, so the gate merges results into one list and the operator
+never reconciles two tools' output.
 
-Dispatch is per-test, not per-repo, because **mixed repos are normal** — a Python API with a
-TypeScript frontend is the common shape, and a single audit of it runs `mutmut` over the
-Python tests and Stryker over the JS ones in the same pass. Each backend reports in the same
-survivor shape; the gate merges the results into one list and never asks the operator to
-reconcile two tools' output. A repo with no JS is simply a run where the Stryker backend
-selects nothing.
+### Selection and dispatch
 
-The dispatch is a strategy seam, not an if-chain — a fourth backend must be additive.
+The gate **partitions the selection by stack, then invokes each backend once over its
+partition** — not once per test. `mutmut` and Stryker are invoked per project/file set; a
+per-test invocation loop would be ruinously slow and is explicitly not the design.
+
+- **Python files** → `mutmut` over that partition.
+- **JS/TS files** → Stryker over that partition, under fnm-selected Node.
+- **Prose artifacts with a declared slice** → the built-in prose backend below.
+- **Anything left over** → reported as *not verifiable*, never silently passed.
+
+**Mixed repos are normal** — a Python API with a TypeScript frontend is the common shape, and
+one audit runs both partitions in the same pass. A repo with no JS is simply a run where the
+Stryker partition is empty.
+
+Dispatch is a strategy seam, not an if-chain — a fourth backend must be additive.
 
 ### Survivor policy
 
-No score threshold; a threshold gets gamed and "87%" tells an operator nothing. A survivor
-**blocks** only when it lands on a line the changed test is recorded as covering — that is the
-signal worth stopping on. Everything else is advisory noise, reported and not enforced.
+No score threshold; a threshold gets gamed and "87%" tells an operator nothing.
 
-Reporting names the assertion and the mutant: *"inverting the condition at `foo.py:41` leaves
-`test_rejects_expired_token` green"*. Never a percentage.
+A survivor **blocks** when the test under audit is among the survivor's `associated_tests` —
+i.e. the test that should have killed this mutant did not. Everything else is advisory,
+reported and not enforced.
 
-### Runtime
+**The granularity of "associated" is the backend's, and it differs** (see the spike below):
+Stryker reports per-test coverage, while `mutmut` associates tests with the mutated *function*,
+not the line. The gate takes what the backend gives and states which it used in the report,
+rather than pretending to a precision it does not have.
 
-Full-suite mutation is far too slow for an interactive skill. Default scope is **the files in
-the diff**; full-repo is an explicit opt-in flag. Both backends support file-scoped runs
-natively, so this is configuration, not extra machinery.
+Reporting names the test and the mutant, as a diff where the backend provides one: *"inverting
+`and` → `or` at `money.py:2` leaves `test_member_over_threshold_gets_ten_percent_off` green"*.
+Never a percentage.
+
+### Runtime and isolation
+
+Full-suite mutation is far too slow for an interactive skill. Default scope is **the files
+changed against the merge-base with the repo's default branch** — the same diff the rest of the
+plugin reasons about, not the working-tree diff, so a sweep is stable across intermediate
+commits. Working-tree scope and full-repo scope are explicit flags. Both tools support
+file-scoped runs natively, so this is configuration, not extra machinery.
+
+**Mutation writes to the tree**, which the audited repo's operator did not ask for: `mutmut`
+materialises a `mutants/` directory, Stryker a `.stryker-tmp/`, and the prose backend edits the
+artifact in place. So the gate **runs against a scratch copy** — a `git worktree` at the audited
+commit where one is available, a temp-dir copy otherwise. The operator's tree is never touched,
+a dirty tree is safe, and the sweep does not block them from working. The prose backend
+additionally restores via `try/finally` over the original text held in memory, never a git
+operation, so an abort inside the scratch copy still leaves it consistent.
+
+**Runaway mutants.** A mutant can turn a loop infinite. Both tools apply a per-mutant timeout
+derived from the clean run; the gate surfaces timed-out mutants as their own category —
+neither killed nor survived — because silently counting them either way is a lie. Flaky tests
+are the same class of problem, amplified: a test that fails intermittently produces phantom
+kills, so the gate records the clean-run baseline and flags any test that failed *before* any
+mutant was applied.
 
 ## The prose backend
 
@@ -122,10 +154,21 @@ named.
 
 Runs the gate over the diff and turns survivors into findings:
 
-- A survivor on a covered line → a **rubric-11 tending finding** ("vacuous test").
+- A survivor whose `associated_tests` include a test under audit → a **rubric-11 tending
+  finding** ("vacuous test").
 - A prose guard with no marker → a **Minor** ("unverifiable by construction").
+- A timed-out or flaky-baseline mutant → **neither**; it is reported as inconclusive, with the
+  test named, so nobody reads silence as a pass.
 
-The analyzer stays read-only — it runs the gate, it does not act on the result. The reviewer
+Survivors land **in the report**, not in stdout: `references/report-template.md` gains a
+Mutation-gate section carrying the survivor list, the scope that produced it (diff or full),
+the granularity each backend supplied, and any *not available* / inconclusive entries. This
+lens already holds that the report is the single source of truth; a gate that reports elsewhere
+would break that.
+
+The analyzer stays read-only **with respect to the operator's tree** — all mutation happens in
+the scratch copy — and read-only in the usual sense too: it runs the gate, it does not act on
+the result. The reviewer
 re-verifies every survivor against the real test before it reaches the report, as with every
 other finding in this lens.
 
@@ -173,8 +216,13 @@ Backend dispatch is tested against fakes so the suite does not depend on `mutmut
 being installed — including the cases that matter most for generality: a Python-only tree, a
 JS-only tree, a **mixed tree** (asserting both backends select and the results merge into one
 list), and a stack present with its tool absent (asserting *not available* plus the right
-install command, and that the audit continues). Restore-on-failure gets its own test: raise
-mid-run, assert the artifact is byte-identical afterwards.
+install command, and that the audit continues). Parsing gets pinned against **captured real
+output** from the spike — `mutmut-stats.json` and a Stryker `mutation.json` — so a schema change
+in either tool fails loudly here rather than silently reporting nothing.
+
+Two safety properties get their own tests: the operator's tree is **byte-identical after a run**
+(including a run aborted mid-way), and the prose backend's `try/finally` restore holds when the
+runner raises.
 
 ## Toolchain provisioning — in the audited repo
 
@@ -204,11 +252,43 @@ Rules that hold for both, and for any backend added later:
 - **A mixed repo provisions both**, independently. Python present and JS absent is not a
   failure state; neither is the reverse.
 
-For this plugin's own suite: `uv add --dev mutmut`, no Stryker (there is no JS/TS here). One
-open risk to settle in task 1 — this repo is `requires-python = ">=3.14"` and mutmut's support
-there is unverified. If it does not run here, that constrains only *this* repo's self-audit,
-not the design: the Python backend still ships for the repos the lens audits, and the detection
-path already handles "tool unavailable" as a first-class outcome.
+For this plugin's own suite: `uv add --dev mutmut`, no Stryker (there is no JS/TS here).
+
+## Spike findings (both tools actually run)
+
+Run 2026-07-29 against throwaway projects — the same `discount(total, is_member)` function with
+one sound test and one vacuous `assert result is not None` guard — to settle what the backends
+really give the gate. Both killed the sound assertions and left the vacuous guard unpunished,
+which is the behaviour the whole design rests on.
+
+**`mutmut` 3.6.0, Python 3.14.6, under `uv run`.** Installs and runs clean; the 3.14 risk is
+closed. Notes that change the implementation:
+
+- The config key is **`source_paths`** — `paths_to_mutate` is accepted but deprecation-warns.
+- It materialises a **`mutants/` directory in the project**, confirming the scratch-copy rule.
+- Association is **function-level**: `mutants/mutmut-stats.json` carries
+  `tests_by_mangled_function_name`, mapping the mutated function to the pytest node ids that
+  exercise it. There is **no `killedBy` and no per-line mapping.**
+- `mutmut results` lists survivors by mangled name; `mutmut show <id>` yields a unified diff —
+  that is the reporting material.
+
+**Stryker `@stryker-mutator/core` + `vitest-runner`, Node v24.18.0 via fnm.** Richer, and the
+JSON report is the integration surface (`reports/mutation/mutation.json`, `schemaVersion` 1.0):
+
+- Per mutant: `status`, `mutatorName`, `replacement`, `statusReason`, **`killedBy`**,
+  **`coveredBy`**, and a precise `location` (line **and** column).
+- `testFiles[].tests[]` resolves those ids to test names.
+- Timeouts are a first-class status, matching the runaway-mutant category above.
+- Needs a `stryker.conf.json` with `testRunner`, `mutate`, and `coverageAnalysis: "perTest"` —
+  `perTest` is what produces `coveredBy` at all, so the generated config must set it.
+
+**Consequence for the design.** The asymmetry is real and permanent: Stryker answers "which
+test failed to kill this line", `mutmut` answers "which tests touch this function". The
+survivor policy is written to the weaker of the two and the report states which granularity
+produced each finding. A `mutmut` survivor therefore reads as *"a mutant in `discount()`
+survived; these tests exercise it"* — still enough to name a vacuous guard, which is the job.
+
+Spike projects live under the session scratchpad; they are evidence, not artifacts to commit.
 
 ## Verification gates
 
