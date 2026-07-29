@@ -158,6 +158,47 @@ def test_dirty_mode_also_cleans_up(git_repo):
     assert not recorded.exists()
 
 
+def test_worktree_mode_makes_an_installed_node_modules_reachable(git_repo):
+    """Review round 1, Critical 2. `node_modules` is virtually always
+    gitignored, so `git worktree add --detach HEAD` (tracked files only)
+    never carries it into the isolated copy the default merge-base/full
+    scope uses -- unlike the copytree fallback below (and dirty mode), which
+    copies whatever is actually on disk and so already includes it. Without
+    this, `StrykerBackend.available()` checks a workspace that can never see
+    an already-installed Stryker (a false negative on every default-scope
+    run against a repo that genuinely has it installed), and even with that
+    check corrected, `npx stryker run` would have nothing to run against.
+    """
+    node_modules = git_repo / "node_modules" / "@stryker-mutator"
+    node_modules.mkdir(parents=True)
+    (node_modules / "core").mkdir()
+
+    with scratch_workspace(git_repo) as workspace:
+        assert (workspace / "node_modules" / "@stryker-mutator").is_dir()
+
+    # the operator's real, gitignored node_modules is untouched by cleanup
+    assert node_modules.is_dir()
+
+
+def test_worktree_mode_without_node_modules_leaves_no_symlink(git_repo):
+    with scratch_workspace(git_repo) as workspace:
+        assert not (workspace / "node_modules").exists()
+
+
+def test_copytree_fallback_already_carries_node_modules_without_a_symlink(plain_dir):
+    """The copytree path (no git repo at all) copies whatever is on disk,
+    `node_modules` included -- it needs no special-casing, only the worktree
+    path (tracked files only) does.
+    """
+    node_modules = plain_dir / "node_modules" / "@stryker-mutator"
+    node_modules.mkdir(parents=True)
+
+    with scratch_workspace(plain_dir) as workspace:
+        copied = workspace / "node_modules" / "@stryker-mutator"
+        assert copied.is_dir()
+        assert not copied.is_symlink()
+
+
 def test_worktree_removal_failure_warns_instead_of_failing_silently(
     git_repo, monkeypatch
 ):

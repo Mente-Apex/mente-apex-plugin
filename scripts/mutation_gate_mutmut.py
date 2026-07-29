@@ -15,6 +15,8 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+import tomllib
 import warnings
 from pathlib import Path
 
@@ -118,14 +120,51 @@ def _configure_source_paths(repo_root, paths):
     during the Task 3 spike. Deriving it from the real selection, rather than
     hand-configuring a fixed source tree once, keeps it correct as the
     partition mutmut is invoked over changes run to run.
+
+    Parsed first, not appended blind: a repo that already configures mutmut
+    itself (a `[tool.mutmut]` table of its own in pyproject.toml) would
+    otherwise end up with two `[tool.mutmut]` tables after this runs, which is
+    invalid TOML and corrupts the workspace's copy of the file. Where that
+    table already exists, it is left exactly as the operator wrote it --
+    respecting a real configuration decision beats overriding it with a
+    derived one, and mutmut's own loader already prefers a `source_paths` an
+    operator set.
     """
     config_path = Path(repo_root) / "pyproject.toml"
     existing = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
+    if existing:
+        parsed = tomllib.loads(existing)
+        if "mutmut" in parsed.get("tool", {}):
+            return
     entries = ", ".join(json.dumps(path) for path in paths)
     config_path.write_text(
         existing + f"\n[tool.mutmut]\nsource_paths = [{entries}]\n",
         encoding="utf-8",
     )
+
+
+def _mutmut_executable():
+    """Resolve the mutmut console script the same way it will actually run.
+
+    `shutil.which("mutmut")` depends entirely on the *current* process's
+    PATH, which only carries `.venv/bin` because the documented invocation
+    (`uv run python scripts/mutation_gate.py`) happens to put it there --
+    nothing enforced or even checked that contract, so a bare
+    `python3 scripts/mutation_gate.py` would see PATH without `.venv/bin`,
+    report mutmut as unavailable, and silently skip the whole Python
+    partition with a misleading "install it" hint for a tool that is, in
+    fact, already installed. `sys.executable` names the real interpreter
+    running this process regardless of PATH, and mutmut's own console script
+    lives right beside it in the same uv-managed venv's `bin/` -- resolving
+    there first makes availability match how `survivors()` actually invokes
+    the tool. PATH is kept as a fallback for a mutmut installed some other
+    way (e.g. `uv tool install`), so this only adds a check, never removes
+    one.
+    """
+    sibling = Path(sys.executable).with_name("mutmut")
+    if sibling.is_file():
+        return str(sibling)
+    return shutil.which("mutmut")
 
 
 class MutmutBackend:
@@ -135,7 +174,7 @@ class MutmutBackend:
     tool = "mutmut"
 
     def available(self, repo_root):
-        return shutil.which("mutmut") is not None
+        return _mutmut_executable() is not None
 
     def install_hint(self, repo_root):
         return "uv add --dev mutmut"
@@ -163,11 +202,12 @@ class MutmutBackend:
         swallowed as silence.
         """
         _configure_source_paths(repo_root, paths)
+        executable = _mutmut_executable()
         run_result = subprocess.run(
-            ["mutmut", "run"], cwd=repo_root, capture_output=True, text=True
+            [executable, "run"], cwd=repo_root, capture_output=True, text=True
         )
         results_result = subprocess.run(
-            ["mutmut", "results"], cwd=repo_root, capture_output=True, text=True
+            [executable, "results"], cwd=repo_root, capture_output=True, text=True
         )
         stats_path = Path(repo_root) / "mutants" / "mutmut-stats.json"
         if not stats_path.is_file():

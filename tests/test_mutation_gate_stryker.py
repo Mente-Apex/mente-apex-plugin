@@ -14,11 +14,12 @@ real Stryker mutant records, not invented fields.
 """
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from mutation_gate_stryker import default_config, survivors_from_report
+from mutation_gate_stryker import StrykerBackend, default_config, survivors_from_report
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -126,3 +127,33 @@ def test_a_covering_test_id_missing_from_test_files_is_surfaced_not_swallowed():
         "member over threshold gets ten percent off",
         "vacuous guard asserts nothing real",
     )
+
+
+def test_available_sees_an_installed_stryker_through_a_real_default_scope_workspace(
+    tmp_path,
+):
+    """Review round 1, Critical 2. `run_gate` always passes `StrykerBackend`
+    the SCRATCH WORKSPACE, never the operator's real tree. For the default
+    merge-base/full scope that workspace comes from `git worktree add`, which
+    checks out tracked files only -- `node_modules` is virtually always
+    gitignored, so `.available()` would previously always see it as absent,
+    even on a repo with Stryker genuinely installed. This runs the real
+    `scratch_workspace` (not a fake) against a repo with an untracked
+    `node_modules/@stryker-mutator`, so it fails for the same reason a real
+    operator's run would have.
+    """
+    from mutation_gate_workspace import scratch_workspace
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
+    (tmp_path / "money.js").write_text("export const x = 1;\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+    (tmp_path / "node_modules" / "@stryker-mutator").mkdir(parents=True)
+
+    backend = StrykerBackend()
+    with scratch_workspace(tmp_path) as workspace:
+        assert backend.available(workspace) is True
