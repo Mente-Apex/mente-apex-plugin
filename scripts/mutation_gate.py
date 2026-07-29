@@ -10,7 +10,6 @@ import argparse
 import json
 import subprocess
 import sys
-import warnings
 from dataclasses import dataclass, replace
 from typing import Protocol, runtime_checkable
 
@@ -100,6 +99,14 @@ class GateResult:
     registered this run. Conflating them would hide a missing backend behind
     the same label as an image asset — every input path must be accounted for
     in exactly one of survivors / unavailable / unresolved / unclaimed.
+
+    `baseline_error` is deliberately distinct from an empty `baseline_failures`.
+    Both render as "nothing to report" unless kept apart: empty means the
+    baseline ran and found nothing already red, `baseline_error` means the
+    baseline run itself never completed (a collection error, an internal
+    pytest crash) and every `survived`/`unreliable_baseline` split below it is
+    unverified, not clean. Collapsing that distinction is the one silent
+    failure mode this dataclass exists to close.
     """
 
     survivors: tuple[Survivor, ...]
@@ -107,10 +114,15 @@ class GateResult:
     unresolved: tuple[str, ...]
     unclaimed: tuple[str, ...]
     baseline_failures: tuple[str, ...] = ()
+    baseline_error: str = ""
 
 
 def run_gate(
-    repo_root, paths, backends: list, baseline_failures: tuple = ()
+    repo_root,
+    paths,
+    backends: list,
+    baseline_failures: tuple = (),
+    baseline_error: str = "",
 ) -> GateResult:
     """Partition the selection, invoke each backend once, merge the results.
 
@@ -188,7 +200,20 @@ def run_gate(
         unresolved=partitions.get("unresolved", ()),
         unclaimed=tuple(unclaimed),
         baseline_failures=tuple(baseline_failures),
+        baseline_error=baseline_error,
     )
+
+
+class BaselineRunFailedError(RuntimeError):
+    """A `run_suite` implementation could not complete the baseline run.
+
+    Distinct from the run completing and reporting zero or more failures: a
+    missing tool or an empty selection still yields an honest, if partial,
+    answer, but a baseline that never ran yields no data at all. Raising this
+    rather than returning something `_failed_node_ids` would parse as "no
+    failures" is what lets a caller tell "the baseline was clean" apart from
+    "the baseline never ran" instead of quietly conflating the two.
+    """
 
 
 def baseline(repo_root, run_suite):
@@ -204,9 +229,29 @@ def baseline(repo_root, run_suite):
     `run_suite` is injected rather than this function invoking pytest itself,
     so callers can substitute a fake in tests without shelling out, and so a
     future non-pytest suite runner is a different `run_suite`, not a rewrite
-    of this function.
+    of this function. `run_suite` may raise `BaselineRunFailedError` when the
+    baseline run itself did not complete; this function does not catch it --
+    that decision belongs to the caller (see `_record_baseline`), which is
+    what decides how a broken baseline is represented in the result.
     """
     return _failed_node_ids(run_suite(repo_root))
+
+
+def _record_baseline(repo_root, run_suite):
+    """Run the baseline, turning a run that never completed into an explicit,
+    reportable error instead of an empty (and misleadingly clean-looking)
+    baseline.
+
+    Returns `(baseline_failures, baseline_error)`. Exactly one carries
+    information when something went wrong: `baseline_error` names why the
+    baseline run itself did not complete, and `baseline_failures` is left
+    empty rather than guessed at -- there is no data to report a failure
+    list from when the run that would have produced it never finished.
+    """
+    try:
+        return baseline(repo_root, run_suite), ""
+    except BaselineRunFailedError as exc:
+        return (), str(exc)
 
 
 _FAILED_PREFIX = "FAILED "
@@ -239,11 +284,14 @@ def _pytest_run_suite(repo_root):
 
     A non-{0,1} exit code (anything but "all passed" or "some tests failed")
     means the run itself broke -- a collection error, an internal pytest
-    crash -- rather than reporting a normal pass/fail outcome. `_failed_node_ids`
-    would silently read that as an empty, all-clean baseline, so it is
-    surfaced via a warning instead of swallowed: an operator seeing every
-    survivor at face value when the baseline run never actually completed
-    would be exactly the kind of silence this whole feature exists to close.
+    crash -- rather than reporting a normal pass/fail outcome.
+    `_failed_node_ids` would silently read that as an empty, all-clean
+    baseline. A warning alone is not enough here: nothing in the rendered
+    report captures Python warnings, so an operator reading only the markdown
+    or JSON output would see every survivor at face value with no baseline
+    having actually run. Raising `BaselineRunFailedError` instead forces the
+    failure through `_record_baseline` into `GateResult.baseline_error`,
+    where it reaches the operator-facing report.
     """
     result = subprocess.run(
         ["uv", "run", "pytest", "--tb=no", "-q", "-rf"],
@@ -252,13 +300,11 @@ def _pytest_run_suite(repo_root):
         text=True,
     )
     if result.returncode not in (0, 1):
-        warnings.warn(
+        raise BaselineRunFailedError(
             f"uv run pytest exited {result.returncode} in {repo_root} while "
             "recording the clean-run baseline -- this is not a normal "
-            "pass/fail exit, so an empty baseline here may be a broken run "
-            f"going unreported rather than a clean suite: "
-            f"{result.stderr.strip() or result.stdout.strip()!r}",
-            stacklevel=2,
+            "pass/fail exit, so the baseline did not complete: "
+            f"{result.stderr.strip() or result.stdout.strip()!r}"
         )
     return result.stdout
 
@@ -393,9 +439,15 @@ def main(argv=None):
     paths = changed_paths(arguments.repo_root, scope=arguments.scope)
     dirty = arguments.scope == "working-tree"
     with scratch_workspace(arguments.repo_root, dirty=dirty) as workspace:
-        baseline_failures = baseline(workspace, _pytest_run_suite)
+        baseline_failures, baseline_error = _record_baseline(
+            workspace, _pytest_run_suite
+        )
         result = run_gate(
-            workspace, paths, default_backends(), baseline_failures=baseline_failures
+            workspace,
+            paths,
+            default_backends(),
+            baseline_failures=baseline_failures,
+            baseline_error=baseline_error,
         )
     print(json.dumps(as_report_payload(result, scope=arguments.scope), indent=2))
     return 0
