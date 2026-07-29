@@ -130,6 +130,34 @@ def test_unexpected_git_failure_raises_instead_of_copying_the_dirty_tree(
         pass
 
 
+def test_dirty_mode_copies_uncommitted_edits_and_untracked_files(git_repo):
+    """Review round 1, Critical 1. `--scope working-tree` resolves its file
+    list against the real working tree, but the default worktree-at-HEAD
+    workspace cannot contain an uncommitted edit or an untracked file at all
+    -- it is a clean checkout of HEAD by construction. dirty=True copies the
+    working tree as it stands instead, so the files changed_paths() found are
+    actually present to mutate.
+    """
+    (git_repo / "untracked.py").write_text("NEW = 1\n", encoding="utf-8")
+
+    with scratch_workspace(git_repo, dirty=True) as workspace:
+        assert (workspace / "money.py").read_text(encoding="utf-8") == "VALUE = 2\n"
+        assert (workspace / "untracked.py").is_file()
+        (workspace / "money.py").write_text("MUTATED = 1\n", encoding="utf-8")
+        (workspace / "untracked.py").write_text("MUTATED = 1\n", encoding="utf-8")
+
+    # the operator's tree stays byte-identical after the run
+    assert git_repo.joinpath("money.py").read_text(encoding="utf-8") == "VALUE = 2\n"
+    assert git_repo.joinpath("untracked.py").read_text(encoding="utf-8") == "NEW = 1\n"
+
+
+def test_dirty_mode_also_cleans_up(git_repo):
+    with scratch_workspace(git_repo, dirty=True) as workspace:
+        recorded = workspace
+
+    assert not recorded.exists()
+
+
 def test_worktree_removal_failure_warns_instead_of_failing_silently(
     git_repo, monkeypatch
 ):
