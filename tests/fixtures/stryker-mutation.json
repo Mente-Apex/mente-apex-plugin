@@ -42,6 +42,30 @@
             "start": { "line": 3, "column": 12 },
             "end": { "line": 3, "column": 24 }
           }
+        },
+        {
+          "id": "3",
+          "mutatorName": "EqualityOperator",
+          "replacement": "!==",
+          "status": "CompileError",
+          "static": false,
+          "coveredBy": [],
+          "location": {
+            "start": { "line": 4, "column": 5 },
+            "end": { "line": 4, "column": 20 }
+          }
+        },
+        {
+          "id": "4",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "status": "NoCoverage",
+          "static": false,
+          "coveredBy": [],
+          "location": {
+            "start": { "line": 5, "column": 3 },
+            "end": { "line": 5, "column": 10 }
+          }
         }
       ]
     }
