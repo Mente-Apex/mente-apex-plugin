@@ -112,14 +112,22 @@ stays available; it just shouldn't be the silent default when the repo is large.
 
 Dispatch **six analyzer subagents at once** (Agent tool, `general-purpose`), one per
 lens. Each is read-only **over the code it audits** but must be able to write its own
-`draft-findings.md` — so never dispatch one with a read-only agent type (`Explore`) or
-call it "read-only" unqualified; strip its Write and it hands the whole draft back as
-chat text instead, which is the re-emission this fan-out exists to avoid. Give each the Phase-0 scope notes, the **detected
-language set**, the test command, and **the shared index** (file list + import graph + symbol index)
-so none of them re-scans the tree; tell it to read its
-lens's analyzer instructions **and**, per the detect-and-load convention, its
-lens's `references/<language>.md` for each detected language that has one
-(degrade gracefully and record it as a coverage note where none does).
+`draft-findings.md`. The filename constraint that governs that write is documented in
+[../../docs/refactor-workflow.md](../../docs/refactor-workflow.md) — read the
+blockquote there (a basename check, not a permission, not a hook, unaffected by agent
+type or launch mode) rather than duplicating it here. Separately, and *not* the cause
+of that bug: don't dispatch an analyzer with a read-only agent type (`Explore`) or
+call it "read-only" unqualified, or it can't write its draft at all and falls back to
+chat text instead — the re-emission this fan-out exists to avoid. Give each the
+Phase-0 scope notes, the **detected language set**, the test command, **the shared
+index** (file list + import graph + symbol index), and **the structural-graph
+verdict** from Phase 0 — a usable `graphify-out/graph.json` or **None** (an absent
+verdict is ordinary: work the fallback ladder and record one Coverage line, per
+[docs/structural-queries.md](../../docs/structural-queries.md)) — so none of them
+re-scans the tree, re-detects languages, or re-runs graphify itself; tell it to read
+its lens's analyzer instructions **and**, per the detect-and-load convention, its
+lens's `references/<language>.md` for each detected language that has one (degrade
+gracefully and record it as a coverage note where none does).
 
 Tell each analyzer to **search narrowly, not sweep**: answer import questions from the
 shared graph (never by grepping `import` lines); answer **definitional** questions — where classes/functions/methods are defined,
