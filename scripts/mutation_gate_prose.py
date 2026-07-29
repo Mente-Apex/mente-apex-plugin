@@ -154,16 +154,38 @@ def prose_survivors(repo_root, declarations, run_test):
     Restore is try/finally over the original text held in memory, never a git
     operation: the harness must be safe on a dirty tree, and a checkout would
     eat unrelated work.
+
+    An operator that leaves the slice byte-identical produced no mutant at all,
+    and a mutant that was never applied cannot be one "these tests failed to
+    kill". `invert` on a slice containing no directive token is the reproduced
+    case -- it made two thirds of this repo's own reported survivors false
+    positives. Such a case is neither run nor reported as a survivor: it is
+    emitted with status `no_op_mutant`, which lands in the report's
+    Inconclusive section naming the operator, so "invert had nothing to flip
+    here" stays distinguishable from "invert ran and the guard killed it".
+    Dropping it silently would trade one silence for another.
     """
     survivors = []
     for node_id, artifact_path, section in declarations:
         artifact = Path(repo_root) / artifact_path
         original = artifact.read_text(encoding="utf-8")
         for operator in OPERATORS:
-            try:
-                artifact.write_text(
-                    mutate(original, section, operator=operator), encoding="utf-8"
+            mutated = mutate(original, section, operator=operator)
+            if mutated == original:
+                survivors.append(
+                    Survivor(
+                        artifact=artifact_path,
+                        location=f"{artifact_path} § {section}",
+                        mutant=operator,
+                        associated_tests=(node_id,),
+                        backend="prose",
+                        granularity="section",
+                        status="no_op_mutant",
+                    )
                 )
+                continue
+            try:
+                artifact.write_text(mutated, encoding="utf-8")
                 still_green = run_test(node_id)
             finally:
                 artifact.write_text(original, encoding="utf-8")

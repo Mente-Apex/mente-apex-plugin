@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import mutation_gate_prose
+from mutation_gate import is_survivor
 from mutation_gate_prose import extract_section, mutate
 
 DOC = """# Title
@@ -188,6 +189,98 @@ def test_a_heading_only_guard_is_killed_by_delete_but_survives_blank_and_invert(
     survivors = prose_survivors(tmp_path, declarations, run_test=run_test)
 
     assert {s.mutant for s in survivors} == {"blank", "invert"}
+
+
+NO_INVERTIBLE_TOKEN_DOC = """# Title
+
+## Step 2
+
+This body contains no directive polarity to flip at all.
+
+## Step 3
+
+Elsewhere.
+"""
+
+
+def test_an_operator_that_changes_nothing_is_not_reported_as_a_survivor(tmp_path):
+    """Reproduces the whole-branch review's live finding: on this repo's own
+    `--scope merge-base` run, 2 of 3 reported survivors were `invert` no-ops --
+    slices with no invertible token, byte-identical after `mutate()`. A mutant
+    that was never applied cannot have been "failed to kill"; reporting it
+    under the Survivors headline is a false positive, not a finding.
+    """
+    from mutation_gate_prose import prose_survivors
+
+    artifact = tmp_path / "doc.md"
+    artifact.write_text(NO_INVERTIBLE_TOKEN_DOC, encoding="utf-8")
+    declarations = [("tests/test_doc.py::test_x", "doc.md", "Step 2")]
+
+    survivors = prose_survivors(
+        tmp_path, declarations, run_test=lambda node_id: True  # always green
+    )
+
+    survived = [s for s in survivors if is_survivor(s)]
+    assert {s.mutant for s in survived} == {"delete", "blank"}
+
+
+def test_an_operator_that_changes_nothing_is_reported_as_a_no_op_not_dropped(tmp_path):
+    """Skipping it silently would be the other half of the same defect: the
+    operator would have no way to tell "invert found nothing to flip here" from
+    "invert ran and the guard killed it". It lands in Inconclusive, named.
+    """
+    from mutation_gate_prose import prose_survivors
+
+    artifact = tmp_path / "doc.md"
+    artifact.write_text(NO_INVERTIBLE_TOKEN_DOC, encoding="utf-8")
+    declarations = [("tests/test_doc.py::test_x", "doc.md", "Step 2")]
+
+    survivors = prose_survivors(tmp_path, declarations, run_test=lambda node_id: True)
+
+    no_ops = [s for s in survivors if not is_survivor(s)]
+    assert [s.mutant for s in no_ops] == ["invert"]
+    assert no_ops[0].status == "no_op_mutant"
+    assert no_ops[0].associated_tests == ("tests/test_doc.py::test_x",)
+
+
+def test_a_no_op_operator_never_runs_the_test_at_all(tmp_path):
+    """No mutant was applied, so running the suite could only ever prove the
+    baseline still passes -- an expensive way to learn nothing.
+    """
+    from mutation_gate_prose import prose_survivors
+
+    artifact = tmp_path / "doc.md"
+    artifact.write_text(NO_INVERTIBLE_TOKEN_DOC, encoding="utf-8")
+    invoked = []
+
+    def run_test(node_id):
+        invoked.append(node_id)
+        return True
+
+    prose_survivors(
+        tmp_path,
+        [("tests/test_doc.py::test_x", "doc.md", "Step 2")],
+        run_test=run_test,
+    )
+
+    assert len(invoked) == 2  # delete and blank, never invert
+
+
+def test_a_slice_with_a_real_invertible_token_still_reports_a_survivor(tmp_path):
+    """The equivalence check must not swallow the genuine finding it guards."""
+    from mutation_gate_prose import prose_survivors
+
+    artifact = tmp_path / "doc.md"
+    artifact.write_text(DOC, encoding="utf-8")
+
+    survivors = prose_survivors(
+        tmp_path,
+        [("tests/test_doc.py::test_x", "doc.md", "Step 2")],
+        run_test=lambda node_id: True,
+    )
+
+    inverted = [s for s in survivors if s.mutant == "invert"]
+    assert [s.status for s in inverted] == ["survived_minor"]
 
 
 def test_the_artifact_is_byte_identical_even_when_the_runner_raises(tmp_path):

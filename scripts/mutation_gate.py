@@ -41,6 +41,11 @@ class Survivor:
     - `survived_minor` — prose only, and only for the `invert` operator:
       presence-only guards legitimately survive inversion, so that operator
       reports at a lower tier.
+    - `no_op_mutant` — prose only: the operator left the declared slice
+      byte-identical, so no mutant was ever applied and the test was never
+      run. Not a survivor (nothing survived), but reported rather than
+      dropped, so "this operator had nothing to change here" stays
+      distinguishable from "it ran and the guard killed it".
     - `unreliable_baseline` — assigned by `run_gate`, not by a backend, when
       every test covering the survivor was already red before any mutant ran.
     - `timeout`, `no_coverage`, `compile_error`, `runtime_error`, `ignored`,
