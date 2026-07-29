@@ -8,6 +8,13 @@ Inconclusive results get their own section rather than being folded into either
 column, because a timed-out mutant reported as silence reads exactly like a
 clean run.
 
+`survived_minor` (the prose backend's lower-tier `invert`-operator finding) is
+a real survivor, not an inconclusive result -- it renders under the same
+Survivors headline as a plain `survived`, with its own status named inline so
+the tier the backend deliberately encoded stays visible rather than being
+either lost (promoted silently to `survived`) or hidden (misfiled as
+inconclusive).
+
 `unresolved` and `unclaimed` get their own sections too, and deliberately
 different wording: `unresolved` is a suffix no stack owns at all (may be
 perfectly fine — an image, a lockfile), `unclaimed` is a file that landed in a
@@ -32,6 +39,7 @@ def as_report_payload(result, scope):
                 "associated_tests": list(s.associated_tests),
                 "backend": s.backend,
                 "granularity": s.granularity,
+                "status": s.status,
             }
             for s in result.survivors
             if is_survivor(s)
@@ -68,9 +76,10 @@ def render_markdown(result, scope):
         lines.append("**Survivors** — a mutant these tests failed to kill:")
         lines.append("")
         for survivor in survived:
+            tier = "" if survivor.status == "survived" else f", {survivor.status}"
             lines.append(
                 f"- `{survivor.location}` — {survivor.mutant} "
-                f"(via {survivor.backend}, {survivor.granularity} granularity)"
+                f"(via {survivor.backend}, {survivor.granularity} granularity{tier})"
             )
             for test in survivor.associated_tests:
                 lines.append(f"  - should have killed it: `{test}`")

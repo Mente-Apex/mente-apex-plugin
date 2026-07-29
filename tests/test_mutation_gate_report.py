@@ -49,6 +49,16 @@ TIMED_OUT = Survivor(
     status="timeout",
 )
 
+SURVIVED_MINOR = Survivor(
+    artifact="skills/test-quality/SKILL.md",
+    location="skills/test-quality/SKILL.md:invert:1",
+    mutant="invert presence guard",
+    associated_tests=("tests/test_skill.py::test_guard",),
+    backend="prose",
+    granularity="prose",
+    status="survived_minor",
+)
+
 
 def test_names_the_test_and_the_mutant_not_a_score():
     markdown = render_markdown(result_with(SURVIVED), scope="merge-base")
@@ -70,6 +80,36 @@ def test_a_timeout_is_rendered_as_inconclusive_not_as_a_survivor():
 
     assert "Inconclusive" in markdown
     assert "src/money.js:3:12" in markdown
+
+
+def test_a_survived_minor_prose_survivor_is_not_hidden_under_no_survivors():
+    """Reproduces Defect A: `survived_minor` is a real survivor at a lower
+    tier (the prose backend's deliberate `invert`-operator tiering), not an
+    inconclusive result. It must not be swallowed by the "No survivors in
+    scope" headline, and its distinguishing tier must stay visible."""
+    markdown = render_markdown(result_with(SURVIVED_MINOR), scope="merge-base")
+
+    assert "No survivors in scope" not in markdown
+    assert "Survivors" in markdown
+    assert "skills/test-quality/SKILL.md:invert:1" in markdown
+    assert "survived_minor" in markdown
+
+
+def test_a_survived_minor_prose_survivor_is_not_filed_as_inconclusive():
+    markdown = render_markdown(result_with(SURVIVED_MINOR), scope="merge-base")
+
+    assert "Inconclusive" not in markdown
+
+
+def test_a_survived_minor_prose_survivor_appears_in_the_payload_survivors():
+    payload = as_report_payload(result_with(SURVIVED_MINOR), scope="merge-base")
+
+    assert len(payload["survivors"]) == 1
+    assert (
+        payload["survivors"][0]["location"] == "skills/test-quality/SKILL.md:invert:1"
+    )
+    assert payload["survivors"][0]["status"] == "survived_minor"
+    assert payload["inconclusive"] == []
 
 
 def test_an_unavailable_tool_is_stated_with_its_install_command():
