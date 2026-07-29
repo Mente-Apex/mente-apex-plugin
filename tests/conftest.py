@@ -1,6 +1,5 @@
 """Shared fixtures. Isolates the engine from the real ~/.claude."""
 
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -110,27 +109,8 @@ def git_repo_with_branch(tmp_path):
     return tmp_path, "main"
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--covers-manifest",
-        default=None,
-        help="Write collected @pytest.mark.covers declarations as JSON and exit.",
-    )
-
-
-def pytest_collection_finish(session):
-    """Emit (node_id, artifact, section) for every guard that declared one."""
-    destination = session.config.getoption("--covers-manifest")
-    if destination is None:
-        return
-    declarations = []
-    for item in session.items:
-        marker = item.get_closest_marker("covers")
-        if marker is None:
-            continue
-        declarations.append([item.nodeid, marker.args[0], marker.kwargs.get("section")])
-    payload = json.dumps(declarations)
-    if destination == "-":
-        print(payload)
-    else:
-        Path(destination).write_text(payload, encoding="utf-8")
+# `--covers-manifest` is DELIBERATELY not registered here. It now lives in
+# `scripts/mutation_gate_covers_plugin.py` and is loaded by the gate with
+# `-p mutation_gate_covers_plugin`, so it works against any audited repo rather
+# than only this one. Re-registering it here would collide with that plugin and
+# fail the very run it was meant to serve.
