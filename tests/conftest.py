@@ -1,6 +1,7 @@
 """Shared fixtures. Isolates the engine from the real ~/.claude."""
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -87,6 +88,26 @@ def covered_slice(request):
     if section is None:
         return text
     return mutation_gate_prose.extract_section(text, section)
+
+
+@pytest.fixture
+def git_repo_with_branch(tmp_path):
+    """A repo on a feature branch one commit ahead of its default branch."""
+
+    def run(*args):
+        return subprocess.run(args, cwd=tmp_path, check=True, capture_output=True)
+
+    run("git", "init", "-q", "-b", "main")
+    run("git", "config", "user.email", "t@example.com")
+    run("git", "config", "user.name", "T")
+    (tmp_path / "base.py").write_text("BASE = 1\n", encoding="utf-8")
+    run("git", "add", ".")
+    run("git", "commit", "-qm", "base")
+    run("git", "checkout", "-qb", "feature")
+    (tmp_path / "feature.py").write_text("FEATURE = 1\n", encoding="utf-8")
+    run("git", "add", ".")
+    run("git", "commit", "-qm", "feature")
+    return tmp_path, "main"
 
 
 def pytest_addoption(parser):
