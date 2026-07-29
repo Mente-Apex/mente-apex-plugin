@@ -65,6 +65,25 @@ deletion gate).
 - Suspected-but-unproven duplicates kept (no coverage proof): <ids>, or "none"
 - Areas not examined: <coverage gaps>
 
+```
+
+## Mutation gate
+
+Written by `scripts/mutation_gate.py`. Records the scope that produced this
+result, every survivor with the tests that should have killed it, and anything
+inconclusive or unverifiable. Never a score — a percentage is gameable and tells
+a reader nothing they can act on.
+
+<!-- mutation-gate:begin -->
+_Not yet run._
+<!-- mutation-gate:end -->
+
+This section sits in the real report between `## Reviewer notes` and
+`## Apply log`, at the same top level as the rest of the template above and
+below — it is broken out of the fenced block only so this reference doc's own
+structure guard can address it as a real heading.
+
+```markdown
 ## Apply log
 <!-- Appended by the implementer, one line per attempt, per the canonical format in
      docs/refactor-workflow.md — with the safety clause (mutation gate result, or the

@@ -217,3 +217,35 @@ def collect_declarations(repo_root):
             return ()
         payload = manifest_path.read_text(encoding="utf-8")
     return tuple(tuple(entry) for entry in json.loads(payload or "[]"))
+
+
+class ProseBackend:
+    """Always available — the mutators ship with the plugin."""
+
+    stack = "prose"
+    tool = "built-in"
+
+    def available(self, repo_root):
+        return True
+
+    def install_hint(self, repo_root):
+        return ""
+
+    def survivors(self, repo_root, paths):
+        """Mutate every declared slice whose artifact is in this partition."""
+        declarations = [
+            declaration
+            for declaration in collect_declarations(repo_root)
+            if declaration[1] in set(paths)
+        ]
+        return prose_survivors(repo_root, declarations, run_test=_pytest_still_green)
+
+
+def _pytest_still_green(node_id):
+    """True when the single declared test still passes under the mutant."""
+    import subprocess
+
+    result = subprocess.run(
+        ["uv", "run", "pytest", node_id, "-q"], capture_output=True, text=True
+    )
+    return result.returncode == 0
