@@ -129,6 +129,15 @@ class Backend(Protocol):
     def survivors(self, repo_root, paths) -> tuple:  # tuple[Survivor, ...]
         ...
 
+    # Optional: a backend may implement `run_errors(repo_root) -> tuple[str,
+    # ...]` to report that its own tool run did not complete this call to
+    # `survivors()` (e.g. mutmut's stats collection crashing before a single
+    # mutant executed) -- one named fact per such failure, not expanded into
+    # a row per mutant it never got to check. `run_gate` calls it only when
+    # present (`getattr(backend, "run_errors", None)`), so a backend or test
+    # double that has no run-level failure mode of its own need not implement
+    # it.
+
 
 @dataclass(frozen=True)
 class GateResult:
@@ -151,6 +160,19 @@ class GateResult:
     pytest crash) and every `survived`/`unreliable_baseline` split below it is
     unverified, not clean. Collapsing that distinction is the one silent
     failure mode this dataclass exists to close.
+
+    `run_errors` is `baseline_error`'s sibling for a *backend's* run rather
+    than the baseline: one named fact per backend whose own tool run did not
+    complete (mutmut's stats collection crashing before a single mutant
+    executed is the reproduced case). It is a tuple, not a single string like
+    `baseline_error`, because more than one backend can run in the same
+    invocation (a mixed Python/JS repo) and each is independent. This is
+    deliberately NOT where a completed run's genuine per-mutant inconclusive
+    results go -- those still arrive as ordinary `Survivor`s in `survivors`
+    with their own `status` (see `Survivor`'s docstring); `run_errors` exists
+    only for the run-level case where no individual mutant result can be
+    trusted at all, so a single system failure is reported once instead of
+    being fanned out into one row per mutant it never got to check.
     """
 
     survivors: tuple[Survivor, ...]
@@ -159,6 +181,7 @@ class GateResult:
     unclaimed: tuple[str, ...]
     baseline_failures: tuple[str, ...] = ()
     baseline_error: str = ""
+    run_errors: tuple[str, ...] = ()
 
 
 def run_gate(
@@ -215,6 +238,7 @@ def run_gate(
     survivors = []
     unavailable = []
     unclaimed = []
+    run_errors = []
     for stack in REGISTRABLE_STACKS:
         selection = partitions.get(stack, ())
         if not selection:
@@ -227,6 +251,9 @@ def run_gate(
             unavailable.append((stack, backend.install_hint(repo_root)))
             continue
         survivors.extend(backend.survivors(repo_root, selection))
+        backend_run_errors = getattr(backend, "run_errors", None)
+        if backend_run_errors is not None:
+            run_errors.extend(backend_run_errors(repo_root))
 
     already_red = set(baseline_failures)
     marked = tuple(
@@ -245,6 +272,7 @@ def run_gate(
         unclaimed=tuple(unclaimed),
         baseline_failures=tuple(baseline_failures),
         baseline_error=baseline_error,
+        run_errors=tuple(run_errors),
     )
 
 

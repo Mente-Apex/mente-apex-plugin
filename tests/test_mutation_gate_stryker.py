@@ -157,3 +157,35 @@ def test_available_sees_an_installed_stryker_through_a_real_default_scope_worksp
     backend = StrykerBackend()
     with scratch_workspace(tmp_path) as workspace:
         assert backend.available(workspace) is True
+
+
+def test_a_missing_report_after_a_run_is_a_run_error_not_silent_success(
+    tmp_path, monkeypatch
+):
+    """Stryker's equivalent of mutmut's crashed-collection case: `stryker
+    run` exits non-zero and no report ever lands at
+    reports/mutation/mutation.json. Previously this surfaced only as a
+    stderr-only `warnings.warn` and an empty survivor list -- indistinguishable
+    from a genuinely clean run. It must now be a named `run_errors()` fact,
+    the same standard `mutation_gate_mutmut.MutmutBackend` now holds for its
+    own equivalent failure.
+    """
+    monkeypatch.setattr(
+        "mutation_gate_stryker.subprocess.run",
+        lambda argv, cwd, capture_output, text: subprocess.CompletedProcess(
+            argv, 1, stdout="", stderr="stryker crashed"
+        ),
+    )
+
+    backend = StrykerBackend()
+    with pytest.warns(UserWarning):
+        survivors = backend.survivors(tmp_path, ["src/money.ts"])
+
+    assert survivors == ()
+    run_errors = backend.run_errors(tmp_path)
+    assert len(run_errors) == 1
+    assert "did not complete" in run_errors[0] or "no report" in run_errors[0]
+
+
+def test_run_errors_defaults_to_empty_before_survivors_is_ever_called():
+    assert StrykerBackend().run_errors("/irrelevant/repo/root") == ()

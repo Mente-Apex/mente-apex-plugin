@@ -18,6 +18,7 @@ def result_with(
     unclaimed=(),
     baseline_failures=(),
     baseline_error="",
+    run_errors=(),
 ):
     return GateResult(
         survivors=tuple(survivors),
@@ -26,6 +27,7 @@ def result_with(
         unclaimed=unclaimed,
         baseline_failures=baseline_failures,
         baseline_error=baseline_error,
+        run_errors=run_errors,
     )
 
 
@@ -110,6 +112,41 @@ def test_a_survived_minor_prose_survivor_appears_in_the_payload_survivors():
     )
     assert payload["survivors"][0]["status"] == "survived_minor"
     assert payload["inconclusive"] == []
+
+
+def test_a_run_error_is_named_in_the_markdown_as_one_rollup():
+    """Reproduces the reviewer's follow-up finding: a partition's tool run
+    that did not complete (e.g. mutmut's stats collection crashing before a
+    single mutant executed) must reach the operator as one named fact, the
+    same way `baseline_error` already does for a broken baseline -- not be
+    silently dropped, and not be re-expanded into per-mutant rows here."""
+    markdown = render_markdown(
+        result_with(
+            run_errors=("mutmut run did not complete; 4298 mutants not checked",)
+        ),
+        scope="merge-base",
+    )
+
+    assert "mutmut run did not complete; 4298 mutants not checked" in markdown
+
+
+def test_a_run_error_is_carried_in_the_json_payload_too():
+    payload = as_report_payload(
+        result_with(
+            run_errors=("mutmut run did not complete; 4298 mutants not checked",)
+        ),
+        scope="merge-base",
+    )
+
+    assert payload["run_errors"] == [
+        "mutmut run did not complete; 4298 mutants not checked"
+    ]
+
+
+def test_no_run_errors_does_not_render_a_run_errors_section():
+    markdown = render_markdown(result_with(), scope="merge-base")
+
+    assert "did not complete" not in markdown
 
 
 def test_an_unavailable_tool_is_stated_with_its_install_command():
