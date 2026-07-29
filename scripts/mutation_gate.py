@@ -31,6 +31,31 @@ class Survivor:
     resolves a survivor to a line and the tests that covered it, mutmut only to
     the mutated function. The report states which, rather than implying a
     precision the backend never had.
+
+    `status` is a CLOSED vocabulary. Every value the backends emit today:
+
+    - `survived` — the mutant lived and the finding is real. mutmut emits only
+      this (it drops every non-survived line); the prose backend emits it for
+      every operator except `invert`; Stryker maps `Survived` to it.
+    - `survived_minor` — prose only, and only for the `invert` operator:
+      presence-only guards legitimately survive inversion, so that operator
+      reports at a lower tier.
+    - `unreliable_baseline` — assigned by `run_gate`, not by a backend, when
+      every test covering the survivor was already red before any mutant ran.
+    - `timeout`, `no_coverage`, `compile_error`, `runtime_error`, `ignored`,
+      `pending` — Stryker's `STATUS_MAP`. A status Stryker emits that the map
+      does not know raises rather than being dropped.
+
+    Use `is_survivor()` to classify — never compare `status` by hand, or the
+    vocabulary drifts out of sync across the consumers again.
+
+    KNOWN OPEN DEFECT (not the intended contract, deliberately not fixed here):
+    `survived_minor` is NOT in `SURVIVED_STATUSES`, so a real lower-tier prose
+    survivor renders under "Inconclusive — neither killed nor survived" while
+    the headline says "No survivors in scope", and `as_report_payload` drops its
+    artifact, associated_tests and diff. It is a genuine survivor being reported
+    as a non-result. Escalated as a bug in its own right; changing it is a
+    behaviour change, not a refactor.
     """
 
     artifact: str
@@ -41,6 +66,15 @@ class Survivor:
     granularity: str
     mutant_diff: str = ""
     status: str = "survived"
+
+
+# Deliberately just {"survived"} — see the KNOWN OPEN DEFECT note above.
+SURVIVED_STATUSES = frozenset({"survived"})
+
+
+def is_survivor(survivor):
+    """True when this mutant survived outright, as opposed to inconclusive."""
+    return survivor.status in SURVIVED_STATUSES
 
 
 def partition(paths):
