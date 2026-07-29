@@ -115,19 +115,32 @@ def _invert(body):
     return pattern.sub(lambda m: replacements[m.group(0)], body)
 
 
+def _delete_section(text, heading_start, body_start, body_end):
+    return text[:heading_start] + text[body_end:]
+
+
+def _blank_section(text, heading_start, body_start, body_end):
+    return text[:body_start] + "\n\n(section body removed)\n\n" + text[body_end:]
+
+
+def _invert_section(text, heading_start, body_start, body_end):
+    return text[:body_start] + _invert(text[body_start:body_end]) + text[body_end:]
+
+
+OPERATORS = {
+    "delete": _delete_section,
+    "blank": _blank_section,
+    "invert": _invert_section,
+}
+
+
 def mutate(text, heading_text, operator):
     """Return `text` with the declared slice mutated by `operator`."""
     heading_start, body_start, body_end = _locate(text, heading_text)
-    if operator == "delete":
-        return text[:heading_start] + text[body_end:]
-    if operator == "blank":
-        return text[:body_start] + "\n\n(section body removed)\n\n" + text[body_end:]
-    if operator == "invert":
-        return text[:body_start] + _invert(text[body_start:body_end]) + text[body_end:]
-    raise ValueError(f"unknown operator: {operator!r}")
-
-
-OPERATORS = ("delete", "blank", "invert")
+    apply_operator = OPERATORS.get(operator)
+    if apply_operator is None:
+        raise ValueError(f"unknown operator: {operator!r}")
+    return apply_operator(text, heading_start, body_start, body_end)
 
 
 def prose_survivors(repo_root, declarations, run_test):
