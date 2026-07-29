@@ -10,6 +10,7 @@ The three operators answer three different questions:
   invert — does it check what the directive SAYS, or only that a word appears?
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -23,22 +24,70 @@ INVERSIONS = (
     ("always", "never"),
 )
 
+_FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
+_HEADING_RE = re.compile(r"^(#{1,6})\s")
+
+
+def _fenced_flags(lines):
+    """One bool per line: True when that line sits inside a ``` or ~~~ fence.
+
+    A `#`-prefixed comment inside a fenced code block is not a Markdown
+    heading. Treating it as one truncates (or misidentifies) the declared
+    section — precisely the windowing bug this backend exists to catch — so
+    every heading search below consults this mask rather than scanning raw
+    text.
+    """
+    in_fence = False
+    flags = []
+    for line in lines:
+        if _FENCE_RE.match(line.lstrip()):
+            flags.append(True)  # the fence marker line itself, irrelevant either way
+            in_fence = not in_fence
+        else:
+            flags.append(in_fence)
+    return flags
+
 
 def _locate(text, heading_text):
-    """Return (heading_start, body_start, body_end) for the declared section."""
-    heading_pattern = re.compile(
-        r"^(#{1,6})\s.*" + re.escape(heading_text) + r".*$", re.MULTILINE
-    )
-    heading_match = heading_pattern.search(text)
-    if heading_match is None:
+    """Return (heading_start, body_start, body_end) for the declared section.
+
+    Matching is substring-with-boundaries rather than exact: real headings
+    carry trailing prose a marker need not repeat in full (e.g. the SKILL.md
+    heading "## Applying is guarded by two gates (the reason this lens is
+    report-first)" is declared as just "Applying is guarded by two gates").
+    The `\\b` boundaries stop that leniency from also matching a heading that
+    merely shares a prefix, like "Step 2" inside "## Step 20".
+    """
+    lines = text.splitlines(keepends=True)
+    fenced = _fenced_flags(lines)
+    boundary_pattern = re.compile(r"\b" + re.escape(heading_text) + r"\b")
+
+    pos = 0
+    heading_index = heading_start = heading_end = level = None
+    for i, line in enumerate(lines):
+        if not fenced[i]:
+            heading_match = _HEADING_RE.match(line)
+            if heading_match and boundary_pattern.search(line):
+                heading_index = i
+                heading_start = pos
+                heading_end = pos + len(line)
+                level = len(heading_match.group(1))
+                break
+        pos += len(line)
+    if heading_start is None:
         raise ValueError(f"heading containing {heading_text!r} not found")
-    level = len(heading_match.group(1))
-    body_start = heading_match.end()
-    next_heading = re.compile(r"^#{1," + str(level) + r"}\s", re.MULTILINE).search(
-        text, body_start
-    )
-    body_end = next_heading.start() if next_heading else len(text)
-    return heading_match.start(), body_start, body_end
+
+    body_start = heading_end
+    body_end = len(text)
+    next_heading_re = re.compile(r"^#{1," + str(level) + r"}\s")
+    pos = body_start
+    for j in range(heading_index + 1, len(lines)):
+        line = lines[j]
+        if not fenced[j] and next_heading_re.match(line):
+            body_end = pos
+            break
+        pos += len(line)
+    return heading_start, body_start, body_end
 
 
 def extract_section(text, heading_text):
@@ -48,8 +97,19 @@ def extract_section(text, heading_text):
 
 
 def _invert(body):
-    """Flip directive polarity once per occurrence, longest token first."""
-    pattern = re.compile("|".join(re.escape(word) for word, _ in INVERSIONS))
+    """Flip directive polarity once per occurrence, longest token first.
+
+    "Longest first" is enforced by sorting on length rather than relying on
+    `INVERSIONS`' declaration order, so a future entry added in the wrong
+    order can't silently let a shorter alternative shadow a longer one.
+    Each alternative is `\\b`-bounded so it only matches a standalone word or
+    phrase — otherwise "never" matches inside "whenever", corrupting prose
+    the operator was never meant to touch.
+    """
+    ordered = sorted(INVERSIONS, key=lambda pair: len(pair[0]), reverse=True)
+    pattern = re.compile(
+        "|".join(r"\b" + re.escape(word) + r"\b" for word, _ in ordered)
+    )
     replacements = dict(INVERSIONS)
     return pattern.sub(lambda m: replacements[m.group(0)], body)
 
@@ -118,23 +178,42 @@ def collect_declarations(repo_root):
     `pytest --collect-only -q` plus the marker's own arguments; a test with no
     marker yields nothing, which is what makes it "unverifiable by construction"
     rather than a failure.
-    """
-    import json
-    import subprocess
 
-    result = subprocess.run(
-        [
-            "uv",
-            "run",
-            "pytest",
-            "--collect-only",
-            "-q",
-            "--covers-manifest=-",
-        ],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return ()
-    return tuple(tuple(entry) for entry in json.loads(result.stdout or "[]"))
+    The manifest travels through a real file, never stdout: `-q
+    --collect-only` prints pytest's own collected-node-id list before the
+    hook's payload and a "N tests collected" summary line after it, so
+    `--covers-manifest=-` cannot be parsed back out of `stdout` — a distinct
+    file cannot be polluted by pytest's own output.
+
+    A nonzero exit is raised, not folded into `()`: an empty manifest means
+    "no test declared a marker" (unverifiable by design), a pytest crash
+    means something is actually broken, and collapsing the two hides the
+    second behind the first.
+    """
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        manifest_path = Path(scratch_dir) / "covers-manifest.json"
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "pytest",
+                "--collect-only",
+                "-q",
+                f"--covers-manifest={manifest_path}",
+            ],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"pytest collection failed (exit {result.returncode}):\n"
+                f"{result.stderr}"
+            )
+        if not manifest_path.exists():
+            return ()
+        payload = manifest_path.read_text(encoding="utf-8")
+    return tuple(tuple(entry) for entry in json.loads(payload or "[]"))
