@@ -5,6 +5,8 @@ shape this lens audits, and the suite must prove both backends select and merge
 without requiring mutmut or Stryker to be installed on the machine running it.
 """
 
+import pytest
+
 from mutation_gate import GateResult, Survivor, run_gate
 
 
@@ -80,3 +82,41 @@ def test_the_result_carries_no_score_anywhere(tmp_path):
 
     assert not hasattr(result, "score")
     assert isinstance(result, GateResult)
+
+
+def test_a_file_in_a_known_partition_with_no_registered_backend_is_unclaimed(
+    tmp_path,
+):
+    """Reproduces the Critical: a python file must not vanish just because
+    only a js backend was registered. It is a different case from an
+    unrecognised suffix, so it must not land in `unresolved` either — it gets
+    its own explicitly-named field so nothing disappears."""
+    js = FakeBackend("js", "stryker", survivors=(survivor("stryker"),))
+
+    result = run_gate(tmp_path, ["api/money.py", "web/cart.ts"], [js])
+
+    assert result.unclaimed == ("api/money.py",)
+    assert result.unresolved == ()
+    assert {s.backend for s in result.survivors} == {"stryker"}
+
+
+def test_two_backends_registered_for_the_same_stack_are_rejected(tmp_path):
+    """Reproduces the Important: silent duplicate-stack concatenation is not
+    a decision. Registration is rejected loudly instead."""
+    first = FakeBackend("python", "mutmut")
+    second = FakeBackend("python", "some-other-tool")
+
+    with pytest.raises(ValueError, match="python"):
+        run_gate(tmp_path, ["api/money.py"], [first, second])
+
+
+def test_a_backend_declaring_a_stack_partition_never_produces_is_rejected(
+    tmp_path,
+):
+    """A backend whose `.stack` does not match any key `partition()` ever
+    yields is a misconfiguration, not a stack that is merely empty this run —
+    the gate fails loudly instead of silently never running it."""
+    ghost = FakeBackend("rust", "some-rust-tool")
+
+    with pytest.raises(ValueError, match="rust"):
+        run_gate(tmp_path, ["api/money.py"], [ghost])
