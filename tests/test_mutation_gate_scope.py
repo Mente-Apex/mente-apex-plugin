@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from mutation_gate import changed_paths
+from mutation_gate_scope import changed_paths
 
 
 def test_merge_base_is_the_default_scope():
