@@ -101,9 +101,10 @@ Two rules make the degradation honest:
   — same as the detect-and-load convention's treatment of a missing language
   reference. Absence is a recorded coverage note, never a silent gap.
 - **Never install or build one uninvited.** Running `graphify update` on a
-  repo that already has a graph is refreshing a working artifact and is fine.
-  Creating a `graphify-out/` in a repo that has none writes a directory the
-  user did not ask for — offer, don't do.
+  repo that already has a graph is refreshing a working artifact and is fine
+  — but that is the **orchestrator's** call in Phase 0 (above), never an
+  analyzer's or reviewer's. Creating a `graphify-out/` in a repo that has none
+  writes a directory the user did not ask for — offer, don't do.
 
 ## Analysis-phase only
 

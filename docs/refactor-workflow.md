@@ -139,7 +139,8 @@ candidate findings, not yet trusted.
 
 ## Phase 2 — Reviewer
 
-Spawn the reviewer with the draft path and the same references. The reviewer
+Spawn the reviewer with the draft path, the same references, **and the
+structural-graph verdict**. The reviewer
 re-opens the actual code for **every** finding, prunes what doesn't hold up,
 re-tiers what does, hunts for cross-file violations the analyzer's
 file-by-file pass tends to miss, and **cross-references the other lens** —

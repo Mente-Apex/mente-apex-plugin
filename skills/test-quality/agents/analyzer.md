@@ -15,6 +15,10 @@ honestly.
 - The `tdd` standard you audit against: `../../tdd/SKILL.md`,
   `../../tdd/references/ddd_testing.md`, and the detected stack's
   `../../tdd/references/<language>-<runner>.md`.
+- **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
+  whether the target has a usable `graphify-out/graph.json`. "None" is an
+  ordinary answer — work the fallback ladder and record one Coverage line,
+  per [docs/structural-queries.md](../../../docs/structural-queries.md).
 - Output path: `docs/reports/test-quality/draft-findings.md`.
 
 ## Process

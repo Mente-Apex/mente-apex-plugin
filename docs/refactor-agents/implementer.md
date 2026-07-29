@@ -51,8 +51,9 @@ change** (a `## Grouped changes` entry — a Primary plus subsumed and separable
    locate targets from the Phase-0 shared index — or from a `graphify-out/`
    graph, which is an analysis-phase snapshot for the same reason
    ([docs/structural-queries.md](../structural-queries.md)) — that is a
-   pre-refactor picture of a tree your checkpoints have since moved. If a cited target has drifted away, or an earlier
-   rec already changed the structure this rec assumed, **stop and surface it**:
+   pre-refactor picture of a tree your checkpoints have since moved. If a
+   cited target has drifted away, or an earlier rec already changed the
+   structure this rec assumed, **stop and surface it**:
    the rec may be moot or now conflicts — mark it `skipped` with a one-line reason
    and hand it back, rather than editing a stale citation.
 2. Read the unit and every file it cites. For a group, read the banner: the **Primary**,

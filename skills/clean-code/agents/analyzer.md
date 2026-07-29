@@ -13,6 +13,10 @@ honestly rather than self-censoring.
 - The scope (paths / the diff) and scope notes.
 - `../../../docs/clean-code-standard.md` — the rubric. **Read it first**; your findings
   and severities come from it (top-down by leverage), not your own taste.
+- **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
+  whether the target has a usable `graphify-out/graph.json`. "None" is an
+  ordinary answer — work the fallback ladder and record one Coverage line,
+  per [docs/structural-queries.md](../../../docs/structural-queries.md).
 - Output path: `docs/reports/clean-code/draft-findings.md`.
 
 ## Process
