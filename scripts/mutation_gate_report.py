@@ -16,6 +16,7 @@ misconfiguration the operator can fix by registering a backend). Folding them
 into one label would hide the second behind the first.
 """
 
+from mutation_gate import is_survivor
 from mutation_gate_mutmut import MutmutBackend
 from mutation_gate_prose import ProseBackend
 from mutation_gate_stryker import StrykerBackend
@@ -41,12 +42,12 @@ def as_report_payload(result, scope):
                 "granularity": s.granularity,
             }
             for s in result.survivors
-            if s.status == "survived"
+            if is_survivor(s)
         ],
         "inconclusive": [
             {"location": s.location, "mutant": s.mutant, "reason": s.status}
             for s in result.survivors
-            if s.status != "survived"
+            if not is_survivor(s)
         ],
         "unavailable": [
             {"stack": stack, "install": hint} for stack, hint in result.unavailable
@@ -70,7 +71,7 @@ def render_markdown(result, scope):
         )
         lines.append("")
 
-    survived = [s for s in result.survivors if s.status == "survived"]
+    survived = [s for s in result.survivors if is_survivor(s)]
     if survived:
         lines.append("**Survivors** — a mutant these tests failed to kill:")
         lines.append("")
@@ -92,7 +93,7 @@ def render_markdown(result, scope):
         lines.append("No survivors in scope.")
         lines.append("")
 
-    inconclusive = [s for s in result.survivors if s.status != "survived"]
+    inconclusive = [s for s in result.survivors if not is_survivor(s)]
     if inconclusive:
         lines.append("**Inconclusive** — neither killed nor survived:")
         lines.append("")
