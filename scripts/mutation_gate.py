@@ -6,8 +6,14 @@ see whether the suite notices. mutmut and Stryker do their own mutating, so a
 backend's job is `survivors(selection)` — how it gets them is its business.
 """
 
+import argparse
+import json
+import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+from mutation_gate_workspace import scratch_workspace
 
 PYTHON_SUFFIXES = (".py",)
 JS_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
@@ -153,3 +159,62 @@ def run_gate(repo_root, paths, backends: list) -> GateResult:
         unresolved=partitions.get("unresolved", ()),
         unclaimed=tuple(unclaimed),
     )
+
+
+def _git(repo_root, *args):
+    result = subprocess.run(
+        ["git", *args], cwd=repo_root, capture_output=True, text=True, check=True
+    )
+    return result.stdout
+
+
+def _default_branch(repo_root):
+    """The local default branch, preferring main, falling back to master."""
+    branches = _git(repo_root, "branch", "--format=%(refname:short)").split()
+    for candidate in ("main", "master"):
+        if candidate in branches:
+            return candidate
+    return branches[0] if branches else "HEAD"
+
+
+def changed_paths(repo_root, scope="merge-base"):
+    """The files this run mutates.
+
+    merge-base is the default because it is stable: an operator committing
+    mid-audit should not change what the sweep covers. Full-repo mutation is
+    far too slow to be anyone's default in an interactive skill.
+    """
+    if scope == "merge-base":
+        base = _default_branch(repo_root)
+        fork_point = _git(repo_root, "merge-base", base, "HEAD").strip()
+        output = _git(repo_root, "diff", "--name-only", fork_point, "HEAD")
+    elif scope == "working-tree":
+        output = _git(repo_root, "status", "--porcelain", "--untracked-files=all")
+        output = "\n".join(line[3:] for line in output.splitlines())
+    elif scope == "full":
+        output = _git(repo_root, "ls-files")
+    else:
+        raise ValueError(f"unknown scope: {scope!r}")
+    return tuple(line for line in output.splitlines() if line)
+
+
+def main(argv=None):
+    """Run the gate and print the result as JSON for the calling agent."""
+    parser = argparse.ArgumentParser(description="Run the test-quality mutation gate.")
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument(
+        "--scope", choices=("merge-base", "working-tree", "full"), default="merge-base"
+    )
+    arguments = parser.parse_args(argv)
+
+    from mutation_gate_report import as_report_payload, default_backends
+
+    paths = changed_paths(arguments.repo_root, scope=arguments.scope)
+    with scratch_workspace(arguments.repo_root) as workspace:
+        result = run_gate(workspace, paths, default_backends())
+    print(json.dumps(as_report_payload(result, scope=arguments.scope), indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
