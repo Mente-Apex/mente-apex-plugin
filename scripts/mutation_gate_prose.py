@@ -191,7 +191,6 @@ def collect_declarations(repo_root):
     means something is actually broken, and collapsing the two hides the
     second behind the first.
     """
-    import subprocess
     import tempfile
 
     with tempfile.TemporaryDirectory() as scratch_dir:
@@ -240,6 +239,20 @@ class ProseBackend:
     stack = "prose"
     tool = "built-in"
 
+    def __init__(self, collect=None, run_test=None):
+        """Collaborators are injected, defaulting to the module-level pair.
+
+        The defaults are resolved here, at call time, rather than bound as
+        eager parameter defaults: `_pytest_still_green` is defined below this
+        class, so an eager default couldn't reference it, and — just as
+        important — tests monkeypatch `mutation_gate_prose.collect_declarations`
+        at the module level, which an eagerly-bound default would silently
+        stop seeing (it would have already captured the pre-patch function
+        object at class-definition time).
+        """
+        self._collect = collect or collect_declarations
+        self._run_test = run_test or _pytest_still_green
+
     def available(self, repo_root):
         return True
 
@@ -251,14 +264,15 @@ class ProseBackend:
         normalized_selection = {_normalize_repo_path(path) for path in paths}
         declarations = [
             declaration
-            for declaration in collect_declarations(repo_root)
+            for declaration in self._collect(repo_root)
             if _normalize_repo_path(declaration[1]) in normalized_selection
         ]
 
-        def run_test(node_id):
-            return _pytest_still_green(repo_root, node_id)
-
-        return prose_survivors(repo_root, declarations, run_test=run_test)
+        return prose_survivors(
+            repo_root,
+            declarations,
+            run_test=lambda node_id: self._run_test(repo_root, node_id),
+        )
 
 
 def _pytest_still_green(repo_root, node_id):
