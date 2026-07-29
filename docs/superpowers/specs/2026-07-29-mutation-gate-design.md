@@ -11,160 +11,175 @@ temporarily break the code under test, confirm the test fails, restore. The idea
 named, the mutant is whatever the operator thinks of, and the evidence is a pasted terminal
 transcript. It is unrepeatable, and it only ever runs on a test somebody already suspected.
 
-The live case is `design/release-two-axis-adapters`, where three plan-specified tests turned
-out to be vacuous guards, each passing for a reason unrelated to the property it named:
+The lens needs the standard answer to that problem, which is **mutation testing**: change the
+code under test in small, mechanical ways and see whether the suite notices. A test that
+passes against deliberately broken code is not a test.
 
-| Task | Test | Why it asserted nothing |
-|---|---|---|
-| 2 | selector-syntax, placeholder-vocabulary, optional-marker guards | Iterated `adapter_files()` only; the fields they validated had moved to `references/distributions/`, so the guards ran over a file set that no longer used them |
-| 7 | `test_gate_relock_and_build_run_per_component` | Windowed ±400 chars around the *first* occurrence of `gate_command`, which sits in Step 0's field list ~2400 chars from Step 2 — deleting Step 2's loop entirely left it green |
-| 8 | `test_step_three_checks_every_component_manifest_against_the_canonical_version` | Whole-file substring search; two of three assertions passed against the file *before* the commit meant to satisfy them |
+## Scope: this is a general code-mutation gate
 
-All three were caught by a human reasoning it out, or by an implementer manually deleting the
-behaviour. All three were **born vacuous** — none had been refactored, so none would ever have
-reached the existing gate.
+`/test-quality` audits any codebase, and in almost every one of them the suite exercises
+**real source** — Python functions, TypeScript modules. That is the primary case and it is
+what the gate is built around: `mutmut` for Python, Stryker for JS/TS, both mature, both
+producing a mutant→covering-test mapping the lens can read.
 
-## The decision that shapes everything else: prose first
-
-Issue #113 names `mutmut` and Stryker. Both mutate *source*. All three motivating failures
-assert over **Markdown** — neither tool would have caught any of them, and this repo's suite is
-dominated by that shape (`tests/test_*_skill_structure.py`). So the design's weight goes on
-mutating the **artifact under test**, whatever its shape, with the code tools as one backend
-among several rather than as the point.
-
-`extract_section()` already exists in `tests/test_code_quality_skill_structure.py:22`,
-duplicated across guard files. The section-slicing convention emerged organically under
-exactly the pressure this design formalises; the design absorbs it rather than reinventing it.
+This plugin repo is unusual: much of its suite asserts over **Markdown**, because its product
+*is* Markdown. That case gets a backend (below), and it is the case this repo will exercise
+first — but it is an adapter for documentation-as-code suites, not the point of the work. Any
+design decision that helps the prose backend at the cost of the code path is the wrong trade.
 
 ## Shape
 
-Three pieces, each usable without the others.
+`scripts/mutation_gate.py` — one executor, several backends, two callers.
 
-### a. The `covers` marker
+    select tests → pick backend → generate mutants → run the covering tests
+                 → record survived/killed → restore → report survivors
+
+Restore is a `try/finally` over the original text held in memory, never a git operation: the
+harness must be safe on a dirty tree, and a `git checkout` would eat unrelated work. (`mutmut`
+and Stryker each manage their own workspace; the same guarantee is asserted by test.)
+
+### Backend dispatch
+
+The gate picks by what the selected tests actually exercise:
+
+- **Python source** → `mutmut`, scoped to the changed files.
+- **JS/TS source** → Stryker, scoped to the changed files, under fnm-selected Node.
+- **Prose artifact** → the built-in prose backend below.
+- **Nothing resolvable** → reported as *not verifiable*, never silently passed.
+
+The dispatch is a strategy seam, not an if-chain — a fourth backend must be additive.
+
+### Survivor policy
+
+No score threshold; a threshold gets gamed and "87%" tells an operator nothing. A survivor
+**blocks** only when it lands on a line the changed test is recorded as covering — that is the
+signal worth stopping on. Everything else is advisory noise, reported and not enforced.
+
+Reporting names the assertion and the mutant: *"inverting the condition at `foo.py:41` leaves
+`test_rejects_expired_token` green"*. Never a percentage.
+
+### Runtime
+
+Full-suite mutation is far too slow for an interactive skill. Default scope is **the files in
+the diff**; full-repo is an explicit opt-in flag. Both backends support file-scoped runs
+natively, so this is configuration, not extra machinery.
+
+## The prose backend
+
+For suites whose subject is a document. Without it, a repo like this one gets no gate at all,
+because neither tool will mutate a Markdown heading.
+
+The unit is a **declared slice**. Where `mutmut` and Stryker derive the mutant→test mapping
+from coverage, prose has none, so the test declares its target:
 
     @pytest.mark.covers("skills/test-quality/SKILL.md", section="Applying is guarded by two gates")
 
-A test declares the artifact slice it guards. Registered under `[tool.pytest.ini_options]
-markers` in `pyproject.toml`, resolved by a helper in `tests/conftest.py`.
+The marker is **also what the test reads** — the guard asks a `conftest.py` helper for its
+slice rather than re-implementing section extraction, so declaration and assertion cannot
+drift apart. `extract_section()` already exists in
+`tests/test_code_quality_skill_structure.py:22`, duplicated across guard files; the helper
+absorbs it.
 
-The marker is **also what the test reads**: the guard asks the helper for its slice instead of
-re-implementing `extract_section`, so the declaration and the assertion cannot drift apart.
-This is what kills the Task 7/8 bug class *by construction* — a test can no longer window a
-region other than the one it declared, because there is only one region and it is named.
+Three operators, applied to the declared slice only:
 
-### b. `scripts/mutation_gate.py`
+1. **Delete the slice** — the blunt one; the test must fail.
+2. **Blank the slice** — replace the body, keep the heading. Separates "needs the heading" from
+   "needs the content".
+3. **Invert directives** — `MUST` ↔ `MUST NOT`, `never` ↔ `always`, `Do NOT` ↔ `Do`. Catches a
+   guard that confirms a word is *present* without confirming what it says.
 
-The executor. Given a test selection it collects targets from markers and, for each:
+Operator 3 can legitimately survive when a test genuinely only checks presence, so its
+survivors report at a lower tier and must name the inversion that made no difference.
 
-    mutate the slice → run just that test → record survived/killed → restore
+The marker is **prose-only and optional**. Code-shaped tests need no annotation, and a repo
+that has adopted no markers still gets the full code gate.
 
-Restore is a `try/finally` over the original text held in memory. Never a git operation: the
-harness must be safe to run on a dirty tree, and a `git checkout` would eat unrelated work.
+### Why this repo needs it
 
-### c. Backend dispatch
+On `design/release-two-axis-adapters`, three plan-specified tests were vacuous guards, each
+passing for a reason unrelated to the property it named:
 
-- Marker pointing at a `.md` (or any prose artifact) → the prose mutators below.
-- No marker, test exercises real source → `mutmut` (Python) / Stryker (JS/TS), scoped to the
-  diff.
-- No marker and no source target → **not verifiable**, reported as such.
+| Task | Test | Why it asserted nothing |
+|---|---|---|
+| 2 | selector-syntax, placeholder-vocabulary, optional-marker guards | Iterated `adapter_files()` only; the fields they validated had moved to `references/distributions/` |
+| 7 | `test_gate_relock_and_build_run_per_component` | Windowed ±400 chars around the *first* occurrence of `gate_command`, ~2400 chars from the section it meant to check — deleting that section left it green |
+| 8 | `test_step_three_checks_every_component_manifest_against_the_canonical_version` | Whole-file substring search; two assertions passed against the file *before* the commit meant to satisfy them |
 
-One implementation; the analyzer and the implementer are two callers of it.
-
-## The prose mutators
-
-Applied to the declared slice only, never the whole file.
-
-1. **Delete the slice.** The blunt one. The test must fail. Catches Task 2 and Task 7 — a
-   guard whose region no longer exists, or that never read the region it named.
-2. **Blank the slice.** Replace the body with a placeholder, keep the heading. Separates "the
-   test needs the heading" from "the test needs the content"; a survivor is asserting on
-   structure it did not mean to.
-3. **Invert directives.** Swap imperative polarity inside the slice (`MUST` ↔ `MUST NOT`,
-   `never` ↔ `always`, `Do NOT` ↔ `Do`). Catches Task 8's class — a guard confirming a word is
-   *present* without confirming what it says.
-
-A survivor under any operator is a finding. Operator 3 is the noisy one: it can legitimately
-survive when a test genuinely only checks presence, so its survivors report at a lower tier and
-must name the specific inversion that made no difference.
-
-**Reporting is never a score.** Per the issue, each survivor reads as the assertion and the
-mutation — *"deleting `SKILL.md` § Step 2 leaves `test_gate_relock_and_build_run_per_component`
-green"* — not "87%".
+Operator 1 kills Task 2 and 7; operator 3 kills Task 8. The declared-slice rule kills the 7/8
+class outright by construction — a test can no longer window a region other than the one it
+named.
 
 ## The two callers
 
 ### Analyzer (Phase 1) — the sweep
 
-Scoped to the diff by default: tests whose file changed, or whose declared artifact changed.
-Full-suite is an explicit opt-in flag, because it is the slow one and an interactive skill
-cannot afford it by default.
+Runs the gate over the diff and turns survivors into findings:
 
-- A survivor becomes a **rubric-11 tending finding** ("vacuous guard").
-- An undeclared prose guard becomes a **Minor** ("unverifiable by construction").
+- A survivor on a covered line → a **rubric-11 tending finding** ("vacuous test").
+- A prose guard with no marker → a **Minor** ("unverifiable by construction").
 
-The analyzer stays read-only — it runs the script, it does not act on the result. The reviewer
-re-verifies every survivor against the real test before it reaches the report, exactly as with
-every other finding in this lens.
+The analyzer stays read-only — it runs the gate, it does not act on the result. The reviewer
+re-verifies every survivor against the real test before it reaches the report, as with every
+other finding in this lens.
 
-This is the half that catches born-vacuous tests, which is where all three real cases came
-from.
+This half is what catches **born-vacuous** tests. All three cases above were never refactored,
+so none would have reached a post-refactor gate; discovery, not just verification, is where
+the value is.
 
 ### Implementer (Gate A) — the per-rec gate
 
-Replaces the hand-waved "temporarily break the code under test" with a call to the script,
-scoped to the one test just refactored. Survived → the refactor hollowed the test → revert and
-report. That is already the rule; this makes it mechanical.
+Replaces the hand-waved "temporarily break the code under test" with a call to the gate, scoped
+to the one test just refactored. Survived → the refactor hollowed the test → revert and report.
+That is already the rule; this makes it mechanical.
 
-**The manual delete-and-confirm loop stays documented** as the fallback for anything the script
-cannot reach. In a foreign repo with no markers it is all there is, and the issue is explicit
-that it must survive: the automated gate is the sweep, the manual one is the spot check.
-
-### Survivor policy
-
-No score threshold — a threshold gets gamed. A survivor **blocks** only when it is on the slice
-the test declared it covers. Everything else is advisory.
+**The manual delete-and-confirm loop stays documented** as the fallback for anything the gate
+cannot reach — a repo with no mutation tool installed, or an unsupported language. The
+automated gate is the sweep; the manual one is the spot check.
 
 Gate B (coverage-non-regression for deletions) is untouched by this work.
 
 ## Reach into foreign repos
 
-`/test-quality` audits any codebase, and a marker convention only exists where it has been
-adopted. So: the **script ships with the plugin** and therefore always exists; the **marker is
-optional**. In a marker-less repo the harness still dispatches source-shaped tests to
-`mutmut`/Stryker, and reports the prose guards as unverifiable rather than failing. The lens
-does not edit the audited repo's test configuration.
+The script ships with the plugin, so it always exists. Everything else degrades:
 
-Adoption in *this* repo is incremental: undeclared guards are a Minor finding, not a backfill.
-The debt stays visible without attaching a large mechanical diff to the mechanism.
+- Tool missing → the gate reports *not available* for that language and the audit continues.
+  It never fails the run for a tool the user has not installed, and it never installs one
+  behind their back.
+- No markers → the code path is unaffected; prose guards report as unverifiable.
+
+The lens does not edit the audited repo's test configuration. In this repo, marker adoption is
+incremental: undeclared guards are a Minor finding, not a backfill.
 
 ## Testing the harness
 
-Ordinary unit tests over fixture artifacts in `tmp_path`: a fixture Markdown file plus a
-deliberately-vacuous test and a deliberately-sound one, asserting the sound one is **killed**
-and the vacuous one **survives**. Known-good and known-bad specimens is the honest way to test
-a mutation tool; self-application is not.
+Unit tests over fixture projects in `tmp_path`: a tiny module with a sound test and a vacuous
+one, asserting the sound one is **killed** and the vacuous one **survives** — known-good and
+known-bad specimens, which is the honest way to test a mutation tool. Self-application is not.
+Same pair for the prose backend over a fixture Markdown file.
 
-Restore-on-failure gets its own test: raise mid-run, assert the artifact is byte-identical
-afterwards.
+Backend dispatch is tested against fakes so the suite does not depend on `mutmut` or Stryker
+being installed. Restore-on-failure gets its own test: raise mid-run, assert the artifact is
+byte-identical afterwards.
 
 ## Dependencies
 
 - `uv add --dev mutmut` — declared, never ambient, never bare `pip install`.
 - **Risk to settle in task 1:** this repo is `requires-python = ">=3.14"` and mutmut's support
-  there is unverified. If it does not run, the Python backend degrades to "not available,
-  reported as such" and the prose path — the value here — is unaffected. The design does not
-  depend on mutmut working.
-- Stryker is **not** added: there is no JS/TS in this repo, so the skill detects and instructs
-  rather than shipping a dependency nobody uses. Under fnm-selected Node wherever it does run.
+  there is unverified. If it does not run here, the Python backend still ships (it is the
+  primary path for the repos the lens audits) and this repo's own gate leans on the prose
+  backend. Confirm before building on it.
+- Stryker is **not** added as a dependency: there is no JS/TS here. The skill detects it in the
+  audited repo and instructs; wherever it runs, it runs under fnm-selected Node, never system
+  Node.
 
 ## Verification gates
 
 Not optional; each is its own task with evidence pasted into the plan.
 
 - **`/solid`** on `scripts/mutation_gate.py`. It is the first script here with real internal
-  structure (collector / mutator / runner / reporter), and the prose-vs-mutmut-vs-Stryker
-  dispatch is a strategy seam — if it lands as an if-chain the third backend will hurt.
-  Analyzer + reviewer pass, findings applied through TDD.
+  structure (selector / backend / runner / reporter), and the backend dispatch is exactly the
+  seam that hurts when it lands as an if-chain. Analyzer + reviewer pass, findings applied
+  through TDD.
 - **`/skill-creator`** evals on the changed `test-quality` SKILL.md and agent prompts. The
   trigger surface shifts (the analyzer now runs a sweep, the implementer now calls a script),
   so the description and agent contracts need evals, not just edits — as with the existing
@@ -173,7 +188,7 @@ Not optional; each is its own task with evidence pasted into the plan.
 
 ## Out of scope
 
-- Backfilling markers across the existing suite — it is a finding, not a diff.
+- Backfilling markers across this repo's existing suite — it is a finding, not a diff.
 - Gate B (coverage-non-regression).
 - CI wiring.
 - Any change to production `scripts/` behaviour beyond what the harness itself needs.
