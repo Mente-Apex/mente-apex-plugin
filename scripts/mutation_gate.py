@@ -10,7 +10,8 @@ import argparse
 import json
 import subprocess
 import sys
-from dataclasses import dataclass
+import warnings
+from dataclasses import dataclass, replace
 from typing import Protocol, runtime_checkable
 
 from mutation_gate_workspace import scratch_workspace
@@ -105,9 +106,12 @@ class GateResult:
     unavailable: tuple[tuple[str, str], ...]
     unresolved: tuple[str, ...]
     unclaimed: tuple[str, ...]
+    baseline_failures: tuple[str, ...] = ()
 
 
-def run_gate(repo_root, paths, backends: list) -> GateResult:
+def run_gate(
+    repo_root, paths, backends: list, baseline_failures: tuple = ()
+) -> GateResult:
     """Partition the selection, invoke each backend once, merge the results.
 
     A backend whose partition is empty is never invoked — a repo with no JS is
@@ -121,6 +125,20 @@ def run_gate(repo_root, paths, backends: list) -> GateResult:
     `partition()` never produces (the gate misunderstanding its own data), and
     two backends registered for the same stack (an undefined, silently-merged
     outcome otherwise).
+
+    `baseline_failures` is the set of test node ids that were already red
+    before any mutant was applied (see `baseline`). A survivor covered ONLY by
+    tests that were already broken proves nothing -- it is marked
+    `unreliable_baseline` rather than `survived`, because a test that never
+    passes cannot have been vacuous about this mutant specifically. A survivor
+    covered by a mix of already-red and clean tests keeps its `survived`
+    status: at least one clean, working test had a real chance to catch this
+    mutant and did not, which is exactly the signal this gate exists to
+    report -- silencing it just because one of several covering tests happens
+    to be flaky would be the same silence-is-the-enemy failure this field
+    exists to prevent. A survivor with no associated tests at all is
+    unaffected either way (nothing in `baseline_failures` bears on code no
+    test covers) and stays `survived`.
     """
     backends_by_stack = {}
     for backend in backends:
@@ -153,12 +171,96 @@ def run_gate(repo_root, paths, backends: list) -> GateResult:
             unavailable.append((stack, backend.install_hint(repo_root)))
             continue
         survivors.extend(backend.survivors(repo_root, selection))
+
+    already_red = set(baseline_failures)
+    marked = tuple(
+        (
+            replace(survivor, status="unreliable_baseline")
+            if survivor.associated_tests
+            and all(test in already_red for test in survivor.associated_tests)
+            else survivor
+        )
+        for survivor in survivors
+    )
     return GateResult(
-        survivors=tuple(survivors),
+        survivors=marked,
         unavailable=tuple(unavailable),
         unresolved=partitions.get("unresolved", ()),
         unclaimed=tuple(unclaimed),
+        baseline_failures=tuple(baseline_failures),
     )
+
+
+def baseline(repo_root, run_suite):
+    """Node ids already failing before any mutant is applied.
+
+    A test that fails intermittently produces a phantom kill: the mutant looks
+    caught because the covering test went red, but the test would have failed
+    anyway with no mutation in sight. Running the real suite once, with
+    nothing mutated, and recording exactly what it reports as failed is what
+    lets `run_gate` tell a genuine survivor apart from one whose only covering
+    tests were already broken.
+
+    `run_suite` is injected rather than this function invoking pytest itself,
+    so callers can substitute a fake in tests without shelling out, and so a
+    future non-pytest suite runner is a different `run_suite`, not a rewrite
+    of this function.
+    """
+    return _failed_node_ids(run_suite(repo_root))
+
+
+_FAILED_PREFIX = "FAILED "
+
+
+def _failed_node_ids(output):
+    """Parse pytest's `-rf` short summary into the node ids that failed.
+
+    `-rf` prints one `FAILED <node id>[ - <reason>]` line per failing test in
+    the short summary section regardless of verbosity elsewhere in the run,
+    which is far more reliable to parse than scraping full tracebacks out of
+    `-v` output.
+    """
+    node_ids = []
+    for line in output.splitlines():
+        if not line.startswith(_FAILED_PREFIX):
+            continue
+        remainder = line[len(_FAILED_PREFIX) :]
+        node_ids.append(remainder.split(" - ", 1)[0].strip())
+    return tuple(node_ids)
+
+
+def _pytest_run_suite(repo_root):
+    """The real suite, run once, with no mutation applied.
+
+    `uv run pytest` because this repo's Python toolchain is uv-managed --
+    never a bare `pytest` or a system interpreter, which could resolve to an
+    environment missing dependencies the suite needs and misreport half the
+    suite as failing.
+
+    A non-{0,1} exit code (anything but "all passed" or "some tests failed")
+    means the run itself broke -- a collection error, an internal pytest
+    crash -- rather than reporting a normal pass/fail outcome. `_failed_node_ids`
+    would silently read that as an empty, all-clean baseline, so it is
+    surfaced via a warning instead of swallowed: an operator seeing every
+    survivor at face value when the baseline run never actually completed
+    would be exactly the kind of silence this whole feature exists to close.
+    """
+    result = subprocess.run(
+        ["uv", "run", "pytest", "--tb=no", "-q", "-rf"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode not in (0, 1):
+        warnings.warn(
+            f"uv run pytest exited {result.returncode} in {repo_root} while "
+            "recording the clean-run baseline -- this is not a normal "
+            "pass/fail exit, so an empty baseline here may be a broken run "
+            f"going unreported rather than a clean suite: "
+            f"{result.stderr.strip() or result.stdout.strip()!r}",
+            stacklevel=2,
+        )
+    return result.stdout
 
 
 def _git(repo_root, *args, check=True):
@@ -291,7 +393,10 @@ def main(argv=None):
     paths = changed_paths(arguments.repo_root, scope=arguments.scope)
     dirty = arguments.scope == "working-tree"
     with scratch_workspace(arguments.repo_root, dirty=dirty) as workspace:
-        result = run_gate(workspace, paths, default_backends())
+        baseline_failures = baseline(workspace, _pytest_run_suite)
+        result = run_gate(
+            workspace, paths, default_backends(), baseline_failures=baseline_failures
+        )
     print(json.dumps(as_report_payload(result, scope=arguments.scope), indent=2))
     return 0
 

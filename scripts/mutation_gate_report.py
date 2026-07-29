@@ -53,6 +53,7 @@ def as_report_payload(result, scope):
         ],
         "unresolved": list(result.unresolved),
         "unclaimed": list(result.unclaimed),
+        "baseline_failures": list(result.baseline_failures),
     }
 
 
@@ -118,6 +119,13 @@ def render_markdown(result, scope):
         lines.append("")
         for path in result.unresolved:
             lines.append(f"- `{path}`")
+        lines.append("")
+
+    if result.baseline_failures:
+        lines.append("**Unreliable baseline** — these tests were already failing:")
+        lines.append("")
+        for node_id in result.baseline_failures:
+            lines.append(f"- `{node_id}`")
         lines.append("")
 
     return "\n".join(lines)
