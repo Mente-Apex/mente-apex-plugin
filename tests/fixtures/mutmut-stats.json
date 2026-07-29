@@ -1,0 +1,13 @@
+{
+  "tests_by_mangled_function_name": {
+    "money.x_discount": [
+      "tests/test_money.py::test_member_over_threshold_gets_ten_percent_off",
+      "tests/test_money.py::test_vacuous_guard_asserts_nothing_real"
+    ]
+  },
+  "duration_by_test": {
+    "tests/test_money.py::test_member_over_threshold_gets_ten_percent_off": 0.000176,
+    "tests/test_money.py::test_vacuous_guard_asserts_nothing_real": 0.000121
+  },
+  "stats_time": 0.0797
+}
