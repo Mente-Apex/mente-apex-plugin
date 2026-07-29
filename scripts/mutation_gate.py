@@ -49,13 +49,11 @@ class Survivor:
     Use `is_survivor()` to classify — never compare `status` by hand, or the
     vocabulary drifts out of sync across the consumers again.
 
-    KNOWN OPEN DEFECT (not the intended contract, deliberately not fixed here):
-    `survived_minor` is NOT in `SURVIVED_STATUSES`, so a real lower-tier prose
-    survivor renders under "Inconclusive — neither killed nor survived" while
-    the headline says "No survivors in scope", and `as_report_payload` drops its
-    artifact, associated_tests and diff. It is a genuine survivor being reported
-    as a non-result. Escalated as a bug in its own right; changing it is a
-    behaviour change, not a refactor.
+    `survived_minor` IS a survivor, at a lower tier than plain `survived` --
+    the report must say so (both `render_markdown` and `as_report_payload`
+    surface `status` on it) rather than either folding it in as an
+    indistinguishable plain survivor or dropping it into "Inconclusive",
+    which would misreport a real finding as no finding at all.
     """
 
     artifact: str
@@ -68,8 +66,10 @@ class Survivor:
     status: str = "survived"
 
 
-# Deliberately just {"survived"} — see the KNOWN OPEN DEFECT note above.
-SURVIVED_STATUSES = frozenset({"survived"})
+# `survived_minor` is a real survivor at a lower tier (the prose backend's
+# deliberate `invert`-operator tiering) -- it belongs here, not with the
+# inconclusive statuses. See the Survivor docstring above.
+SURVIVED_STATUSES = frozenset({"survived", "survived_minor"})
 
 
 def is_survivor(survivor):
