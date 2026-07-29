@@ -16,7 +16,7 @@ report template, and output path.
 ## Inputs (from the orchestrator)
 
 - The draft findings file the analyzer produced, e.g.
-  `docs/reports/<lens>/findings-draft.md`
+  `docs/reports/<lens>/draft-findings.md`
 - **Rubric path** — this lens's shared rubric (read it first)
 - The language reference if applicable, and this lens's report-template
   path, e.g. `references/report-template.md`
@@ -41,7 +41,11 @@ report template, and output path.
    didn't look. Analyzers anchor on big files; the classic misses are
    cross-file: duplicated dispatch sites, import direction (domain →
    adapters), a fat abstraction whose implementors live in different dirs.
-   One deliberate sweep. The sweep is *yours* — don't delegate it to another
+   One deliberate sweep — and where the target has a structural graph, aim it
+   with queries rather than greps (import direction and implementor sets are
+   both graph questions; see
+   [docs/structural-queries.md](../structural-queries.md), including what to
+   do when there is no graph, which changes nothing but your Coverage note). The sweep is *yours* — don't delegate it to another
    agent — and it terminates by **writing**: its outcome lands in Reviewer
    notes even when it adds nothing ("swept the remaining modules; nothing
    added"). An empty result is a written result; nothing downstream should

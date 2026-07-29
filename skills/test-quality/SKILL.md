@@ -61,8 +61,9 @@ Follows the shared workflow, Phases 0–3; apply (4–5) is opt-in and guarded.
 1. **Phase 0 — Inventory & baseline.** Scope the **test** tree, detect the runner and its
    coverage tool, run the suite once for the baseline, create git-excluded
    `docs/reports/test-quality/`.
-2. **Phase 1 — Analyzer** ([agents/analyzer.md](agents/analyzer.md), read-only) reads
-   `references/rubric.md` and the `tdd` references, drafts findings → `findings-draft.md`.
+2. **Phase 1 — Analyzer** ([agents/analyzer.md](agents/analyzer.md); read-only over the
+   suite, writes its own draft) reads
+   `references/rubric.md` and the `tdd` references, drafts findings → `draft-findings.md`.
 3. **Phase 2 — Reviewer** ([agents/reviewer.md](agents/reviewer.md)) re-verifies every
    finding against the real tests, tiers Critical/Major/Minor, cross-references the hub,
    and writes `docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md` per

@@ -110,7 +110,7 @@ def test_deep_gear_agents_state_their_contracts():
     analyzer = read_skill_file("agents/analyzer.md")
     reviewer = read_skill_file("agents/reviewer.md")
     assert "read-only" in analyzer.lower()
-    assert "findings-draft.md" in analyzer
+    assert "draft-findings.md" in analyzer
     assert (
         "clean-code-standard.md" in analyzer
     ), "analyzer must judge against the standard"

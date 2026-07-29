@@ -43,7 +43,8 @@ Scale effort to scope. **Read the standard first**, then:
   standard; report findings inline (the *Suggested output* format in the
   standard). No subagents, no report file — the common case stays light.
 - **Deep (a PR, a module, or on request).** The two-stage verified pipeline:
-  dispatch `agents/analyzer.md` (read-only draft) then `agents/reviewer.md`
+  dispatch `agents/analyzer.md` (read-only over the code; writes its draft)
+  then `agents/reviewer.md`
   (re-verifies every finding against the code, prunes false positives), writing a
   report to `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md` per
   `references/report-template.md`. Create `docs/reports/clean-code/` git-excluded,

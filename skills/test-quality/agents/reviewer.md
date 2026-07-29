@@ -6,7 +6,7 @@ no code and no tests** — you write the report only.
 
 ## Inputs (from the orchestrator)
 
-- `docs/reports/test-quality/findings-draft.md` — the draft.
+- `docs/reports/test-quality/draft-findings.md` — the draft.
 - `../references/rubric.md` (read first) and the `tdd` references the rubric points to.
 - `../references/report-template.md` — the exact output shape.
 - The runner + coverage tool and the baseline suite status.

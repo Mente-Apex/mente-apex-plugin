@@ -84,8 +84,9 @@ Follows the shared workflow, Phases 0–3; apply (4–5) is opt-in and conservat
 
 1. **Phase 0 — Inventory & baseline.** Scope the tree; detect the test suite and a
    graph tool; create git-excluded `docs/reports/clean-architecture/`.
-2. **Phase 1 — Analyzer** ([agents/analyzer.md](agents/analyzer.md), read-only) →
-   `findings-draft.md`. Headline checks always; secondary/appendix only if opted
+2. **Phase 1 — Analyzer** ([agents/analyzer.md](agents/analyzer.md); read-only over the
+   code, writes its own draft) →
+   `draft-findings.md`. Headline checks always; secondary/appendix only if opted
    in.
 3. **Phase 2 — Reviewer** ([agents/reviewer.md](agents/reviewer.md)) re-verifies
    every finding, tiers Critical/Major/Minor, cross-references the hub, writes

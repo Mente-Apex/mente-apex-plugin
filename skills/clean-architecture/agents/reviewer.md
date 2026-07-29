@@ -7,7 +7,7 @@ contract.
 
 ## Inputs (from the orchestrator)
 
-- `docs/reports/clean-architecture/findings-draft.md` — the draft.
+- `docs/reports/clean-architecture/draft-findings.md` — the draft.
 - `../references/principles.md` (read first), plus the detected language's reference
   under `../references/` — one `<language>.md` per language (ships `python.md`,
   `typescript.md`).

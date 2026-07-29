@@ -26,19 +26,40 @@ always the editor; a lens never redesigns on its own.
 | Role | Who | Instructions | Writes code? |
 |------|-----|--------------|--------------|
 | Orchestrator | you | this file | no |
-| Analyzer | subagent | `docs/refactor-agents/analyzer.md` | no (read-only) |
+| Analyzer | subagent | `docs/refactor-agents/analyzer.md` | no (writes only the draft) |
 | Reviewer | subagent | `docs/refactor-agents/reviewer.md` | no (writes only the report) |
 | Implementer / TDD-coordinator | subagent | `docs/refactor-agents/implementer.md` | yes (approved recs only, via a TDD refactor job) |
 
 All agent instruction paths above are relative to the plugin root. Dispatch
 subagents with the Agent tool (`general-purpose`), telling each to read its
-instruction file first. **If you cannot spawn subagents** (no Agent tool, or
+instruction file first. **Every role here writes its own artifact, so every
+role needs `Write`** — the analyzer's "no" in the table above means *it does
+not touch the code under audit*, not that it cannot write its draft.
+
+> **Never name a subagent's artifact `REPORT*`, `SUMMARY*`, `FINDINGS*`, or
+> `ANALYSIS*`.** Claude Code's `Write` tool hard-denies any subagent write
+> whose **basename** starts with one of those four words (case-insensitive,
+> `.md` only), returning a denial that reads like a blanket policy against
+> subagents writing reports at all. **It is not one** — it is a filename check
+> and nothing else: not a permission, not a hook, unaffected by
+> foreground/background or agent type, and with no ask-the-user path. Read
+> that denial as "rename the file", never as a licence to return the draft in
+> chat; a blocked agent that falls back to chat re-emits the whole draft
+> through the orchestrator's context, which is exactly the cost the subagent
+> split exists to avoid.
+>
+> This is why the hand-off is `draft-findings.md` and **not** the reverse
+> word order (issue #112). The dated `<LENS>-REPORT-<date>.md` is safe because
+> its basename starts with the lens name, not `REPORT`. Any new agent-written
+> artifact must clear the same check — put a distinguishing word first.
+
+**If you cannot spawn subagents** (no Agent tool, or
 you are already a subagent), play the roles yourself *sequentially and
 honestly*: finish the analysis pass completely, then re-read the code fresh
 for the verification pass before writing the final doc. The role separation
 is what keeps false positives out of the report — don't collapse it.
 
-**The draft is transient.** `findings-draft.md` is the analyzer→reviewer
+**The draft is transient.** `draft-findings.md` is the analyzer→reviewer
 hand-off, not a deliverable: **written** by the analyzer (Phase 1), **consumed**
 by the reviewer (Phase 2), **deleted** by the orchestrator once the report is
 durable (end of Phase 2). Only the dated `<LENS>-REPORT-<YYYY-MM-DD>.md`
@@ -61,6 +82,11 @@ Before any agent runs, establish ground truth yourself:
    .venv, dist, build, migrations, *_pb2.py, lockfiles). Note rough size and
    entry points, and record the **detected language set** — this drives which
    language reference each later phase loads (see the convention below).
+   - **Detect a structural graph** while you are here, and pass the verdict to
+     every later phase: does the target carry a `graphify-out/graph.json`, and
+     is it current? See [docs/structural-queries.md](structural-queries.md) for
+     the check, the freshness rule, and what to do when there is none — which is
+     the common case and costs the run nothing but a Coverage line.
 2. **Test suite**: detect it and record the exact command (see the lens's
    language references, or for other stacks the project's README/CI config).
    Then **run it once**. The baseline matters: a failure after a refactor is
@@ -74,11 +100,11 @@ Before any agent runs, establish ground truth yourself:
    `.git/info/exclude` if the repo is a git repo and doesn't already ignore it.
    Reports are ephemeral working artifacts by default; the user may choose to
    commit a final report as a living doc at the end.
-   - **Pre-clear a stale draft.** A `findings-draft.md` is a transient
+   - **Pre-clear a stale draft.** A `draft-findings.md` is a transient
      analyzer→reviewer hand-off, never a durable record, so a copy left in the
      report dir can only be stale — from a prior run that crashed between Phase 1
      and the end of Phase 2. Delete any pre-existing
-     `docs/reports/<lens>/findings-draft.md` now, before Phase 1 writes. Dated
+     `docs/reports/<lens>/draft-findings.md` now, before Phase 1 writes. Dated
      final reports are the durable record and are left untouched.
 
 ### Language references — the detect-and-load convention
@@ -104,10 +130,11 @@ To see which languages a lens currently ships deep support for, list its
 ## Phase 1 — Analyzer
 
 Spawn the analyzer with: the target path, the scope notes from Phase 0 (including
-the detected-language set), and instructions to read `docs/refactor-agents/analyzer.md`
+the detected-language set **and the structural-graph verdict**), and instructions
+to read `docs/refactor-agents/analyzer.md`
 plus the lens's rubric (`references/<rubric>.md`) and — per the detect-and-load
 convention above — `references/<language>.md` for each detected language that has
-one. It produces `docs/reports/<lens>/findings-draft.md` — evidence-backed
+one. It produces `docs/reports/<lens>/draft-findings.md` — evidence-backed
 candidate findings, not yet trusted.
 
 ## Phase 2 — Reviewer
@@ -123,7 +150,7 @@ using the lens's `references/report-template.md` **exactly**: the apply
 phase depends on its structure (IDs, Risk and Status fields).
 
 **Reap the draft.** Once you have confirmed the report exists and parses (the
-fan-in in Guardrails), delete `docs/reports/<lens>/findings-draft.md` — its only
+fan-in in Guardrails), delete `docs/reports/<lens>/draft-findings.md` — its only
 consumer is the reviewer, and from Phase 3 on the dated report is the single
 source of truth. **Delete only against a parseable report:** if the reviewer
 produced none (it died), keep the draft as the sole evidence of the partial run
@@ -233,7 +260,9 @@ shared engine at
 [skills/tdd/references/refactor-jobs.md](../skills/tdd/references/refactor-jobs.md).
 The implementer/TDD-coordinator role (`docs/refactor-agents/implementer.md`)
 translates a rec into that engine's calling contract (`targets`, `change`,
-`test_command` + `baseline_status`, `coverage`) and dispatches **one job
+`test_command` + `baseline_status`, `coverage`) and then **runs** that
+procedure itself — it is a subagent, so it writes the edits in its own
+context rather than delegating further — as **one job
 per group** (a declared `## Grouped changes` entry), **or one job
 per rec** / dependent chain for ungrouped recs, **sequentially**, each with a fresh context.
 One coordinator grinding through a long batch spends its shrinking context

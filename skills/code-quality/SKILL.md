@@ -84,9 +84,16 @@ real tool (`grimp` for Python, `madge` for TS — clean-architecture needs it an
 build it here and share rather than have each lens re-derive imports by grep). Build a **third artifact next to the file list and import graph: a symbol
 index** — every class / function / method definition with its `file:line`, name,
 and rough LOC — **once**, with a real tool when reachable and degrading exactly
-as the import graph does: **`ast-grep`** (primary; already used in Phase 1 for
+as the import graph does: **an existing `graphify-out/graph.json`** (free when the
+target already has one — it carries definitions, calls, imports and inheritance
+with `file:line`, so it supplies both this index *and* the import graph above;
+check it is current per
+[docs/structural-queries.md](../../docs/structural-queries.md)) →
+**`ast-grep`** (primary when there is no graph, and already used in Phase 1 for
 structural queries) → **`ctags`** (fallback) → **agent-read of the scoped file
-list** (last resort, recorded as a coverage note). Six analyzers each
+list** (last resort, recorded as a coverage note). **No graph is the normal
+case and blocks nothing** — it just means starting the ladder one rung down.
+Six analyzers each
 re-enumerating the tree's classes, functions, and call-sites is the same waste
 the import graph already removes for edges. This shared index is an
 **analysis-phase artifact** — built once over Phases 0–2's single read-only
@@ -103,8 +110,11 @@ stays available; it just shouldn't be the silent default when the repo is large.
 
 ### Phase 1 — Fan out the six analyzers (parallel)
 
-Dispatch **six analyzer subagents at once** (Agent tool, `general-purpose`,
-read-only), one per lens. Give each the Phase-0 scope notes, the **detected
+Dispatch **six analyzer subagents at once** (Agent tool, `general-purpose`), one per
+lens. Each is read-only **over the code it audits** but must be able to write its own
+`draft-findings.md` — so never dispatch one with a read-only agent type (`Explore`) or
+call it "read-only" unqualified; strip its Write and it hands the whole draft back as
+chat text instead, which is the re-emission this fan-out exists to avoid. Give each the Phase-0 scope notes, the **detected
 language set**, the test command, and **the shared index** (file list + import graph + symbol index)
 so none of them re-scans the tree; tell it to read its
 lens's analyzer instructions **and**, per the detect-and-load convention, its
@@ -135,7 +145,7 @@ The analyzer brief otherwise:
 | clean-code | `skills/clean-code/agents/analyzer.md` | **deep gear** (two-stage, writes a report — not the inline quick gear) |
 | test-quality | `skills/test-quality/agents/analyzer.md` | audits the **test** tree, not `src/`; nominates stale-test deletions (reviewer proves them) |
 
-Each analyzer writes its own `docs/reports/<lens>/findings-draft.md` — **you read
+Each analyzer writes its own `docs/reports/<lens>/draft-findings.md` — **you read
 those files, you never write them for the subagents.** Collect all six before the
 next wave; a lens that errors is a recorded coverage gap, not a blocker.
 

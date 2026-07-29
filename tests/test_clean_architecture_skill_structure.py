@@ -170,7 +170,7 @@ def test_agents_state_their_contracts():
     reviewer = read_skill_file("agents/reviewer.md")
     implementer = read_skill_file("agents/implementer.md")
     assert "read-only" in analyzer.lower()
-    assert "findings-draft.md" in analyzer
+    assert "draft-findings.md" in analyzer
     assert "principles.md" in analyzer
     # agent docs must follow the detect-and-load convention, not hardcode one language
     assert "<language>.md" in analyzer, "analyzer must load references/<language>.md"
