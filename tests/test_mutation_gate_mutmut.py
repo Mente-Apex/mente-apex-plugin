@@ -68,3 +68,34 @@ def test_an_unmapped_function_yields_no_tests_rather_than_an_exception():
     survivors = survivors_from_output(results, {}, diffs={})
 
     assert survivors[0].associated_tests == ()
+
+
+def test_resolves_artifact_to_the_real_source_path_when_selection_is_given():
+    results = "    api.money.x_discount__mutmut_1: survived\n"
+
+    survivors = survivors_from_output(
+        results, {}, diffs={}, source_paths=("src/api/money.py",)
+    )
+
+    assert survivors[0].artifact == "src/api/money.py"
+
+
+def test_the_longest_matching_source_path_wins_over_a_shorter_package_prefix():
+    results = "    api.money.x_discount__mutmut_1: survived\n"
+
+    survivors = survivors_from_output(
+        results,
+        {},
+        diffs={},
+        source_paths=("src/api.py", "src/api/money.py"),
+    )
+
+    assert survivors[0].artifact == "src/api/money.py"
+
+
+def test_falls_back_to_a_dotted_path_approximation_when_nothing_matches():
+    results = "    money.x_discount__mutmut_1: survived\n"
+
+    survivors = survivors_from_output(results, {}, diffs={}, source_paths=())
+
+    assert survivors[0].artifact == "money.py"

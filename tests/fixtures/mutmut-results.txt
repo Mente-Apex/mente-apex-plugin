@@ -1,3 +1,5 @@
+# captured verbatim from `mutmut results --all` (the --all is why the killed line
+# below is present at all; a bare `mutmut results` skips killed mutants entirely)
     money.x_discount__mutmut_1: survived
     money.x_discount__mutmut_2: survived
     money.x_discount__mutmut_3: killed
