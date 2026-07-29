@@ -21,7 +21,11 @@ reporter cannot afford, since silence there is indistinguishable from "the
 suite is fine."
 """
 
+import json
+import shutil
+import subprocess
 import warnings
+from pathlib import Path
 
 from mutation_gate import Survivor
 
@@ -120,3 +124,70 @@ def survivors_from_report(report):
                 )
             )
     return tuple(survivors)
+
+
+def _npx_argv():
+    """The npx invocation, routed through the fnm-resolved Node.
+
+    A bare `npx` resolves through PATH to whichever `node` happens to be
+    active in the shell that launched the gate -- not necessarily the version
+    fnm would select for this repo (its `.node-version`/`.nvmrc`, or the
+    default alias). `fnm exec -- <cmd>` re-resolves the same way fnm itself
+    would before running the command, so Stryker always runs under the
+    fnm-selected Node rather than whatever system Node happens to be first on
+    PATH. Falls back to plain `npx` only when fnm itself is not installed at
+    all, so a machine without fnm degrades rather than crashing outright.
+    """
+    if shutil.which("fnm"):
+        return ["fnm", "exec", "--", "npx"]
+    return ["npx"]
+
+
+class StrykerBackend:
+    """Invokes Stryker under the fnm-selected Node and reads its JSON report."""
+
+    stack = "js"
+    tool = "stryker"
+
+    def available(self, repo_root):
+        return (Path(repo_root) / "node_modules" / "@stryker-mutator").is_dir()
+
+    def install_hint(self, repo_root):
+        return (
+            "npm install -D @stryker-mutator/core @stryker-mutator/vitest-runner"
+            " (under the fnm-selected Node)"
+        )
+
+    def survivors(self, repo_root, paths):
+        """Run Stryker over the workspace and parse its JSON report.
+
+        A missing report after `stryker run` is not silently folded into "no
+        survivors" -- that would be indistinguishable from a clean run to
+        anyone reading the rendered report. The run's exit status and stderr
+        are surfaced via a warning before falling back to an empty result, so
+        the operator sees the tool actually failed rather than trusting a
+        false all-clear. `survivors_from_report` itself still raises on an
+        unrecognised Stryker status rather than being caught here -- that is
+        the gate misunderstanding its own data, not a missing tool, and it
+        must fail loudly.
+        """
+        run_result = subprocess.run(
+            _npx_argv() + ["stryker", "run"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+        report_path = Path(repo_root) / "reports" / "mutation" / "mutation.json"
+        if not report_path.is_file():
+            warnings.warn(
+                f"stryker produced no report at {report_path} after `stryker "
+                f"run` exited {run_result.returncode} in {repo_root}; "
+                "treating this partition as having no survivors, but this "
+                f"may be masking a real failure -- stderr: "
+                f"{run_result.stderr.strip()!r}",
+                stacklevel=2,
+            )
+            return ()
+        return survivors_from_report(
+            json.loads(report_path.read_text(encoding="utf-8"))
+        )

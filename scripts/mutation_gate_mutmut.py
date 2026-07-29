@@ -10,8 +10,13 @@ Spike 2026-07-29, mutmut 3.6.0 on 3.14.6. Two things shape this module:
    a vacuous guard.
 """
 
+import json
 import os
 import re
+import shutil
+import subprocess
+import warnings
+from pathlib import Path
 
 from mutation_gate import Survivor
 
@@ -98,3 +103,83 @@ def survivors_from_output(results_text, stats, diffs, source_paths=()):
             )
         )
     return tuple(survivors)
+
+
+def _configure_source_paths(repo_root, paths):
+    """Write `[tool.mutmut] source_paths` into the workspace's pyproject.toml.
+
+    mutmut's config loader (`_config_reader`) tries pyproject.toml's
+    `[tool.mutmut]` table first, and only falls back to setup.cfg's `[mutmut]`
+    section when that table is absent entirely -- so this is the one mutmut
+    actually reads. Without it, mutmut's own `_guess_source_paths` runs, and on
+    a repo shaped like this one (no `lib/`, `src/`, or package dir matching the
+    repo name) it raises `FileNotFoundError` before mutating anything, which is
+    why the CLI was observed to fail with no `[mutmut] source_paths` configured
+    during the Task 3 spike. Deriving it from the real selection, rather than
+    hand-configuring a fixed source tree once, keeps it correct as the
+    partition mutmut is invoked over changes run to run.
+    """
+    config_path = Path(repo_root) / "pyproject.toml"
+    existing = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
+    entries = ", ".join(json.dumps(path) for path in paths)
+    config_path.write_text(
+        existing + f"\n[tool.mutmut]\nsource_paths = [{entries}]\n",
+        encoding="utf-8",
+    )
+
+
+class MutmutBackend:
+    """Invokes mutmut in the scratch workspace and parses what it emits."""
+
+    stack = "python"
+    tool = "mutmut"
+
+    def available(self, repo_root):
+        return shutil.which("mutmut") is not None
+
+    def install_hint(self, repo_root):
+        return "uv add --dev mutmut"
+
+    def survivors(self, repo_root, paths):
+        """Run mutmut over `paths` in the (already-isolated) workspace.
+
+        `paths` is forwarded to `survivors_from_output` as `source_paths` so
+        each survivor's `artifact` resolves to a real file path rather than
+        the dotted-module approximation `_resolve_artifact` falls back to
+        when it has nothing to match against.
+
+        mutmut's own exit code is not a failure signal by itself -- it exits
+        non-zero whenever a mutant survives, which is the normal, common case,
+        not a tool failure. But a genuine crash (bad config, a `mutmut run`
+        that never got as far as writing `mutants/mutmut-stats.json`) looks
+        identical to "zero survivors" if the run's stderr is simply discarded,
+        which is exactly the silence this lens exists to refuse. So when
+        nothing came back at all -- no stats file AND no parsed results -- the
+        run's stderr is surfaced via a warning rather than swallowed.
+        """
+        _configure_source_paths(repo_root, paths)
+        run_result = subprocess.run(
+            ["mutmut", "run"], cwd=repo_root, capture_output=True, text=True
+        )
+        results_result = subprocess.run(
+            ["mutmut", "results"], cwd=repo_root, capture_output=True, text=True
+        )
+        stats_path = Path(repo_root) / "mutants" / "mutmut-stats.json"
+        stats = (
+            json.loads(stats_path.read_text(encoding="utf-8"))
+            if stats_path.is_file()
+            else {}
+        )
+        if not stats_path.is_file() and not results_result.stdout.strip():
+            warnings.warn(
+                f"mutmut produced no results and no {stats_path} in "
+                f"{repo_root} (`mutmut run` exit {run_result.returncode}, "
+                f"`mutmut results` exit {results_result.returncode}); this "
+                "may be a genuine crash rather than a clean zero-survivor run "
+                f"-- run stderr: {run_result.stderr.strip()!r}, "
+                f"results stderr: {results_result.stderr.strip()!r}",
+                stacklevel=2,
+            )
+        return survivors_from_output(
+            results_result.stdout, stats, diffs={}, source_paths=paths
+        )
