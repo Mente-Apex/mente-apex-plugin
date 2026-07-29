@@ -42,11 +42,22 @@ test -f <target>/graphify-out/graph.json   # this repo has a graph
 
 **Check freshness before trusting it.** `graph.json` records
 `built_at_commit`; if that differs from `git rev-parse HEAD`, the graph
-predates the current tree. Refresh it — `graphify update <path>` is AST-only,
-needs no LLM, and costs nothing — or, if you cannot, treat the graph as
-advisory and confirm each structural claim against the file before citing it.
-**Never cite a `file:line` from a stale graph in a finding**; the reviewer
-will fail to verify it and prune a real finding for a bad citation.
+predates the current tree.
+
+**Refreshing a stale graph is the orchestrator's job, done once in Phase 0**
+(see [refactor-workflow.md](refactor-workflow.md)) — `graphify update
+<path>` is AST-only and needs no LLM. It can still fail to fix things: `update`
+refuses to overwrite `graph.json` when the rebuild would produce fewer nodes
+than it already has — exactly the case right after a refactor deletes code —
+unless given `--force` (or the `GRAPHIFY_FORCE=1` env var). Check that
+`built_at_commit` actually advanced after running it before treating the
+graph as fresh.
+
+**An analyzer that finds a stale graph never refreshes it.** That falls to
+the advisory path already in play: treat the graph as advisory and confirm
+each structural claim against the file before citing it. **Never cite a
+`file:line` from a stale graph in a finding**; the reviewer will fail to
+verify it and prune a real finding for a bad citation.
 
 **The three commands:**
 
@@ -57,11 +68,22 @@ will fail to verify it and prune a real finding for a bad citation.
   dependency-direction question: a path from a domain node to an adapter node
   *is* the Dependency-Rule violation, already evidenced.
 
-**Relations available** (what you can actually ask for): `contains` and
-`method` give definitions, `calls`/`indirect_call` the call graph,
-`imports`/`imports_from` the import graph, `inherits` the type hierarchy,
-plus `references` and `uses`. Every node carries `source_file` and
-`source_location`, which is your finding's `file:line`.
+**What the graph encodes** (so you know which questions are answerable):
+`contains` and `method` are the definition edges, `calls`/`indirect_call` the
+call graph, `imports`/`imports_from` the import graph, `inherits` the type
+hierarchy, plus `references` and `uses`. These are edge *relations* stored in
+`graph.json` — they are not a filter you can hand to `graphify query`.
+`query` instead takes `--context`, a different field describing *how* a
+symbol is used (`call`, `parameter_type`, `import`, `return_type`,
+`collection`, `generic_arg`, `argument`). Only `graphify affected "<node>"
+--relation <name>` (reverse impact traversal: what breaks if `<node>`
+changes) filters by relation name. `graphify query "…" --relation inherits`
+is not a real flag and will return nothing.
+
+Most nodes carry `source_file` and `source_location`, which is your
+finding's `file:line`; a minority — document-level nodes and references to
+external/stdlib types the repo doesn't define — do not. Code nodes are
+reliable; confirm before citing anything else.
 
 ## Fallback: no graphify, no graph, or a graph you can't trust
 
