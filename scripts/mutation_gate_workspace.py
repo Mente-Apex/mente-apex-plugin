@@ -66,17 +66,38 @@ def _remove_worktree(repo_root, destination):
 
 
 @contextmanager
-def scratch_workspace(repo_root):
-    """Yield an isolated copy of `repo_root` for mutating, then clean it up."""
+def scratch_workspace(repo_root, dirty=False):
+    """Yield an isolated copy of `repo_root` for mutating, then clean it up.
+
+    dirty=False (the default) copies HEAD, via a git worktree where possible
+    -- cheap, and immune to whatever the operator's tree currently looks like.
+
+    dirty=True copies the working tree exactly as it stands instead --
+    uncommitted edits and untracked files included. `--scope working-tree`
+    resolves its file list against the real tree, and a HEAD-only workspace
+    cannot contain an uncommitted edit or an untracked file at all, by
+    construction: mutating there would silently skip exactly the files the
+    operator asked to sweep. Both modes exclude `.git` and `.venv`, and
+    neither ever touches the operator's own tree -- the copy always lands in
+    a fresh temp directory, never inside `repo_root` itself.
+    """
     repo_root = Path(repo_root)
     parent = Path(tempfile.mkdtemp(prefix="mutation-gate-"))
     destination = parent / "workspace"
+    used_worktree = False
     try:
-        used_worktree = _try_worktree(repo_root, destination)
-        if not used_worktree:
+        if dirty:
             shutil.copytree(
                 repo_root, destination, ignore=shutil.ignore_patterns(".git", ".venv")
             )
+        else:
+            used_worktree = _try_worktree(repo_root, destination)
+            if not used_worktree:
+                shutil.copytree(
+                    repo_root,
+                    destination,
+                    ignore=shutil.ignore_patterns(".git", ".venv"),
+                )
     except BaseException:
         shutil.rmtree(parent, ignore_errors=True)
         raise
