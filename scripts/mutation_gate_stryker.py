@@ -126,6 +126,95 @@ def survivors_from_report(report):
     return tuple(survivors)
 
 
+# Stryker reads the first of these it finds. Any of them means the audited repo
+# has made its own configuration decision, which the gate never overrides --
+# same rule `_configure_source_paths` follows for an existing `[tool.mutmut]`.
+_CONFIG_NAMES = (
+    "stryker.conf.json",
+    "stryker.config.json",
+    "stryker.conf.js",
+    "stryker.config.js",
+    "stryker.conf.mjs",
+    "stryker.config.mjs",
+    "stryker.conf.cjs",
+    "stryker.config.cjs",
+    ".stryker.conf.json",
+)
+
+GENERATED_CONFIG_NAME = "stryker.conf.json"
+
+# The runner plugin a repo declares is what tells the generated config which
+# `testRunner` to name. Guessing wrong produces a config Stryker rejects, so an
+# undeclared runner means "not available" with a hint, not a guess.
+_RUNNERS = {
+    "@stryker-mutator/vitest-runner": "vitest",
+    "@stryker-mutator/jest-runner": "jest",
+    "@stryker-mutator/mocha-runner": "mocha",
+    "@stryker-mutator/karma-runner": "karma",
+    "@stryker-mutator/jasmine-runner": "jasmine",
+}
+
+
+def _existing_config(repo_root):
+    """The audited repo's own Stryker config, if it has one."""
+    root = Path(repo_root)
+    for name in _CONFIG_NAMES:
+        if (root / name).is_file():
+            return root / name
+    package_json = root / "package.json"
+    if package_json.is_file():
+        try:
+            if "stryker" in json.loads(package_json.read_text(encoding="utf-8")):
+                return package_json
+        except json.JSONDecodeError, OSError:
+            return None
+    return None
+
+
+def _declared_test_runner(repo_root):
+    """The `testRunner` name implied by the repo's declared runner plugin."""
+    package_json = Path(repo_root) / "package.json"
+    if not package_json.is_file():
+        return None
+    try:
+        manifest = json.loads(package_json.read_text(encoding="utf-8"))
+    except json.JSONDecodeError, OSError:
+        return None
+    declared = {
+        **manifest.get("dependencies", {}),
+        **manifest.get("devDependencies", {}),
+    }
+    for package, runner in _RUNNERS.items():
+        if package in declared:
+            return runner
+    return None
+
+
+def _configure(repo_root, paths):
+    """Write a `stryker.conf.json` into the workspace when the repo has none.
+
+    Exactly the role `_configure_source_paths` plays for mutmut, and for the
+    same reason: `npx stryker run` in an unconfigured repo fails outright, so
+    without this `available()` could return True for a partition that could
+    never actually run and the whole JS side degraded to a run error the
+    operator had no way to act on.
+
+    Derived from the real selection rather than a fixed source tree, so the
+    `mutate` globs track the partition Stryker is invoked over run to run.
+    The workspace is a scratch copy, so this never touches the operator's tree
+    -- and a repo that configures Stryker itself is left exactly as written.
+    """
+    if _existing_config(repo_root) is not None:
+        return
+    runner = _declared_test_runner(repo_root)
+    if runner is None:
+        return
+    (Path(repo_root) / GENERATED_CONFIG_NAME).write_text(
+        json.dumps(default_config(paths, runner), indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _npx_argv():
     """The npx invocation, routed through the fnm-resolved Node.
 
@@ -153,12 +242,29 @@ class StrykerBackend:
         self._run_errors = ()
 
     def available(self, repo_root):
-        return (Path(repo_root) / "node_modules" / "@stryker-mutator").is_dir()
+        """True only when this backend can ACTUALLY run, not merely import.
+
+        Stryker being installed is not sufficient: `npx stryker run` in a repo
+        with no config fails outright. The gate can generate a config
+        (`_configure`), but only if the repo declares a runner plugin whose
+        `testRunner` name it recognises -- guessing one produces a config
+        Stryker rejects. So availability is "installed AND (already configured
+        OR configurable)". Anything less reported a partition as runnable and
+        then degraded it to a run error the operator could not act on.
+        """
+        if not (Path(repo_root) / "node_modules" / "@stryker-mutator").is_dir():
+            return False
+        return (
+            _existing_config(repo_root) is not None
+            or _declared_test_runner(repo_root) is not None
+        )
 
     def install_hint(self, repo_root):
         return (
-            "npm install -D @stryker-mutator/core @stryker-mutator/vitest-runner"
-            " (under the fnm-selected Node)"
+            "npm install -D @stryker-mutator/core plus a runner plugin "
+            "(@stryker-mutator/vitest-runner or -jest-runner), under the "
+            "fnm-selected Node -- or add a stryker.conf.json naming your own "
+            'testRunner with "coverageAnalysis": "perTest"'
         )
 
     def run_errors(self, repo_root):
@@ -185,6 +291,7 @@ class StrykerBackend:
         misunderstanding its own data, not a missing tool, and it must fail
         loudly.
         """
+        _configure(repo_root, paths)
         run_result = subprocess.run(
             _npx_argv() + ["stryker", "run"],
             cwd=repo_root,

@@ -150,6 +150,14 @@ def test_available_sees_an_installed_stryker_through_a_real_default_scope_worksp
     )
     subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
     (tmp_path / "money.js").write_text("export const x = 1;\n", encoding="utf-8")
+    # Tracked, so it reaches the worktree: availability now also requires the
+    # repo to be configurable (a declared runner plugin), not merely to have
+    # Stryker installed -- see TestAvailabilityMeansItCanActuallyRun. The
+    # untracked `node_modules` below is still what this test is really about.
+    (tmp_path / "package.json").write_text(
+        json.dumps({"devDependencies": {"@stryker-mutator/vitest-runner": "^8"}}),
+        encoding="utf-8",
+    )
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
     (tmp_path / "node_modules" / "@stryker-mutator").mkdir(parents=True)
@@ -189,3 +197,93 @@ def test_a_missing_report_after_a_run_is_a_run_error_not_silent_success(
 
 def test_run_errors_defaults_to_empty_before_survivors_is_ever_called():
     assert StrykerBackend().run_errors("/irrelevant/repo/root") == ()
+
+
+def _installed_stryker(root, runner="@stryker-mutator/vitest-runner"):
+    (root / "node_modules" / "@stryker-mutator").mkdir(parents=True)
+    (root / "package.json").write_text(
+        json.dumps({"devDependencies": {"@stryker-mutator/core": "^8", runner: "^8"}}),
+        encoding="utf-8",
+    )
+
+
+def _stryker_run_that_fails(monkeypatch):
+    monkeypatch.setattr(
+        "mutation_gate_stryker.subprocess.run",
+        lambda argv, cwd, capture_output, text: subprocess.CompletedProcess(
+            argv, 1, stdout="", stderr=""
+        ),
+    )
+
+
+class TestAvailabilityMeansItCanActuallyRun:
+    """`default_config` had no caller outside tests: nothing ever generated a
+    `stryker.conf.json`. `available()` checked only for the `@stryker-mutator`
+    directory, so a repo with Stryker INSTALLED BUT UNCONFIGURED passed the
+    check, `npx stryker run` failed, and the whole JS partition degraded to a
+    run error the operator could do nothing about -- `install_hint` never even
+    mentioned the config.
+    """
+
+    def test_an_unconfigured_repo_gets_a_config_generated_from_its_selection(
+        self, tmp_path, monkeypatch
+    ):
+        _installed_stryker(tmp_path)
+        _stryker_run_that_fails(monkeypatch)
+
+        with pytest.warns(UserWarning):
+            StrykerBackend().survivors(tmp_path, ["src/cart.ts", "src/money.ts"])
+
+        config = json.loads(
+            (tmp_path / "stryker.conf.json").read_text(encoding="utf-8")
+        )
+        assert config["mutate"] == ["src/cart.ts", "src/money.ts"]
+        assert config["coverageAnalysis"] == "perTest"
+        assert config["testRunner"] == "vitest"
+
+    def test_a_repo_that_configures_stryker_itself_is_left_alone(
+        self, tmp_path, monkeypatch
+    ):
+        """Mirrors `_configure_source_paths`: a real configuration decision by
+        the operator beats a derived one.
+        """
+        _installed_stryker(tmp_path)
+        theirs = json.dumps({"testRunner": "jest", "mutate": ["lib/**/*.js"]})
+        (tmp_path / "stryker.conf.json").write_text(theirs, encoding="utf-8")
+        _stryker_run_that_fails(monkeypatch)
+
+        with pytest.warns(UserWarning):
+            StrykerBackend().survivors(tmp_path, ["src/cart.ts"])
+
+        assert (tmp_path / "stryker.conf.json").read_text(encoding="utf-8") == theirs
+
+    def test_installed_but_with_no_runner_plugin_is_not_available(self, tmp_path):
+        (tmp_path / "node_modules" / "@stryker-mutator").mkdir(parents=True)
+        (tmp_path / "package.json").write_text(
+            json.dumps({"devDependencies": {"@stryker-mutator/core": "^8"}}),
+            encoding="utf-8",
+        )
+
+        assert StrykerBackend().available(tmp_path) is False
+
+    def test_a_repo_with_its_own_config_is_available_without_a_known_runner(
+        self, tmp_path
+    ):
+        """The operator already declared how Stryker runs; the gate does not
+        second-guess a runner it does not recognise.
+        """
+        (tmp_path / "node_modules" / "@stryker-mutator").mkdir(parents=True)
+        (tmp_path / "stryker.conf.json").write_text("{}", encoding="utf-8")
+
+        assert StrykerBackend().available(tmp_path) is True
+
+    def test_a_jest_runner_is_detected_as_well_as_vitest(self, tmp_path):
+        _installed_stryker(tmp_path, runner="@stryker-mutator/jest-runner")
+
+        assert StrykerBackend().available(tmp_path) is True
+
+    def test_the_install_hint_names_the_config_not_only_the_packages(self, tmp_path):
+        hint = StrykerBackend().install_hint(tmp_path)
+
+        assert "runner" in hint
+        assert "stryker.conf.json" in hint
