@@ -1,0 +1,3 @@
+    money.x_discount__mutmut_1: survived
+    money.x_discount__mutmut_2: survived
+    money.x_discount__mutmut_3: killed

@@ -29,6 +29,7 @@ class Survivor:
     associated_tests: tuple[str, ...]
     backend: str
     granularity: str
+    mutant_diff: str = ""
     status: str = "survived"
 
 
