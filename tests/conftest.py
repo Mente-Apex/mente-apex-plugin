@@ -1,5 +1,6 @@
 """Shared fixtures. Isolates the engine from the real ~/.claude."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hooks"))
 
 import config_sync  # noqa: E402
+import mutation_gate_prose  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -66,3 +68,48 @@ def claude_home(tmp_path, monkeypatch):
         claude_dir / "plugins" / "installed_plugins.json",
     )
     return claude_dir
+
+
+@pytest.fixture
+def covered_slice(request):
+    """The artifact slice this test declared via @pytest.mark.covers.
+
+    The marker is also what the test READS, so the declaration and the
+    assertion cannot drift apart — a guard can no longer window a region other
+    than the one it named, which is the bug class the mutation gate exists to
+    stop from recurring.
+    """
+    marker = request.node.get_closest_marker("covers")
+    assert marker is not None, "this fixture requires an @pytest.mark.covers marker"
+    artifact = Path(__file__).resolve().parents[1] / marker.args[0]
+    text = artifact.read_text(encoding="utf-8")
+    section = marker.kwargs.get("section")
+    if section is None:
+        return text
+    return mutation_gate_prose.extract_section(text, section)
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--covers-manifest",
+        default=None,
+        help="Write collected @pytest.mark.covers declarations as JSON and exit.",
+    )
+
+
+def pytest_collection_finish(session):
+    """Emit (node_id, artifact, section) for every guard that declared one."""
+    destination = session.config.getoption("--covers-manifest")
+    if destination is None:
+        return
+    declarations = []
+    for item in session.items:
+        marker = item.get_closest_marker("covers")
+        if marker is None:
+            continue
+        declarations.append([item.nodeid, marker.args[0], marker.kwargs.get("section")])
+    payload = json.dumps(declarations)
+    if destination == "-":
+        print(payload)
+    else:
+        Path(destination).write_text(payload, encoding="utf-8")

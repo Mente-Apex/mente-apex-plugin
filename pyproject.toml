@@ -23,6 +23,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "covers(artifact, section): the artifact slice this prose guard verifies; the mutation gate mutates exactly this slice",
+]
 
 # black owns formatting; ruff owns linting. The two overlap on line length, so E501
 # is disabled below and this is the single place the limit is declared.
