@@ -339,3 +339,32 @@ def test_a_completed_run_has_no_run_errors(tmp_path, monkeypatch):
 
 def test_run_errors_defaults_to_empty_before_survivors_is_ever_called(tmp_path):
     assert MutmutBackend().run_errors(tmp_path) == ()
+
+
+def test_a_crashed_collection_run_error_preserves_real_newlines_not_repr(
+    tmp_path, monkeypatch
+):
+    """The raw run_errors message must carry the tool's real newlines, not a
+    Python repr() of them. repr() turns every newline into a literal
+    backslash-n, which collapses a multi-KB traceback plus thousands of
+    `not checked` lines into a single unreadable line downstream in
+    render_markdown. Full, untruncated detail belongs on this raw channel --
+    render_markdown is responsible for bounding it for humans, not this
+    backend."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "mutation_gate_mutmut.subprocess.run",
+        _fake_subprocess_run(run_stderr="line one\nline two\nline three"),
+    )
+    monkeypatch.setattr("mutation_gate_mutmut._mutmut_executable", lambda: "mutmut")
+
+    backend = MutmutBackend()
+    with pytest.warns(UserWarning):
+        backend.survivors(tmp_path, ["scripts/money.py"])
+
+    run_errors = backend.run_errors(tmp_path)
+    assert len(run_errors) == 1
+    assert "\\n" not in run_errors[0]
+    assert "line one\nline two\nline three" in run_errors[0]
