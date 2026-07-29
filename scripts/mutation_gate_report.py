@@ -21,6 +21,14 @@ perfectly fine — an image, a lockfile), `unclaimed` is a file that landed in a
 known stack partition for which no backend was registered this run (a
 misconfiguration the operator can fix by registering a backend). Folding them
 into one label would hide the second behind the first.
+
+`run_errors` gets its own section too, rendered like `baseline_error`: one
+named fact per backend whose tool run did not complete (mutmut's stats
+collection crashing before a single mutant executed is the reproduced case),
+not one row per mutant that failure left unchecked. Folding a crashed run's
+fallout into `Inconclusive` line-by-line would turn one system failure into a
+flood of near-duplicate rows -- worse for an operator than the silence it
+replaces, and not the "signal" this report exists to provide.
 """
 
 from mutation_gate import is_survivor
@@ -56,6 +64,7 @@ def as_report_payload(result, scope):
         "unclaimed": list(result.unclaimed),
         "baseline_failures": list(result.baseline_failures),
         "baseline_error": result.baseline_error,
+        "run_errors": list(result.run_errors),
     }
 
 
@@ -69,6 +78,16 @@ def render_markdown(result, scope):
             "finished, so the survived/unreliable split below is unverified, "
             f"not clean: {result.baseline_error}"
         )
+        lines.append("")
+
+    if result.run_errors:
+        lines.append(
+            "**Run errors** — a backend's tool run did not complete, so no "
+            "per-mutant result from it below can be trusted:"
+        )
+        lines.append("")
+        for message in result.run_errors:
+            lines.append(f"- {message}")
         lines.append("")
 
     survived = [s for s in result.survivors if is_survivor(s)]

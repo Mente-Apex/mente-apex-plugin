@@ -149,6 +149,9 @@ class StrykerBackend:
     stack = "js"
     tool = "stryker"
 
+    def __init__(self):
+        self._run_errors = ()
+
     def available(self, repo_root):
         return (Path(repo_root) / "node_modules" / "@stryker-mutator").is_dir()
 
@@ -158,18 +161,29 @@ class StrykerBackend:
             " (under the fnm-selected Node)"
         )
 
+    def run_errors(self, repo_root):
+        """Run-level facts from the most recent `survivors()` call.
+
+        Empty unless that call's `stryker run` never produced a report --
+        see `survivors()`. The mutmut backend's equivalent crash (collection
+        never writing its stats file) is held to the same standard: named
+        once here rather than silently read as "no survivors".
+        """
+        return self._run_errors
+
     def survivors(self, repo_root, paths):
         """Run Stryker over the workspace and parse its JSON report.
 
         A missing report after `stryker run` is not silently folded into "no
         survivors" -- that would be indistinguishable from a clean run to
         anyone reading the rendered report. The run's exit status and stderr
-        are surfaced via a warning before falling back to an empty result, so
-        the operator sees the tool actually failed rather than trusting a
-        false all-clear. `survivors_from_report` itself still raises on an
-        unrecognised Stryker status rather than being caught here -- that is
-        the gate misunderstanding its own data, not a missing tool, and it
-        must fail loudly.
+        are surfaced via `run_errors()` (and still via a warning, for anyone
+        capturing Python warnings) rather than being swallowed into an empty
+        result that looks identical to a genuinely clean run.
+        `survivors_from_report` itself still raises on an unrecognised
+        Stryker status rather than being caught here -- that is the gate
+        misunderstanding its own data, not a missing tool, and it must fail
+        loudly.
         """
         run_result = subprocess.run(
             _npx_argv() + ["stryker", "run"],
@@ -179,15 +193,15 @@ class StrykerBackend:
         )
         report_path = Path(repo_root) / "reports" / "mutation" / "mutation.json"
         if not report_path.is_file():
-            warnings.warn(
-                f"stryker produced no report at {report_path} after `stryker "
-                f"run` exited {run_result.returncode} in {repo_root}; "
-                "treating this partition as having no survivors, but this "
-                f"may be masking a real failure -- stderr: "
-                f"{run_result.stderr.strip()!r}",
-                stacklevel=2,
+            self._run_errors = (
+                f"stryker run did not complete in {repo_root} -- it produced "
+                f"no report at {report_path} after `stryker run` exited "
+                f"{run_result.returncode}, so no result from this partition "
+                f"can be trusted (stderr: {run_result.stderr.strip()!r})",
             )
+            warnings.warn(self._run_errors[0], stacklevel=2)
             return ()
+        self._run_errors = ()
         return survivors_from_report(
             json.loads(report_path.read_text(encoding="utf-8"))
         )

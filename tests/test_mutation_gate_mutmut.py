@@ -6,6 +6,7 @@ possible failure for a tool whose whole job is to report survivors.
 """
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -258,3 +259,83 @@ def test_mutmut_executable_is_none_when_neither_resolves(tmp_path, monkeypatch):
 
     assert _mutmut_executable() is None
     assert MutmutBackend().available("/irrelevant/repo/root") is False
+
+
+def _fake_subprocess_run(run_stdout="", run_returncode=1, run_stderr="crashed"):
+    def fake_run(argv, cwd, capture_output, text):
+        if argv[-1] == "run":
+            return subprocess.CompletedProcess(
+                argv, run_returncode, stdout="", stderr=run_stderr
+            )
+        return subprocess.CompletedProcess(argv, 0, stdout=run_stdout, stderr="")
+
+    return fake_run
+
+
+def test_a_crashed_collection_reports_one_rollup_not_a_flood_of_rows(
+    tmp_path, monkeypatch
+):
+    """Reproduces the reviewer's follow-up finding: when
+    `mutants/mutmut-stats.json` was never written -- collection crashed
+    before a single mutant ran -- `mutmut results` can still print a
+    `not checked` line per mutant it would have run. Defect B's fix, taken
+    alone, would turn that ONE system-level failure into a Survivor per
+    line (reproduced live: 4298 of them). It must instead surface as a
+    single run-level fact, and `survivors()` must not emit any of those rows.
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n', encoding="utf-8"
+    )
+    not_checked_output = "\n".join(
+        f"    money.x_discount__mutmut_{i}: not checked" for i in range(1, 5)
+    )
+    monkeypatch.setattr(
+        "mutation_gate_mutmut.subprocess.run",
+        _fake_subprocess_run(run_stdout=not_checked_output + "\n"),
+    )
+    monkeypatch.setattr("mutation_gate_mutmut._mutmut_executable", lambda: "mutmut")
+
+    backend = MutmutBackend()
+    with pytest.warns(UserWarning):
+        survivors = backend.survivors(tmp_path, ["scripts/money.py"])
+
+    assert survivors == ()
+    run_errors = backend.run_errors(tmp_path)
+    assert len(run_errors) == 1
+    assert "did not complete" in run_errors[0]
+    assert "4" in run_errors[0]
+
+
+def test_a_completed_run_has_no_run_errors(tmp_path, monkeypatch):
+    """The rollup is specific to the stats-file-missing crash signal -- a run
+    that completed (stats file written) must not report a run error, and its
+    real survived/inconclusive mutants keep flowing through individually."""
+    mutants_dir = tmp_path / "mutants"
+    mutants_dir.mkdir()
+    (mutants_dir / "mutmut-stats.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr("mutation_gate_mutmut._mutmut_executable", lambda: "mutmut")
+    monkeypatch.setattr(
+        "mutation_gate_mutmut.subprocess.run",
+        lambda argv, cwd, capture_output, text: subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=(
+                "    money.x_discount__mutmut_1: survived\n"
+                "    money.x_discount__mutmut_2: timeout\n"
+            ),
+            stderr="",
+        ),
+    )
+
+    backend = MutmutBackend()
+    survivors = backend.survivors(tmp_path, ["scripts/money.py"])
+
+    assert backend.run_errors(tmp_path) == ()
+    assert [s.status for s in survivors] == ["survived", "timeout"]
+
+
+def test_run_errors_defaults_to_empty_before_survivors_is_ever_called(tmp_path):
+    assert MutmutBackend().run_errors(tmp_path) == ()

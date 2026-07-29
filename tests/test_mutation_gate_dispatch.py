@@ -13,11 +13,12 @@ from mutation_gate import GateResult, Survivor, run_gate
 class FakeBackend:
     """Stands in for mutmut or Stryker; records what it was asked to mutate."""
 
-    def __init__(self, stack, tool, available=True, survivors=()):
+    def __init__(self, stack, tool, available=True, survivors=(), run_errors=()):
         self.stack = stack
         self.tool = tool
         self._available = available
         self._survivors = survivors
+        self._run_errors = run_errors
         self.called_with = None
 
     def available(self, repo_root):
@@ -29,6 +30,9 @@ class FakeBackend:
     def survivors(self, repo_root, paths):
         self.called_with = tuple(paths)
         return self._survivors
+
+    def run_errors(self, repo_root):
+        return self._run_errors
 
 
 def survivor(backend):
@@ -108,6 +112,48 @@ def test_two_backends_registered_for_the_same_stack_are_rejected(tmp_path):
 
     with pytest.raises(ValueError, match="python"):
         run_gate(tmp_path, ["api/money.py"], [first, second])
+
+
+def test_a_backends_run_error_is_carried_into_the_result_not_dropped(tmp_path):
+    """A backend whose tool run did not complete (e.g. mutmut's stats
+    collection crashing before any mutant executed) reports that as a
+    run-level fact via `run_errors()`, distinct from its `survivors()`
+    return -- `run_gate` must merge it into `GateResult.run_errors` rather
+    than silently discarding it."""
+    python = FakeBackend(
+        "python",
+        "mutmut",
+        survivors=(),
+        run_errors=("mutmut run did not complete; 4298 mutants not checked",),
+    )
+
+    result = run_gate(tmp_path, ["api/money.py"], [python])
+
+    assert result.run_errors == (
+        "mutmut run did not complete; 4298 mutants not checked",
+    )
+
+
+def test_a_backend_without_run_errors_leaves_the_result_field_empty(tmp_path):
+    """A backend that has no `run_errors` method at all (an older or a test
+    double) must not break dispatch -- the field simply stays empty."""
+
+    class MinimalBackend:
+        stack = "python"
+        tool = "mutmut"
+
+        def available(self, repo_root):
+            return True
+
+        def install_hint(self, repo_root):
+            return "install mutmut"
+
+        def survivors(self, repo_root, paths):
+            return ()
+
+    result = run_gate(tmp_path, ["api/money.py"], [MinimalBackend()])
+
+    assert result.run_errors == ()
 
 
 def test_a_backend_declaring_a_stack_partition_never_produces_is_rejected(

@@ -23,6 +23,22 @@ clean success case; every other recognised status becomes a Survivor whose
 Stryker's non-Survived statuses. A status this module has never seen raises,
 matching `mutation_gate_stryker.py`'s ruling: an unrecognised status means the
 parser misunderstands its own data source, not a missing tool.
+
+Status handling, fix round 3: round 2, taken alone, turned a *different*
+existing failure mode into a flood. When `mutants/mutmut-stats.json` was
+never written -- collection crashed before a single mutant executed --
+`mutmut results` can still print a `not checked` line per mutant it would
+have run. That is ONE fact about the run (it never completed), not N facts
+about N mutants, but round 2's per-line parsing reported it as N Survivors
+(reproduced live: 4298 of them, all `not checked`, on a single crashed run).
+`MutmutBackend.survivors()` now treats the missing stats file as what it
+already was known to mean (see its own docstring) and reports it once via
+`run_errors()` instead of handing the per-mutant lines to
+`survivors_from_output` at all. `survivors_from_output` itself is unchanged:
+a completed run's genuine per-mutant `not checked`/`timeout`/etc. results (a
+real, if rare, outcome even when collection succeeds) still flow through
+individually -- the stats file's presence is what tells the two cases apart,
+exactly as it already did before this fix existed.
 """
 
 import json
@@ -228,11 +244,24 @@ class MutmutBackend:
     stack = "python"
     tool = "mutmut"
 
+    def __init__(self):
+        self._run_errors = ()
+
     def available(self, repo_root):
         return _mutmut_executable() is not None
 
     def install_hint(self, repo_root):
         return "uv add --dev mutmut"
+
+    def run_errors(self, repo_root):
+        """Run-level facts from the most recent `survivors()` call.
+
+        Empty unless that call's collection crashed before writing
+        `mutants/mutmut-stats.json` -- see `survivors()`. Distinct from a
+        completed run's genuine per-mutant inconclusive results, which stay
+        in `survivors()`'s return value as ordinary `Survivor`s instead.
+        """
+        return self._run_errors
 
     def survivors(self, repo_root, paths):
         """Run mutmut over `paths` in the (already-isolated) workspace.
@@ -249,12 +278,15 @@ class MutmutBackend:
         mutant is ever executed -- so its absence is unconditionally a sign
         the run never got past collection, whether or not `mutmut results`
         still printed something (observed in practice: a collection crash can
-        still emit a `not_checked` line per mutant, which is not a result and
-        must not be mistaken for a clean zero-survivor run). Checking only
-        "no results parsed" would miss exactly that case, so the stats file's
-        existence is the one signal trusted here; its absence surfaces the
-        run's exit status and stderr via a warning rather than being
-        swallowed as silence.
+        still emit a `not checked` line per mutant it would have run). That is
+        one fact about the run, not one fact per mutant it never got to check,
+        so this method does not hand those lines to `survivors_from_output` at
+        all in that case -- it reports the crash once via `self._run_errors`
+        (read back through `run_errors()`) and returns no survivors from this
+        call. When the stats file IS present, the run completed and its real
+        per-mutant statuses (including any genuine `not checked` outcome that
+        can still occur even in a completed run) flow through
+        `survivors_from_output` exactly as fix round 2 established.
         """
         _configure_source_paths(repo_root, paths)
         executable = _mutmut_executable()
@@ -266,21 +298,22 @@ class MutmutBackend:
         )
         stats_path = Path(repo_root) / "mutants" / "mutmut-stats.json"
         if not stats_path.is_file():
-            warnings.warn(
-                f"mutmut never wrote {stats_path} in {repo_root} -- its "
-                "baseline stats collection did not complete, so any results "
-                "below are incomplete, not a clean zero-survivor run "
+            not_checked_count = len(RESULT_LINE.findall(results_result.stdout))
+            self._run_errors = (
+                f"mutmut run did not complete in {repo_root} -- its baseline "
+                "stats collection never finished, so no per-mutant result "
+                f"below is real ({not_checked_count} mutant"
+                f"{'' if not_checked_count == 1 else 's'} not checked as a "
+                "consequence) "
                 f"(`mutmut run` exit {run_result.returncode}: "
                 f"{run_result.stderr.strip() or run_result.stdout.strip()!r}; "
                 f"`mutmut results` exit {results_result.returncode}: "
                 f"{results_result.stdout.strip()!r})",
-                stacklevel=2,
             )
-        stats = (
-            json.loads(stats_path.read_text(encoding="utf-8"))
-            if stats_path.is_file()
-            else {}
-        )
+            warnings.warn(self._run_errors[0], stacklevel=2)
+            return ()
+        self._run_errors = ()
+        stats = json.loads(stats_path.read_text(encoding="utf-8"))
         return survivors_from_output(
             results_result.stdout, stats, diffs={}, source_paths=paths
         )
