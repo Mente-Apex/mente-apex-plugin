@@ -70,8 +70,10 @@ Turn the JSON it prints into findings:
 - A prose guard with no `@pytest.mark.covers` marker → **Minor**,
   "unverifiable by construction" — the gate cannot check a guard that does not
   declare what it guards.
-- An `inconclusive` entry (timeout, or a test that failed on the clean baseline)
-  → report it as inconclusive with the test named. Never let it read as a pass.
+- An `inconclusive` entry (timeout, a test that failed on the clean baseline, or
+  a `no_op_mutant` — an operator that left the declared slice byte-identical, so
+  no mutant was ever applied) → report it as inconclusive with the test named.
+  Never let it read as a pass, and never as a survivor either.
 - An `unavailable` entry → state the stack and the declared-install command the
   payload carries. Do not install anything; the audit continues without it.
 - An `unclaimed` entry (a file in a known partition for which no backend is
