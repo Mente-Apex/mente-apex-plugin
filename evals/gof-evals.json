@@ -5,9 +5,9 @@
       "id": 1,
       "skill": "gof",
       "prompt": "/gof — review src/config/settings.py. It defines:\n\nclass Config:\n    _instance = None\n    def __new__(cls):\n        if cls._instance is None:\n            cls._instance = super().__new__(cls)\n        return cls._instance\n\nWhat design patterns are in this code and how good are they?",
-      "expected_output": "Runs Phase 0 inventory + test baseline, dispatches analyzer (detect+grade) then reviewer. Detects the Singleton in Config and grades it honestly — a non-thread-safe __new__ singleton with no lazy init or reset lands around 'C — Structural issues', not an A. Writes gof-reports/GOF-ANALYSIS-<date>.md plus the HTML preview, and surfaces the Singleton↔DIP tension from the overlap map rather than blindly endorsing the pattern.",
+      "expected_output": "Runs Phase 0 inventory + test baseline, dispatches analyzer (detect+grade) then reviewer. Detects the Singleton in Config and grades it honestly — a non-thread-safe __new__ singleton with no lazy init or reset lands around 'C — Structural issues', not an A. Writes docs/reports/gof/GOF-REPORT-<YYYY-MM-DD>.md plus the HTML preview, and surfaces the Singleton↔DIP tension from the overlap map rather than blindly endorsing the pattern.",
       "assertions": [
-        "Creates gof-reports/ and git-excludes it via .git/info/exclude",
+        "Creates docs/reports/gof/ and git-excludes it via .git/info/exclude",
         "Detects the Singleton in Config and grades it with the full label (e.g. 'C — Structural issues'), not just a bare letter",
         "The grade reflects the thread-safety gap (unguarded __new__ race) — it is NOT graded 'A — Clean implementation'",
         "Surfaces the Singleton⇄DIP tension per docs/solid-gof-overlap.md and reconciles it with the human rather than auto-recommending the pattern",

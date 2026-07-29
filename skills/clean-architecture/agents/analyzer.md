@@ -16,6 +16,10 @@ and flag borderline items honestly.
   `<language>.md` per language (ships `python.md`, `typescript.md`) — how to detect
   a graph tool and compute the graph; follow the degrade path if no tool is
   reachable, and record which mode ran.
+- **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
+  whether the target has a usable `graphify-out/graph.json`. "None" is an
+  ordinary answer — work the fallback ladder and record one Coverage line,
+  per [docs/structural-queries.md](../../../docs/structural-queries.md).
 - Output path: `docs/reports/clean-architecture/draft-findings.md`.
 
 ## Process

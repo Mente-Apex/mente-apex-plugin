@@ -20,6 +20,10 @@ report template, and output path.
 - **Rubric path** — this lens's shared rubric (read it first)
 - The language reference if applicable, and this lens's report-template
   path, e.g. `references/report-template.md`
+- **The structural-graph verdict** from Phase 0: whether the target has a
+  usable `graphify-out/graph.json`. "None" is an ordinary answer — work the
+  fallback ladder and record one Coverage line, per
+  [docs/structural-queries.md](../structural-queries.md).
 - **Report output path** — where to write the final report, e.g.
   `docs/reports/<lens>/<LENS>-REPORT-<YYYY-MM-DD>.md`
 
@@ -45,8 +49,9 @@ report template, and output path.
    with queries rather than greps (import direction and implementor sets are
    both graph questions; see
    [docs/structural-queries.md](../structural-queries.md), including what to
-   do when there is no graph, which changes nothing but your Coverage note). The sweep is *yours* — don't delegate it to another
-   agent — and it terminates by **writing**: its outcome lands in Reviewer
+   do when there is no graph, which changes nothing but your Coverage note).
+   The sweep is *yours* — don't delegate it to another agent — and it
+   terminates by **writing**: its outcome lands in Reviewer
    notes even when it adds nothing ("swept the remaining modules; nothing
    added"). An empty result is a written result; nothing downstream should
    ever have to infer whether the sweep happened.

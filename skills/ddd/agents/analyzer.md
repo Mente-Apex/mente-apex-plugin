@@ -15,6 +15,10 @@ than self-censoring.
 - `references/ddd-core.md` — the shared rubric. Read it first; your smells and
   tiers come from it, not your own taste.
 - `references/strategic.md` if the code spans more than one bounded context.
+- **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
+  whether the target has a usable `graphify-out/graph.json`. "None" is an
+  ordinary answer — work the fallback ladder and record one Coverage line,
+  per [docs/structural-queries.md](../../../docs/structural-queries.md).
 - Output path: `docs/reports/ddd/draft-findings.md`.
 
 ## What a DDD violation looks like (signatures)
