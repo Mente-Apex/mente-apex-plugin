@@ -15,9 +15,11 @@ from typing import Protocol, runtime_checkable
 
 from mutation_gate_workspace import scratch_workspace
 
-PYTHON_SUFFIXES = (".py",)
-JS_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
-PROSE_SUFFIXES = (".md",)
+STACK_SUFFIXES = {
+    "python": (".py",),
+    "js": (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"),
+    "prose": (".md",),
+}
 
 
 @dataclass(frozen=True)
@@ -45,24 +47,26 @@ def partition(paths):
 
     Dispatch is per partition, not per test: mutmut and Stryker are invoked
     over a file set, and a per-test invocation loop would be ruinously slow.
+
+    `STACK_SUFFIXES` is the single extension point: a new stack is one entry
+    in that table, not a new branch here.
     """
-    partitions = {"python": [], "js": [], "prose": [], "unresolved": []}
+    partitions = {stack: [] for stack in STACK_SUFFIXES}
+    partitions["unresolved"] = []
     for path in paths:
-        if path.endswith(PYTHON_SUFFIXES):
-            partitions["python"].append(path)
-        elif path.endswith(JS_SUFFIXES):
-            partitions["js"].append(path)
-        elif path.endswith(PROSE_SUFFIXES):
-            partitions["prose"].append(path)
+        for stack, suffixes in STACK_SUFFIXES.items():
+            if path.endswith(suffixes):
+                partitions[stack].append(path)
+                break
         else:
             partitions["unresolved"].append(path)
-    return {stack: tuple(paths) for stack, paths in partitions.items()}
+    return {stack: tuple(found) for stack, found in partitions.items()}
 
 
 # The stacks a backend may legitimately claim. "unresolved" is not one of
 # them: it is partition()'s catch-all for suffixes no stack owns, never a
 # stack a backend registers against.
-REGISTRABLE_STACKS = ("python", "js", "prose")
+REGISTRABLE_STACKS = tuple(STACK_SUFFIXES)
 
 
 @runtime_checkable
