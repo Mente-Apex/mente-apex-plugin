@@ -40,12 +40,19 @@ and Stryker each manage their own workspace; the same guarantee is asserted by t
 
 ### Backend dispatch
 
-The gate picks by what the selected tests actually exercise:
+The gate picks **per selected test**, by what that test actually exercises:
 
 - **Python source** → `mutmut`, scoped to the changed files.
 - **JS/TS source** → Stryker, scoped to the changed files, under fnm-selected Node.
 - **Prose artifact** → the built-in prose backend below.
 - **Nothing resolvable** → reported as *not verifiable*, never silently passed.
+
+Dispatch is per-test, not per-repo, because **mixed repos are normal** — a Python API with a
+TypeScript frontend is the common shape, and a single audit of it runs `mutmut` over the
+Python tests and Stryker over the JS ones in the same pass. Each backend reports in the same
+survivor shape; the gate merges the results into one list and never asks the operator to
+reconcile two tools' output. A repo with no JS is simply a run where the Stryker backend
+selects nothing.
 
 The dispatch is a strategy seam, not an if-chain — a fourth backend must be additive.
 
@@ -140,15 +147,20 @@ Gate B (coverage-non-regression for deletions) is untouched by this work.
 
 ## Reach into foreign repos
 
-The script ships with the plugin, so it always exists. Everything else degrades:
+The script ships with the plugin, so it always exists. Everything else is detected and
+degrades, per the provisioning contract above:
 
-- Tool missing → the gate reports *not available* for that language and the audit continues.
-  It never fails the run for a tool the user has not installed, and it never installs one
-  behind their back.
-- No markers → the code path is unaffected; prose guards report as unverifiable.
+- **Python-only repo** → mutmut backend; Stryker selects nothing.
+- **JS/TS-only repo** → Stryker backend; mutmut selects nothing.
+- **Mixed repo** → both, in one pass, merged into one survivor list.
+- **Tool missing for a stack that is present** → *not available for `<language>`*, with the
+  declared-install command offered as an opt-in. The audit continues.
+- **No markers** → the code path is entirely unaffected; prose guards, if any, report as
+  unverifiable.
 
-The lens does not edit the audited repo's test configuration. In this repo, marker adoption is
-incremental: undeclared guards are a Minor finding, not a backfill.
+The lens changes the audited repo's test configuration only on explicit opt-in, and only the
+provisioning it offered. In this repo, marker adoption is incremental: undeclared guards are a
+Minor finding, not a backfill.
 
 ## Testing the harness
 
@@ -158,19 +170,45 @@ known-bad specimens, which is the honest way to test a mutation tool. Self-appli
 Same pair for the prose backend over a fixture Markdown file.
 
 Backend dispatch is tested against fakes so the suite does not depend on `mutmut` or Stryker
-being installed. Restore-on-failure gets its own test: raise mid-run, assert the artifact is
-byte-identical afterwards.
+being installed — including the cases that matter most for generality: a Python-only tree, a
+JS-only tree, a **mixed tree** (asserting both backends select and the results merge into one
+list), and a stack present with its tool absent (asserting *not available* plus the right
+install command, and that the audit continues). Restore-on-failure gets its own test: raise
+mid-run, assert the artifact is byte-identical afterwards.
 
-## Dependencies
+## Toolchain provisioning — in the audited repo
 
-- `uv add --dev mutmut` — declared, never ambient, never bare `pip install`.
-- **Risk to settle in task 1:** this repo is `requires-python = ">=3.14"` and mutmut's support
-  there is unverified. If it does not run here, the Python backend still ships (it is the
-  primary path for the repos the lens audits) and this repo's own gate leans on the prose
-  backend. Confirm before building on it.
-- Stryker is **not** added as a dependency: there is no JS/TS here. The skill detects it in the
-  audited repo and instructs; wherever it runs, it runs under fnm-selected Node, never system
-  Node.
+The tools are dependencies **of the codebase being audited**, not of this plugin. The plugin
+ships no mutation engine; it detects what the audited repo needs and helps that repo declare
+it. Same contract per language:
+
+| Stack | Detected by | Declared with | Runner |
+|---|---|---|---|
+| Python | `pyproject.toml` / a pytest suite | `uv add --dev mutmut` | `uv run` |
+| JS/TS | `package.json` / a Vitest or Jest suite | `npm install -D @stryker-mutator/core` plus the runner plugin (`@stryker-mutator/vitest-runner` or `-jest-runner`) | `npx`, under fnm-selected Node |
+
+Rules that hold for both, and for any backend added later:
+
+- **Declared, never ambient.** No bare `pip install`, no global `npm -g`, no hand-activated
+  `.venv`, no system Node. A tool the environment needs but does not declare is a bug — a
+  rebuild silently drops it.
+- **Never installed behind the operator's back.** Missing tool → the gate reports *not
+  available for `<language>`* and offers the exact declared-install command for that repo, as
+  an opt-in. The audit continues without it; a missing tool degrades the run, it never fails
+  it.
+- **Config generation is part of provisioning.** `mutmut` reads `pyproject.toml` and largely
+  works from an existing pytest setup; Stryker needs a `stryker.conf.json` naming the test
+  runner and the mutate glob, and most repos have none. A repo adopting the JS backend gets a
+  minimal generated config alongside the install command — otherwise "install Stryker" is
+  advice that does not produce a working run.
+- **A mixed repo provisions both**, independently. Python present and JS absent is not a
+  failure state; neither is the reverse.
+
+For this plugin's own suite: `uv add --dev mutmut`, no Stryker (there is no JS/TS here). One
+open risk to settle in task 1 — this repo is `requires-python = ">=3.14"` and mutmut's support
+there is unverified. If it does not run here, that constrains only *this* repo's self-audit,
+not the design: the Python backend still ships for the repos the lens audits, and the detection
+path already handles "tool unavailable" as a first-class outcome.
 
 ## Verification gates
 
