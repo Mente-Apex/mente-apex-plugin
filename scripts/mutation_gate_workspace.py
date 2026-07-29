@@ -49,6 +49,34 @@ def _try_worktree(repo_root, destination):
     )
 
 
+def _link_node_modules(repo_root, destination):
+    """Make an already-installed JS toolchain reachable from a worktree copy.
+
+    `node_modules` is virtually always gitignored, so `git worktree add`
+    (tracked files only) never carries it into the isolated copy -- unlike
+    the copytree fallback (and `dirty=True`), which copies whatever is
+    actually on disk and so already includes it there. Without this,
+    `StrykerBackend.available()` checks a workspace that can never see an
+    already-installed Stryker (a false negative on every default-scope run
+    against a repo that genuinely has it), and even a corrected check would
+    leave `npx stryker run` with nothing to run against inside the worktree.
+
+    A symlink, not a copy: there is nothing inside `node_modules` a mutation
+    run needs to write, mirroring why `.venv` is excluded from the copytree
+    path entirely rather than duplicated (Python resolves it via PATH
+    regardless of cwd) -- `node_modules` just needs to exist at the expected
+    relative location, and pointing at the real one is cheaper and always
+    current. `shutil.rmtree` does not follow a symlinked directory when
+    cleaning up the workspace afterwards, so the operator's real
+    `node_modules` is never touched by teardown.
+    """
+    source = Path(repo_root) / "node_modules"
+    if source.is_dir():
+        (Path(destination) / "node_modules").symlink_to(
+            source, target_is_directory=True
+        )
+
+
 def _remove_worktree(repo_root, destination):
     result = subprocess.run(
         ["git", "worktree", "remove", "--force", str(destination)],
@@ -98,6 +126,8 @@ def scratch_workspace(repo_root, dirty=False):
                     destination,
                     ignore=shutil.ignore_patterns(".git", ".venv"),
                 )
+            else:
+                _link_node_modules(repo_root, destination)
     except BaseException:
         shutil.rmtree(parent, ignore_errors=True)
         raise

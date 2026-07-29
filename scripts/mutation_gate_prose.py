@@ -12,7 +12,8 @@ The three operators answer three different questions:
 
 import json
 import re
-from pathlib import Path
+import subprocess
+from pathlib import Path, PurePosixPath
 
 from mutation_gate import Survivor
 
@@ -219,6 +220,20 @@ def collect_declarations(repo_root):
     return tuple(tuple(entry) for entry in json.loads(payload or "[]"))
 
 
+def _normalize_repo_path(path):
+    """Normalize a repo-relative path for comparing across representations.
+
+    Git-produced selection paths and `@pytest.mark.covers`-declared artifact
+    paths should always name the same file the same way, but nothing enforces
+    that -- a harmless leading "./", or `os.sep`-joined separators on a
+    platform that isn't POSIX, would make an exact `==` fail even though both
+    sides mean the same file. That silently dropped a legitimate prose guard
+    from the run instead of matching it, so both sides go through this before
+    comparing.
+    """
+    return PurePosixPath(str(path).replace("\\", "/")).as_posix().removeprefix("./")
+
+
 class ProseBackend:
     """Always available — the mutators ship with the plugin."""
 
@@ -233,19 +248,37 @@ class ProseBackend:
 
     def survivors(self, repo_root, paths):
         """Mutate every declared slice whose artifact is in this partition."""
+        normalized_selection = {_normalize_repo_path(path) for path in paths}
         declarations = [
             declaration
             for declaration in collect_declarations(repo_root)
-            if declaration[1] in set(paths)
+            if _normalize_repo_path(declaration[1]) in normalized_selection
         ]
-        return prose_survivors(repo_root, declarations, run_test=_pytest_still_green)
+
+        def run_test(node_id):
+            return _pytest_still_green(repo_root, node_id)
+
+        return prose_survivors(repo_root, declarations, run_test=run_test)
 
 
-def _pytest_still_green(node_id):
-    """True when the single declared test still passes under the mutant."""
-    import subprocess
+def _pytest_still_green(repo_root, node_id):
+    """True when the single declared test still passes under the mutant.
 
+    `repo_root` here is always the isolated workspace `ProseBackend.survivors`
+    was invoked over -- never the operator's real tree, regardless of the
+    directory the calling *process* itself happens to be running from.
+    Nothing in this codebase ever `os.chdir`s, so a runner that omits `cwd`
+    runs pytest wherever launched `mutation_gate.py`'s process started; since
+    the mutant written by `prose_survivors` only ever exists inside the
+    workspace copy, that would silently exercise the pristine, unmutated
+    source every time and report a "survivor" for every guard whose baseline
+    already passes -- an isolation breach that also makes the backend measure
+    nothing at all.
+    """
     result = subprocess.run(
-        ["uv", "run", "pytest", node_id, "-q"], capture_output=True, text=True
+        ["uv", "run", "pytest", node_id, "-q"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
     )
     return result.returncode == 0

@@ -6,10 +6,12 @@ harness mutates exactly that slice. Windowing the wrong region is precisely the
 bug class this replaces.
 """
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
+import mutation_gate_prose
 from mutation_gate_prose import extract_section, mutate
 
 DOC = """# Title
@@ -253,3 +255,125 @@ def test_collect_declarations_raises_on_a_genuine_collection_failure(
 
     with pytest.raises(RuntimeError, match="collection failed"):
         mutation_gate_prose.collect_declarations(tmp_path)
+
+
+def test_pytest_still_green_runs_pytest_inside_the_given_workspace_not_the_caller_cwd(
+    monkeypatch,
+):
+    """Review round 1, Critical 1. `_pytest_still_green` never accepted a
+    workspace and never passed `cwd` to `subprocess.run` -- so it always ran
+    pytest wherever the *process* happened to be launched from, never the
+    isolated workspace copy `ProseBackend.survivors` mutated. Nothing in this
+    codebase ever `os.chdir`s (there is no other seam that could have made
+    this work), so the prior version always tested the operator's real,
+    unmutated tree and reported a survivor for every guard whose baseline
+    passes -- measuring nothing. This proves the fix actually threads the
+    workspace through as `cwd`, by capturing the real subprocess.run call
+    rather than asserting on inferred process behaviour.
+    """
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["cwd"] = kwargs.get("cwd")
+        return subprocess.CompletedProcess(cmd, returncode=0)
+
+    monkeypatch.setattr(mutation_gate_prose.subprocess, "run", fake_run)
+
+    result = mutation_gate_prose._pytest_still_green(
+        "/some/isolated/workspace", "tests/test_x.py::test_y"
+    )
+
+    assert captured["cwd"] == "/some/isolated/workspace"
+    assert captured["cmd"] == ["uv", "run", "pytest", "tests/test_x.py::test_y", "-q"]
+    assert result is True
+
+
+def test_pytest_still_green_reports_red_as_red(monkeypatch):
+    monkeypatch.setattr(
+        mutation_gate_prose.subprocess,
+        "run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, returncode=1),
+    )
+
+    assert mutation_gate_prose._pytest_still_green("/ws", "tests/x.py::t") is False
+
+
+def test_prose_backend_survivors_runs_the_test_inside_the_workspace_it_was_given(
+    monkeypatch,
+):
+    """End-to-end proof for `ProseBackend.survivors` itself, not just the
+    helper: the `run_test` it hands to `prose_survivors` must be bound to the
+    `repo_root` it was called with, not to whatever cwd the process started
+    in. A real doc + declaration flows through `collect_declarations` (backed
+    by a real `uv run pytest --collect-only`, itself run with `cwd=repo_root`
+    already) and then `_pytest_still_green` -- only the pytest invocation that
+    actually decides survivor status is mocked, so this catches a regression
+    in the wiring between the two even if each is individually correct.
+    """
+    from mutation_gate_prose import ProseBackend
+
+    workspace = Path("/tmp/nonexistent-workspace-marker")
+    doc = "# Title\n\n## Step 2\n\nThe loop MUST run.\n"
+
+    def fake_collect_declarations(repo_root):
+        assert repo_root == workspace
+        return (("tests/test_doc.py::test_guard", "doc.md", "Step 2"),)
+
+    monkeypatch.setattr(
+        mutation_gate_prose, "collect_declarations", fake_collect_declarations
+    )
+
+    captured_cwds = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cwds.append(kwargs.get("cwd"))
+        return subprocess.CompletedProcess(cmd, returncode=0)
+
+    monkeypatch.setattr(mutation_gate_prose.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        Path, "read_text", lambda self, encoding=None: doc, raising=False
+    )
+    monkeypatch.setattr(Path, "write_text", lambda self, *a, **k: None, raising=False)
+
+    backend = ProseBackend()
+    survivors = backend.survivors(workspace, ["doc.md"])
+
+    assert captured_cwds and all(cwd == workspace for cwd in captured_cwds)
+    assert {s.mutant for s in survivors} == {"delete", "blank", "invert"}
+
+
+def test_prose_backend_matches_a_declared_path_written_with_a_leading_dot_slash(
+    monkeypatch,
+):
+    """Minor (fix round 1): `declaration[1] in set(paths)` was exact-string
+    equality between a `@pytest.mark.covers`-declared path and a
+    git-produced selection path. Nothing guarantees the two are always
+    spelled identically -- a leading "./" is a common, harmless variant that
+    would previously make a legitimate prose guard silently vanish from the
+    run instead of being matched.
+    """
+    from mutation_gate_prose import ProseBackend
+
+    doc = "# Title\n\n## Step 2\n\nThe loop MUST run.\n"
+
+    def fake_collect_declarations(repo_root):
+        return (("tests/test_doc.py::test_guard", "./doc.md", "Step 2"),)
+
+    monkeypatch.setattr(
+        mutation_gate_prose, "collect_declarations", fake_collect_declarations
+    )
+    monkeypatch.setattr(
+        mutation_gate_prose.subprocess,
+        "run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, returncode=0),
+    )
+    monkeypatch.setattr(
+        Path, "read_text", lambda self, encoding=None: doc, raising=False
+    )
+    monkeypatch.setattr(Path, "write_text", lambda self, *a, **k: None, raising=False)
+
+    backend = ProseBackend()
+    survivors = backend.survivors(Path("/tmp/nonexistent-workspace-marker"), ["doc.md"])
+
+    assert survivors

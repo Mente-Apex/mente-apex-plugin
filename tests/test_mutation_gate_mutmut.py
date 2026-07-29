@@ -6,9 +6,15 @@ possible failure for a tool whose whole job is to report survivors.
 """
 
 import json
+import sys
 from pathlib import Path
 
-from mutation_gate_mutmut import survivors_from_output
+from mutation_gate_mutmut import (
+    MutmutBackend,
+    _configure_source_paths,
+    _mutmut_executable,
+    survivors_from_output,
+)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -99,3 +105,86 @@ def test_falls_back_to_a_dotted_path_approximation_when_nothing_matches():
     survivors = survivors_from_output(results, {}, diffs={}, source_paths=())
 
     assert survivors[0].artifact == "money.py"
+
+
+def test_configure_source_paths_writes_a_fresh_tool_mutmut_table(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n', encoding="utf-8"
+    )
+
+    _configure_source_paths(tmp_path, ["scripts/foo.py", "scripts/bar.py"])
+
+    import tomllib
+
+    data = tomllib.loads((tmp_path / "pyproject.toml").read_text(encoding="utf-8"))
+    assert data["tool"]["mutmut"]["source_paths"] == [
+        "scripts/foo.py",
+        "scripts/bar.py",
+    ]
+
+
+def test_configure_source_paths_respects_an_existing_tool_mutmut_table(tmp_path):
+    """Important (fix round 1): appending `[tool.mutmut]` unconditionally
+    produces a second, duplicate table -- invalid TOML -- for any repo that
+    already configures mutmut itself. Parse first; where a `[tool.mutmut]`
+    table already exists, respect the operator's own configuration rather
+    than corrupting the file.
+    """
+    original = '[project]\nname = "x"\n\n[tool.mutmut]\nsource_paths = ["src"]\n'
+    (tmp_path / "pyproject.toml").write_text(original, encoding="utf-8")
+
+    _configure_source_paths(tmp_path, ["scripts/foo.py"])
+
+    after = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
+    assert after == original
+
+    import tomllib
+
+    data = tomllib.loads(after)  # still valid, single-table TOML
+    assert data["tool"]["mutmut"]["source_paths"] == ["src"]
+
+
+def test_mutmut_executable_resolves_relative_to_sys_executable_even_off_path(
+    tmp_path, monkeypatch
+):
+    """Important (fix round 1): `shutil.which("mutmut")` only ever succeeded
+    because the documented invocation (`uv run python scripts/mutation_gate.py`)
+    happens to put `.venv/bin` on the child process's PATH -- nothing enforced
+    or even checked that. A bare `python3 scripts/mutation_gate.py` still has
+    a real, uv-managed `sys.executable` inside `.venv/bin`, with mutmut's own
+    console script right beside it regardless of PATH, so resolving relative
+    to `sys.executable` must find it even when PATH does not carry `.venv/bin`
+    at all -- rather than silently reporting the whole Python partition as
+    unavailable with a misleading "already installed" hint.
+    """
+    fake_venv_bin = tmp_path / "venv" / "bin"
+    fake_venv_bin.mkdir(parents=True)
+    fake_python = fake_venv_bin / "python3"
+    fake_python.write_text("", encoding="utf-8")
+    fake_mutmut = fake_venv_bin / "mutmut"
+    fake_mutmut.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "executable", str(fake_python))
+    monkeypatch.setattr("mutation_gate_mutmut.shutil.which", lambda name: None)
+
+    assert _mutmut_executable() == str(fake_mutmut)
+    assert MutmutBackend().available("/irrelevant/repo/root") is True
+
+
+def test_mutmut_executable_falls_back_to_path_when_no_venv_sibling_exists(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "python3"))
+    monkeypatch.setattr(
+        "mutation_gate_mutmut.shutil.which", lambda name: "/usr/local/bin/mutmut"
+    )
+
+    assert _mutmut_executable() == "/usr/local/bin/mutmut"
+
+
+def test_mutmut_executable_is_none_when_neither_resolves(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "python3"))
+    monkeypatch.setattr("mutation_gate_mutmut.shutil.which", lambda name: None)
+
+    assert _mutmut_executable() is None
+    assert MutmutBackend().available("/irrelevant/repo/root") is False
