@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "1.0",
+  "files": {
+    "src/money.js": {
+      "language": "javascript",
+      "mutants": [
+        {
+          "id": "1",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 2,
+          "coveredBy": ["0", "1"],
+          "location": {
+            "start": { "line": 2, "column": 7 },
+            "end": { "line": 2, "column": 30 }
+          }
+        },
+        {
+          "id": "0",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": ["0"],
+          "coveredBy": ["0", "1"],
+          "location": {
+            "start": { "line": 1, "column": 43 },
+            "end": { "line": 6, "column": 2 }
+          }
+        },
+        {
+          "id": "2",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "total / 0.9",
+          "status": "Timeout",
+          "static": false,
+          "coveredBy": ["0"],
+          "location": {
+            "start": { "line": 3, "column": 12 },
+            "end": { "line": 3, "column": 24 }
+          }
+        },
+        {
+          "id": "3",
+          "mutatorName": "EqualityOperator",
+          "replacement": "!==",
+          "status": "CompileError",
+          "static": false,
+          "coveredBy": [],
+          "location": {
+            "start": { "line": 4, "column": 5 },
+            "end": { "line": 4, "column": 20 }
+          }
+        },
+        {
+          "id": "4",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "status": "NoCoverage",
+          "static": false,
+          "coveredBy": [],
+          "location": {
+            "start": { "line": 5, "column": 3 },
+            "end": { "line": 5, "column": 10 }
+          }
+        }
+      ]
+    }
+  },
+  "testFiles": {
+    "test/money.test.js": {
+      "tests": [
+        { "id": "0", "name": "member over threshold gets ten percent off" },
+        { "id": "1", "name": "vacuous guard asserts nothing real" }
+      ]
+    }
+  }
+}

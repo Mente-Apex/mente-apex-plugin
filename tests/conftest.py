@@ -1,5 +1,6 @@
 """Shared fixtures. Isolates the engine from the real ~/.claude."""
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hooks"))
 
 import config_sync  # noqa: E402
+import mutation_gate_prose  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -66,3 +68,49 @@ def claude_home(tmp_path, monkeypatch):
         claude_dir / "plugins" / "installed_plugins.json",
     )
     return claude_dir
+
+
+@pytest.fixture
+def covered_slice(request):
+    """The artifact slice this test declared via @pytest.mark.covers.
+
+    The marker is also what the test READS, so the declaration and the
+    assertion cannot drift apart — a guard can no longer window a region other
+    than the one it named, which is the bug class the mutation gate exists to
+    stop from recurring.
+    """
+    marker = request.node.get_closest_marker("covers")
+    assert marker is not None, "this fixture requires an @pytest.mark.covers marker"
+    artifact = Path(__file__).resolve().parents[1] / marker.args[0]
+    text = artifact.read_text(encoding="utf-8")
+    section = marker.kwargs.get("section")
+    if section is None:
+        return text
+    return mutation_gate_prose.extract_section(text, section)
+
+
+@pytest.fixture
+def git_repo_with_branch(tmp_path):
+    """A repo on a feature branch one commit ahead of its default branch."""
+
+    def run(*args):
+        return subprocess.run(args, cwd=tmp_path, check=True, capture_output=True)
+
+    run("git", "init", "-q", "-b", "main")
+    run("git", "config", "user.email", "t@example.com")
+    run("git", "config", "user.name", "T")
+    (tmp_path / "base.py").write_text("BASE = 1\n", encoding="utf-8")
+    run("git", "add", ".")
+    run("git", "commit", "-qm", "base")
+    run("git", "checkout", "-qb", "feature")
+    (tmp_path / "feature.py").write_text("FEATURE = 1\n", encoding="utf-8")
+    run("git", "add", ".")
+    run("git", "commit", "-qm", "feature")
+    return tmp_path, "main"
+
+
+# `--covers-manifest` is DELIBERATELY not registered here. It now lives in
+# `scripts/mutation_gate_covers_plugin.py` and is loaded by the gate with
+# `-p mutation_gate_covers_plugin`, so it works against any audited repo rather
+# than only this one. Re-registering it here would collide with that plugin and
+# fail the very run it was meant to serve.

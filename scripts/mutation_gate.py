@@ -1,0 +1,483 @@
+"""The /test-quality mutation gate.
+
+"Suite still green" proves nothing when the thing you changed is the test, so
+this runs real mutation testing: change the code under test mechanically and
+see whether the suite notices. mutmut and Stryker do their own mutating, so a
+backend's job is `survivors(selection)` — how it gets them is its business.
+"""
+
+import argparse
+import json
+import subprocess
+import sys
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Protocol, runtime_checkable
+
+from mutation_gate_scope import changed_paths
+from mutation_gate_workspace import scratch_workspace
+
+STACK_SUFFIXES = {
+    "python": (".py",),
+    "js": (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"),
+    "prose": (".md",),
+}
+
+
+@dataclass(frozen=True)
+class Survivor:
+    """One mutant the suite failed to kill.
+
+    `granularity` records what the backend could actually tell us — Stryker
+    resolves a survivor to a line and the tests that covered it, mutmut only to
+    the mutated function. The report states which, rather than implying a
+    precision the backend never had.
+
+    `status` is a CLOSED vocabulary. Every value the backends emit today:
+
+    - `survived` — the mutant lived and the finding is real. mutmut emits it
+      for its own `survived` status; the prose backend emits it for every
+      operator except `invert`; Stryker maps `Survived` to it.
+    - `survived_minor` — prose only, and only for the `invert` operator:
+      presence-only guards legitimately survive inversion, so that operator
+      reports at a lower tier.
+    - `no_op_mutant` — prose only: the operator left the declared slice
+      byte-identical, so no mutant was ever applied and the test was never
+      run. Not a survivor (nothing survived), but reported rather than
+      dropped, so "this operator had nothing to change here" stays
+      distinguishable from "it ran and the guard killed it".
+    - `unreliable_baseline` — assigned by `run_gate`, not by a backend, when
+      every test covering the survivor was already red before any mutant ran.
+    - `timeout`, `no_coverage`, `compile_error`, `runtime_error`, `ignored`,
+      `pending` — Stryker's `STATUS_MAP`. A status Stryker emits that the map
+      does not know raises rather than being dropped.
+    - `skipped`, `suspicious`, `segfault`, `no tests`, `not checked`,
+      `caught by type check`, `check was interrupted by user` — mutmut's own
+      non-`killed`/non-`survived` statuses (`status_by_exit_code` in mutmut's
+      `__main__.py`); `killed` is mutmut's only silent drop. A status mutmut
+      emits that this module has never seen raises rather than being dropped.
+
+    Use `is_survivor()` to classify — never compare `status` by hand, or the
+    vocabulary drifts out of sync across the consumers again.
+
+    `survived_minor` IS a survivor, at a lower tier than plain `survived` --
+    the report must say so (both `render_markdown` and `as_report_payload`
+    surface `status` on it) rather than either folding it in as an
+    indistinguishable plain survivor or dropping it into "Inconclusive",
+    which would misreport a real finding as no finding at all.
+    """
+
+    artifact: str
+    location: str
+    mutant: str
+    associated_tests: tuple[str, ...]
+    backend: str
+    granularity: str
+    mutant_diff: str = ""
+    status: str = "survived"
+
+
+# `survived_minor` is a real survivor at a lower tier (the prose backend's
+# deliberate `invert`-operator tiering) -- it belongs here, not with the
+# inconclusive statuses. See the Survivor docstring above.
+SURVIVED_STATUSES = frozenset({"survived", "survived_minor"})
+
+
+def is_survivor(survivor):
+    """True when this mutant survived outright, as opposed to inconclusive."""
+    return survivor.status in SURVIVED_STATUSES
+
+
+def partition(paths):
+    """Group paths by the backend that owns them.
+
+    Dispatch is per partition, not per test: mutmut and Stryker are invoked
+    over a file set, and a per-test invocation loop would be ruinously slow.
+
+    `STACK_SUFFIXES` is the single extension point: a new stack is one entry
+    in that table, not a new branch here.
+    """
+    partitions = {stack: [] for stack in STACK_SUFFIXES}
+    partitions["unresolved"] = []
+    for path in paths:
+        for stack, suffixes in STACK_SUFFIXES.items():
+            if path.endswith(suffixes):
+                partitions[stack].append(path)
+                break
+        else:
+            partitions["unresolved"].append(path)
+    return {stack: tuple(found) for stack, found in partitions.items()}
+
+
+# The stacks a backend may legitimately claim. "unresolved" is not one of
+# them: it is partition()'s catch-all for suffixes no stack owns, never a
+# stack a backend registers against.
+REGISTRABLE_STACKS = tuple(STACK_SUFFIXES)
+
+
+@runtime_checkable
+class Backend(Protocol):
+    """A mutation-testing tool for one stack, behind a uniform seam.
+
+    mutmut and Stryker (and any future backend) implement this without
+    inheriting from it — `run_gate` only ever calls through the protocol, so
+    adding a fourth backend is registering an object, not editing a dispatch
+    chain.
+    """
+
+    stack: str
+    tool: str
+
+    def available(self, repo_root) -> bool: ...
+
+    def install_hint(self, repo_root) -> str: ...
+
+    def survivors(self, repo_root, paths) -> tuple:  # tuple[Survivor, ...]
+        ...
+
+    # Optional: a backend may implement `run_errors(repo_root) -> tuple[str,
+    # ...]` to report that its own tool run did not complete this call to
+    # `survivors()` (e.g. mutmut's stats collection crashing before a single
+    # mutant executed) -- one named fact per such failure, not expanded into
+    # a row per mutant it never got to check. `run_gate` calls it only when
+    # present (`getattr(backend, "run_errors", None)`), so a backend or test
+    # double that has no run-level failure mode of its own need not implement
+    # it.
+
+
+@dataclass(frozen=True, kw_only=True)
+class GateResult:
+    """What one gate run produced.
+
+    Keyword-only, deliberately. Seven fields, several interchangeable at the
+    type level -- `unresolved` and `unclaimed` are both `tuple[str, ...]`, as
+    are `baseline_failures` and `run_errors` -- so a positional transposition
+    would misfile an entire category of finding, type-check clean, and render
+    a plausible-looking report. Every call site names its fields.
+
+    No score field, deliberately. A percentage gets gamed and tells an operator
+    nothing; the survivors and their associated tests are the whole signal.
+
+    `unresolved` and `unclaimed` are deliberately separate: `unresolved` is a
+    file whose suffix matches no stack at all, `unclaimed` is a file that DID
+    land in a known stack partition (python/js/prose) for which no backend was
+    registered this run. Conflating them would hide a missing backend behind
+    the same label as an image asset — every input path must be accounted for
+    in exactly one of survivors / unavailable / unresolved / unclaimed.
+
+    `baseline_error` is deliberately distinct from an empty `baseline_failures`.
+    Both render as "nothing to report" unless kept apart: empty means the
+    baseline ran and found nothing already red, `baseline_error` means the
+    baseline run itself never completed (a collection error, an internal
+    pytest crash) and every `survived`/`unreliable_baseline` split below it is
+    unverified, not clean. Collapsing that distinction is the one silent
+    failure mode this dataclass exists to close.
+
+    `run_errors` is `baseline_error`'s sibling for a *backend's* run rather
+    than the baseline: one named fact per backend whose own tool run did not
+    complete (mutmut's stats collection crashing before a single mutant
+    executed is the reproduced case). It is a tuple, not a single string like
+    `baseline_error`, because more than one backend can run in the same
+    invocation (a mixed Python/JS repo) and each is independent. This is
+    deliberately NOT where a completed run's genuine per-mutant inconclusive
+    results go -- those still arrive as ordinary `Survivor`s in `survivors`
+    with their own `status` (see `Survivor`'s docstring); `run_errors` exists
+    only for the run-level case where no individual mutant result can be
+    trusted at all, so a single system failure is reported once instead of
+    being fanned out into one row per mutant it never got to check.
+
+    `selected` is how many paths the run was actually handed. Without it, a
+    zero-file scope (a clean tree under `--scope working-tree`) is an all-empty
+    result indistinguishable from a scope full of files where nothing survived
+    -- "nothing to do" reading as "nothing found" is the same
+    silence-as-a-pass this dataclass exists to close, one level up.
+    """
+
+    survivors: tuple[Survivor, ...]
+    unavailable: tuple[tuple[str, str], ...]
+    unresolved: tuple[str, ...]
+    unclaimed: tuple[str, ...]
+    baseline_failures: tuple[str, ...] = ()
+    baseline_error: str = ""
+    run_errors: tuple[str, ...] = ()
+    selected: int = 0
+
+
+def run_gate(
+    repo_root,
+    paths,
+    backends: list,
+    baseline_failures: tuple = (),
+    baseline_error: str = "",
+) -> GateResult:
+    """Partition the selection, invoke each backend once, merge the results.
+
+    A backend whose partition is empty is never invoked — a repo with no JS is
+    simply a run where the Stryker partition is empty, not a failure. A backend
+    whose tool is missing yields an install hint and the run continues: the gate
+    never installs anything on the operator's behalf, and a missing tool
+    degrades a run rather than failing it.
+
+    Two failure modes are misconfiguration, not run-time degradation, and are
+    raised eagerly instead of silently tolerated: a backend declaring a stack
+    `partition()` never produces (the gate misunderstanding its own data), and
+    two backends registered for the same stack (an undefined, silently-merged
+    outcome otherwise).
+
+    `baseline_failures` is the set of test node ids that were already red
+    before any mutant was applied (see `baseline`). A survivor covered ONLY by
+    tests that were already broken proves nothing -- it is marked
+    `unreliable_baseline` rather than `survived`, because a test that never
+    passes cannot have been vacuous about this mutant specifically. A survivor
+    covered by a mix of already-red and clean tests keeps its `survived`
+    status: at least one clean, working test had a real chance to catch this
+    mutant and did not, which is exactly the signal this gate exists to
+    report -- silencing it just because one of several covering tests happens
+    to be flaky would be the same silence-is-the-enemy failure this field
+    exists to prevent. A survivor with no associated tests at all is
+    unaffected either way (nothing in `baseline_failures` bears on code no
+    test covers) and stays `survived`.
+    """
+    backends_by_stack = {}
+    for backend in backends:
+        if backend.stack not in REGISTRABLE_STACKS:
+            raise ValueError(
+                f"backend {backend.tool!r} declares stack {backend.stack!r}, "
+                f"which partition() never produces "
+                f"(known stacks: {REGISTRABLE_STACKS})"
+            )
+        if backend.stack in backends_by_stack:
+            raise ValueError(
+                f"two backends registered for stack {backend.stack!r}: "
+                f"{backends_by_stack[backend.stack].tool!r} and {backend.tool!r}"
+            )
+        backends_by_stack[backend.stack] = backend
+
+    paths = tuple(paths)
+    partitions = partition(paths)
+    survivors = []
+    unavailable = []
+    unclaimed = []
+    run_errors = []
+    for stack in REGISTRABLE_STACKS:
+        selection = partitions.get(stack, ())
+        if not selection:
+            continue
+        backend = backends_by_stack.get(stack)
+        if backend is None:
+            unclaimed.extend(selection)
+            continue
+        if not backend.available(repo_root):
+            unavailable.append((stack, backend.install_hint(repo_root)))
+            continue
+        survivors.extend(backend.survivors(repo_root, selection))
+        backend_run_errors = getattr(backend, "run_errors", None)
+        if backend_run_errors is not None:
+            run_errors.extend(backend_run_errors(repo_root))
+
+    already_red = set(baseline_failures)
+    marked = tuple(
+        (
+            replace(survivor, status="unreliable_baseline")
+            if survivor.associated_tests
+            and all(test in already_red for test in survivor.associated_tests)
+            else survivor
+        )
+        for survivor in survivors
+    )
+    return GateResult(
+        survivors=marked,
+        unavailable=tuple(unavailable),
+        unresolved=partitions.get("unresolved", ()),
+        unclaimed=tuple(unclaimed),
+        baseline_failures=tuple(baseline_failures),
+        baseline_error=baseline_error,
+        run_errors=tuple(run_errors),
+        selected=len(paths),
+    )
+
+
+class BaselineRunFailedError(RuntimeError):
+    """A `run_suite` implementation could not complete the baseline run.
+
+    Distinct from the run completing and reporting zero or more failures: a
+    missing tool or an empty selection still yields an honest, if partial,
+    answer, but a baseline that never ran yields no data at all. Raising this
+    rather than returning something `_failed_node_ids` would parse as "no
+    failures" is what lets a caller tell "the baseline was clean" apart from
+    "the baseline never ran" instead of quietly conflating the two.
+    """
+
+
+def baseline(repo_root, run_suite):
+    """Node ids already failing before any mutant is applied.
+
+    A test that fails intermittently produces a phantom kill: the mutant looks
+    caught because the covering test went red, but the test would have failed
+    anyway with no mutation in sight. Running the real suite once, with
+    nothing mutated, and recording exactly what it reports as failed is what
+    lets `run_gate` tell a genuine survivor apart from one whose only covering
+    tests were already broken.
+
+    `run_suite` is injected rather than this function invoking pytest itself,
+    so callers can substitute a fake in tests without shelling out, and so a
+    future non-pytest suite runner is a different `run_suite`, not a rewrite
+    of this function. `run_suite` may raise `BaselineRunFailedError` when the
+    baseline run itself did not complete; this function does not catch it --
+    that decision belongs to the caller (see `_record_baseline`), which is
+    what decides how a broken baseline is represented in the result.
+    """
+    return _failed_node_ids(run_suite(repo_root))
+
+
+def _record_baseline(repo_root, run_suite):
+    """Run the baseline, turning a run that never completed into an explicit,
+    reportable error instead of an empty (and misleadingly clean-looking)
+    baseline.
+
+    Returns `(baseline_failures, baseline_error)`. Exactly one carries
+    information when something went wrong: `baseline_error` names why the
+    baseline run itself did not complete, and `baseline_failures` is left
+    empty rather than guessed at -- there is no data to report a failure
+    list from when the run that would have produced it never finished.
+    """
+    try:
+        return baseline(repo_root, run_suite), ""
+    except BaselineRunFailedError as exc:
+        return (), str(exc)
+
+
+_FAILED_PREFIX = "FAILED "
+
+
+def _failed_node_ids(output):
+    """Parse pytest's `-rf` short summary into the node ids that failed.
+
+    `-rf` prints one `FAILED <node id>[ - <reason>]` line per failing test in
+    the short summary section regardless of verbosity elsewhere in the run,
+    which is far more reliable to parse than scraping full tracebacks out of
+    `-v` output.
+    """
+    node_ids = []
+    for line in output.splitlines():
+        if not line.startswith(_FAILED_PREFIX):
+            continue
+        remainder = line[len(_FAILED_PREFIX) :]
+        node_ids.append(remainder.split(" - ", 1)[0].strip())
+    return tuple(node_ids)
+
+
+def _pytest_run_suite(repo_root):
+    """The real suite, run once, with no mutation applied.
+
+    `uv run pytest` because this repo's Python toolchain is uv-managed --
+    never a bare `pytest` or a system interpreter, which could resolve to an
+    environment missing dependencies the suite needs and misreport half the
+    suite as failing.
+
+    A non-{0,1} exit code (anything but "all passed" or "some tests failed")
+    means the run itself broke -- a collection error, an internal pytest
+    crash -- rather than reporting a normal pass/fail outcome.
+    `_failed_node_ids` would silently read that as an empty, all-clean
+    baseline. A warning alone is not enough here: nothing in the rendered
+    report captures Python warnings, so an operator reading only the markdown
+    or JSON output would see every survivor at face value with no baseline
+    having actually run. Raising `BaselineRunFailedError` instead forces the
+    failure through `_record_baseline` into `GateResult.baseline_error`,
+    where it reaches the operator-facing report.
+    """
+    result = subprocess.run(
+        ["uv", "run", "pytest", "--tb=no", "-q", "-rf"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode not in (0, 1):
+        raise BaselineRunFailedError(
+            f"uv run pytest exited {result.returncode} in {repo_root} while "
+            "recording the clean-run baseline -- this is not a normal "
+            "pass/fail exit, so the baseline did not complete: "
+            f"{result.stderr.strip() or result.stdout.strip()!r}"
+        )
+    return result.stdout
+
+
+def main(argv=None):
+    """Run the gate, print the JSON payload, and (with `--report`) write the
+    report section.
+
+    Both outputs, not one: the JSON on stdout is what the analyzer agent
+    parses, and the spliced markdown is what a human reads. This lens holds
+    the report to be the single source of truth, so a survivor that only ever
+    reached stdout would be invisible to the person the finding is for.
+
+    Writing the report is the CLI's job rather than an instruction to the
+    reviewer agent, deliberately. The marker contract is then exercised by a
+    test (`tests/test_mutation_gate_cli_report.py`) instead of resting on
+    prose an agent may or may not follow -- which is precisely the
+    unverifiable-guard failure mode this whole feature exists to catch. A
+    prose instruction to "paste the section in" is a guard nothing can check.
+
+    `--report` is opt-in, so a default run still writes nothing anywhere near
+    the operator's tree: the byte-identical guarantee is unchanged for every
+    invocation that does not explicitly name a file to update.
+    """
+    parser = argparse.ArgumentParser(description="Run the test-quality mutation gate.")
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument(
+        "--scope", choices=("merge-base", "working-tree", "full"), default="merge-base"
+    )
+    parser.add_argument(
+        "--report",
+        default=None,
+        help=(
+            "Path to a report carrying the mutation-gate markers; the gate "
+            "replaces the span between them with this run's section. Omitted, "
+            "the gate writes no file at all."
+        ),
+    )
+    arguments = parser.parse_args(argv)
+
+    # Deferred on purpose — do not hoist to module top. Both modules import
+    # this one back: the backend modules need `Survivor`, and the reporter
+    # needs `is_survivor`. A module-level import here closes that cycle.
+    from mutation_gate_backends import default_backends
+    from mutation_gate_report import (
+        as_report_payload,
+        render_markdown,
+        splice_into_report,
+    )
+
+    paths = changed_paths(arguments.repo_root, scope=arguments.scope)
+    dirty = arguments.scope == "working-tree"
+    with scratch_workspace(arguments.repo_root, dirty=dirty) as workspace:
+        baseline_failures, baseline_error = _record_baseline(
+            workspace, _pytest_run_suite
+        )
+        result = run_gate(
+            workspace,
+            paths,
+            default_backends(),
+            baseline_failures=baseline_failures,
+            baseline_error=baseline_error,
+        )
+    print(json.dumps(as_report_payload(result, scope=arguments.scope), indent=2))
+    if arguments.report is not None:
+        # After the JSON, never before: a missing report file or a report with
+        # no markers raises, and the analyzer's copy of the result must not be
+        # lost to a report-writing problem. The raise itself stays uncaught --
+        # a gate that silently fails to write its findings is the exact
+        # silence this feature exists to remove.
+        report_path = Path(arguments.report)
+        report_path.write_text(
+            splice_into_report(
+                report_path.read_text(encoding="utf-8"),
+                render_markdown(result, scope=arguments.scope),
+            ),
+            encoding="utf-8",
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
