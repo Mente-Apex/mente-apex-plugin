@@ -9,6 +9,7 @@ scope — they carry intentional forward-references and fenced example links.
 
 import json
 import re
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -182,39 +183,136 @@ HOOKS_DIR = REPO_ROOT / "hooks"
 # macOS. Every Python this plugin ships targets requires-python >=3.14 and is
 # formatted by black at that target, which emits PEP 758 `except A, B:` — a
 # SyntaxError on anything older. So no shipped surface may reach for the system
-# interpreter; they all go through uv, which resolves the operator's pin (a
-# repo's own .python-version first, then `uv python pin --global`).
+# interpreter; they all go through bin/mente-python, which decides.
 # Only `python3` is flagged. The uv form ends in a bare `python`, and the word
 # on its own is ordinary prose ("Target : python / uv-nobuild"); `python3` is
 # never anything but a reach for the system binary.
 SYSTEM_PYTHON = re.compile(r"(?<![\w./-])python3(?![\w.-])")
-UV_PYTHON_PREFIX = "uv run --no-project"
+
+# Naming `uv` at a call site is its own drift: it hardcodes half a decision
+# (prefer uv) while leaving the other half -- what to do when uv is absent --
+# unwritten, which is how nine surfaces ended up each assuming uv was installed.
+# bin/mente-python holds the whole order (uv, then a new-enough system
+# interpreter, then a diagnosis), so shipped surfaces name the launcher and
+# nothing else. It is the only file permitted to say `uv`.
+LAUNCHER = REPO_ROOT / "bin" / "mente-python"
+DIRECT_UV = re.compile(r"(?<![\w./-])uv run(?![\w.-])")
+MINIMUM_PYTHON = tomllib.loads(PYPROJECT.read_text())["project"][
+    "requires-python"
+].lstrip(">=~^ ")
 
 
 def _shipped_invocation_surfaces():
-    """The files whose text is executed on a user's machine: the skills the
-    agent runs and the hook declarations Claude Code runs. Excludes evals and
-    reference material, which describe other people's projects rather than
-    invoking ours."""
+    """This plugin's own entry points: the skills the agent runs, the hook
+    declarations Claude Code runs, and the eval assertions that grade whether a
+    skill ran the engine correctly. The evals belong here because they name OUR
+    commands -- an eval still asserting a bare `python3` would grade a correct
+    skill as wrong, and quietly re-teach the banned form to whoever reads it
+    next. Reference material describing other people's projects stays out.
+
+    Deliberately NOT the whole story: see _agent_instruction_surfaces."""
     for skill_file in sorted(SKILLS_DIR.rglob("SKILL.md")):
         if "-workspace/" in str(skill_file.relative_to(REPO_ROOT)):
             continue
         yield skill_file
     yield from sorted(HOOKS_DIR.glob("*.json"))
+    yield from sorted((REPO_ROOT / "evals").glob("*.json"))
+
+
+def _agent_instruction_surfaces():
+    """Subagent briefs under skills/*/agents/. These run Python too, so the
+    system-interpreter ban applies -- but the launcher requirement does not.
+
+    The distinction is real rather than an exemption of convenience. An entry
+    point runs THIS plugin's code and must not adopt whatever project the
+    session happens to sit in, which is why the launcher passes --no-project.
+    The mutation gate these briefs invoke is the opposite case: it runs against
+    the operator's repository and needs that repository's test environment, so
+    project-mode `uv run` is the correct call and routing it through the
+    launcher would break it. Two different jobs, two different guards."""
+    for agent_brief in sorted(SKILLS_DIR.rglob("agents/*.md")):
+        if "-workspace/" in str(agent_brief.relative_to(REPO_ROOT)):
+            continue
+        yield agent_brief
 
 
 def test_no_shipped_surface_invokes_the_system_interpreter():
+    """Applies to agent briefs as well as entry points: whichever uv mode is
+    correct for a call site, reaching past uv to the OS interpreter never is."""
     offenders = []
-    for surface in _shipped_invocation_surfaces():
+    for surface in [*_shipped_invocation_surfaces(), *_agent_instruction_surfaces()]:
         for number, line in enumerate(surface.read_text().splitlines(), start=1):
             if SYSTEM_PYTHON.search(line):
                 offenders.append(
                     f"{surface.relative_to(REPO_ROOT)}:{number}: {line.strip()}"
                 )
     assert not offenders, (
-        "Shipped surfaces reaching for the system interpreter — use "
-        f"`{UV_PYTHON_PREFIX} python ...` instead:\n" + "\n".join(offenders)
+        "Shipped surfaces reaching for the system interpreter — run "
+        f"`sh {LAUNCHER.relative_to(REPO_ROOT)} ...` instead:\n" + "\n".join(offenders)
     )
+
+
+def test_no_shipped_surface_calls_uv_directly():
+    """Every shipped surface goes through the launcher, so the fallback exists
+    exactly once. A surface that says `uv run` itself has silently opted out of
+    the uv-absent branch: on a machine without uv it fails with `command not
+    found` instead of the message telling the operator to install it."""
+    offenders = []
+    for surface in _shipped_invocation_surfaces():
+        for number, line in enumerate(surface.read_text().splitlines(), start=1):
+            if DIRECT_UV.search(line):
+                offenders.append(
+                    f"{surface.relative_to(REPO_ROOT)}:{number}: {line.strip()}"
+                )
+    assert not offenders, (
+        f"Direct uv invocations — run `sh {LAUNCHER.relative_to(REPO_ROOT)} ...` "
+        "so the uv-absent fallback applies:\n" + "\n".join(offenders)
+    )
+
+
+def test_the_launcher_is_git_tracked():
+    """Existing on disk is not shipping. Every other check in this file reads
+    the working tree, so an untracked launcher passes them all while the commit
+    that references it from hooks.json and three skills goes out without it --
+    breaking every Python entry point for anyone who installs after that push.
+    `git add -u` would not have caught this: it stages modifications, not new
+    files."""
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", str(LAUNCHER.relative_to(REPO_ROOT))],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert tracked.returncode == 0, (
+        f"{LAUNCHER.relative_to(REPO_ROOT)} is not tracked by git — "
+        "run `git add` before committing, or it ships broken"
+    )
+
+
+def test_the_launcher_prefers_uv_then_falls_back_then_diagnoses():
+    """The three branches the call sites delegate to. Asserted here because a
+    launcher that lost its fallback would still pass every other test in this
+    file — the surfaces would look correct while the behaviour they delegate to
+    had quietly gone missing."""
+    launcher_text = LAUNCHER.read_text()
+    # The comments explain why the pin is absent, so the flag is only a
+    # violation where the shell would actually act on it.
+    executable_lines = "\n".join(
+        line
+        for line in launcher_text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    assert "command -v uv" in executable_lines, "uv must be tried first"
+    assert (
+        "exec uv run --no-project python" in executable_lines
+    ), "the uv branch must not pin a version — the operator's own pin decides"
+    assert (
+        "--python" not in executable_lines
+    ), "pinning here would override the operator's deliberate pin"
+    assert "uv not found" in executable_lines, "the fallback must nudge toward uv"
+    assert (
+        f'MINIMUM_VERSION="{MINIMUM_PYTHON}"' in executable_lines
+    ), "the launcher's floor must track requires-python, not drift from it"
 
 
 def _shipped_python_modules():

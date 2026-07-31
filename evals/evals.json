@@ -5,11 +5,12 @@
       "id": 1,
       "skill": "config-sync-setup",
       "prompt": "I want to set up config sync for the first time. I have a private GitHub repo at git@github.com:bvu/claude-config.git ready to go.",
-      "expected_output": "Checks dependencies (git, python3), shows current local config inventory, warns about private repo requirement, exports local snapshot, pushes to remote, confirms machine ID and repo setup.",
+      "expected_output": "Checks dependencies (git, uv), shows current local config inventory, warns about private repo requirement, exports local snapshot, pushes to remote, confirms machine ID and repo setup.",
       "assertions": [
-        "Runs python3 config_sync.py migrate first (idempotent legacy-path rename)",
-        "Runs python3 config_sync.py machine-id to get a stable machine ID",
-        "Runs python3 config_sync.py export to snapshot local state",
+        "Invokes the engine only through the skill's `py` helper (which delegates to bin/mente-python), never by naming an interpreter itself",
+        "Runs py \"$ENGINE\" migrate first (idempotent legacy-path rename)",
+        "Runs py \"$ENGINE\" machine-id to get a stable machine ID",
+        "Runs py \"$ENGINE\" export to snapshot local state",
         "Does NOT hardcode /Users/bvu — uses $HOME or ~ everywhere",
         "Uses git push to the provided remote URL",
         "Saves config-sync-config.json with remote and last_sync fields",
@@ -26,7 +27,7 @@
         "Uses git clone (or pull if repo dir exists) to get remote content",
         "Asks the user for merge strategy (merge / keep mine / take theirs)",
         "For 'merge', directs the user to run /config-sync instead of an inline merge|import block",
-        "For 'take theirs', runs python3 config_sync.py import on consolidated/snapshot.json",
+        "For 'take theirs', runs py \"$ENGINE\" import on consolidated/snapshot.json",
         "Pushes the new machine snapshot to remote"
       ]
     },
@@ -37,11 +38,11 @@
       "expected_output": "Full sync cycle: exports local state, pushes, pulls, merges all machine snapshots into the consolidated snapshot, applies locally, shows summary of what changed.",
       "assertions": [
         "Checks for config-sync-config.json and exits clearly if missing",
-        "Runs python3 config_sync.py export before pushing",
+        "Runs py \"$ENGINE\" export before pushing",
         "Exports plugins by passing $REPO as an argv to the heredoc (not a literal $REPO inside a quoted heredoc)",
         "Runs git pull to get remote changes",
-        "Runs python3 config_sync.py merge for each remote machine snapshot",
-        "Runs python3 config_sync.py import to apply the merged result",
+        "Runs py \"$ENGINE\" merge for each remote machine snapshot",
+        "Runs py \"$ENGINE\" import to apply the merged result",
         "Updates last_sync in config using Python (not sed)",
         "Shows a clear summary: pushed N changes, pulled N commits, N files updated"
       ]
@@ -66,7 +67,7 @@
       "assertions": [
         "Takes the read-only Status path, not the full sync cycle",
         "Does NOT push, pull, or apply (no propagate-export / propagate-apply / git push)",
-        "Runs python3 config_sync.py status for local inventory",
+        "Runs py \"$ENGINE\" status for local inventory",
         "Lists machines from config-sync-repo/machines/*.json",
         "Shows machine IDs and timestamps, not just file names",
         "Shows recent sync history from meta/sync-log.json if it exists"
