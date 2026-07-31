@@ -172,7 +172,7 @@ wheels = [
 
 [[package]]
 name = "mente-apex-plugin"
-version = "0.26.0"
+version = "0.26.1"
 source = { virtual = "." }
 
 [package.dev-dependencies]
