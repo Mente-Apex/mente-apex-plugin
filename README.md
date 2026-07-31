@@ -105,9 +105,12 @@ a private Git remote you control):
   assets beside the skill if the source is unreachable. Override either to run on another machine.
 - `git` + [`uv`](https://docs.astral.sh/uv/) for the config-sync skills, plus a private Git repository to hold your config
 - `uv` for everything Python this plugin runs on your machine — the config-sync engine, the
-  deliverable renderer, and the SessionStart hook. All of it is invoked as
-  `uv run --no-project`, never as the `python3` your OS ships (3.9 on current macOS, which
-  cannot parse modules written at 3.14). No pip installs: standard library only.
+  deliverable renderer, and the SessionStart hook. All of it goes through `bin/mente-python`,
+  never the `python3` your OS ships (3.9 on current macOS, which cannot parse modules written
+  at 3.14). That launcher prefers uv, falls back to a system interpreter new enough to run
+  this code — telling you to install uv when it does — and, when nothing on the machine
+  qualifies, says so instead of failing with a `SyntaxError`. No pip installs: standard
+  library only.
 - **Pin an interpreter.** Nothing here hardcodes a version — uv uses the pin you choose: a
   repo's own `.python-version` first, then the global one. Set the global one once:
 

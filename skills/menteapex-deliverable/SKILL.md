@@ -88,7 +88,7 @@ supply the formatting judgement; a helper does the mechanical placement:
 
    ```bash
    printf '%s\n' "<your reformatted markdown block>" | \
-     uv run --no-project python "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/insert_block.py" \
+     sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/insert_block.py" \
        --file "Customers/<Client>/docs/<family>-<slug>.md" --after-heading "## Scope"
    ```
 
@@ -100,7 +100,7 @@ supply the formatting judgement; a helper does the mechanical placement:
 reach the client. Verify mechanically and loop until clean:
 
 ```bash
-uv run --no-project python "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/render.py" \
+sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/render.py" \
   "Customers/<Client>/docs/<family>-<slug>.md" --check
 ```
 
@@ -114,7 +114,7 @@ first.)
 ## Step 4 — Render to HTML + PDF
 
 ```bash
-uv run --no-project python "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/render.py" \
+sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/skills/menteapex-deliverable/scripts/render.py" \
   "Customers/<Client>/docs/<family>-<slug>.md" \
   --kind <identity|letterhead> --lang <en|es-ES|es-419|hr> \
   --title "<document title>" --out "Customers/<Client>/docs"

@@ -49,27 +49,32 @@ if [ ! -f "$ENGINE" ]; then
 fi
 [ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
 
-# Never the interpreter the OS ships: it is 3.9 on stock macOS, and every
-# module this plugin ships is formatted at py314, which emits syntax older
-# interpreters reject outright. Which interpreter uv picks is the operator's
-# call, not this file's: a repo's own .python-version wins, then the global pin.
+# Interpreter choice lives in bin/mente-python, not here: uv first (honouring
+# the operator's own pin), a new-enough system interpreter second, and a
+# diagnosis rather than a SyntaxError if neither exists. Keeping it in one file
+# is why that order can change without editing every skill that runs Python.
 # A function, not a variable — zsh does not word-split an unquoted expansion,
 # so a multi-word PY="..." would be looked up as one long command name.
-py() { uv run --no-project python "$@"; }
+LAUNCHER="$(dirname "$(dirname "$ENGINE")")/bin/mente-python"
+py() { sh "$LAUNCHER" "$@"; }
 
 # With no pin anywhere, uv picks whatever it can find, and "whatever it can
 # find" differs per machine — the drift this plugin exists to prevent. uv walks
 # up from $PWD for a .python-version before falling back to the global pin, so
 # this looks in the same order rather than only at the current directory.
 pinned() {
-  d=$PWD
-  while [ "$d" != "/" ]; do
-    [ -f "$d/.python-version" ] && return 0
-    d=$(dirname "$d")
+  directory=$PWD
+  while [ "$directory" != "/" ]; do
+    [ -f "$directory/.python-version" ] && return 0
+    directory=$(dirname "$directory")
   done
   [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/uv/.python-version" ]
 }
-if ! pinned; then
+# Only worth saying when uv is the thing doing the choosing. With uv absent the
+# launcher has already printed the one useful instruction, and this nudge would
+# contradict it — then recommend `uv python pin`, a command that machine cannot
+# run.
+if command -v uv >/dev/null 2>&1 && ! pinned; then
   echo "No Python pin found — uv is choosing an interpreter for you. Pin one:"
   echo "  uv python pin --global $(py -c 'import sys; print(sys.version.split()[0])')"
 fi
@@ -355,27 +360,32 @@ if [ ! -f "$ENGINE" ]; then
 fi
 [ -f "$ENGINE" ] || { echo "config_sync.py engine not found — run: claude plugin install mente-apex"; exit 1; }
 
-# Never the interpreter the OS ships: it is 3.9 on stock macOS, and every
-# module this plugin ships is formatted at py314, which emits syntax older
-# interpreters reject outright. Which interpreter uv picks is the operator's
-# call, not this file's: a repo's own .python-version wins, then the global pin.
+# Interpreter choice lives in bin/mente-python, not here: uv first (honouring
+# the operator's own pin), a new-enough system interpreter second, and a
+# diagnosis rather than a SyntaxError if neither exists. Keeping it in one file
+# is why that order can change without editing every skill that runs Python.
 # A function, not a variable — zsh does not word-split an unquoted expansion,
 # so a multi-word PY="..." would be looked up as one long command name.
-py() { uv run --no-project python "$@"; }
+LAUNCHER="$(dirname "$(dirname "$ENGINE")")/bin/mente-python"
+py() { sh "$LAUNCHER" "$@"; }
 
 # With no pin anywhere, uv picks whatever it can find, and "whatever it can
 # find" differs per machine — the drift this plugin exists to prevent. uv walks
 # up from $PWD for a .python-version before falling back to the global pin, so
 # this looks in the same order rather than only at the current directory.
 pinned() {
-  d=$PWD
-  while [ "$d" != "/" ]; do
-    [ -f "$d/.python-version" ] && return 0
-    d=$(dirname "$d")
+  directory=$PWD
+  while [ "$directory" != "/" ]; do
+    [ -f "$directory/.python-version" ] && return 0
+    directory=$(dirname "$directory")
   done
   [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/uv/.python-version" ]
 }
-if ! pinned; then
+# Only worth saying when uv is the thing doing the choosing. With uv absent the
+# launcher has already printed the one useful instruction, and this nudge would
+# contradict it — then recommend `uv python pin`, a command that machine cannot
+# run.
+if command -v uv >/dev/null 2>&1 && ! pinned; then
   echo "No Python pin found — uv is choosing an interpreter for you. Pin one:"
   echo "  uv python pin --global $(py -c 'import sys; print(sys.version.split()[0])')"
 fi

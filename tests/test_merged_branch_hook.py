@@ -326,13 +326,22 @@ def test_hooks_json_declares_the_hook_portably():
 
 
 def test_every_declared_hook_script_exists():
+    """Every plugin-relative path in a command must resolve — not just the
+    first. A command names two now (the launcher and the module it runs), and
+    checking only one would let a typo in the other ship."""
     declaration = json.loads(Path(HOOKS_JSON).read_text())
     plugin_root = os.path.dirname(os.path.dirname(HOOKS_JSON))
     for groups in declaration["hooks"].values():
         for group in groups:
             for hook in group["hooks"]:
-                relative = hook["command"].split("${CLAUDE_PLUGIN_ROOT}/", 1)[1]
-                assert os.path.exists(os.path.join(plugin_root, relative)), relative
+                referenced = [
+                    token.split("${CLAUDE_PLUGIN_ROOT}/", 1)[1]
+                    for token in shlex.split(hook["command"])
+                    if token.startswith("${CLAUDE_PLUGIN_ROOT}/")
+                ]
+                assert referenced, hook["command"]
+                for relative in referenced:
+                    assert os.path.exists(os.path.join(plugin_root, relative)), relative
 
 
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(HOOKS_JSON))
@@ -355,18 +364,19 @@ def declared_command():
 def test_the_declared_command_defers_to_the_operator_pin():
     """The module is written in 3.14 syntax (PEP 758 `except A, B:`), so a bare
     `python3` resolved from the end user's PATH is a SyntaxError on every
-    machine whose `python3` predates it — macOS still ships 3.9. uv is what
-    keeps that from happening.
+    machine whose `python3` predates it — macOS still ships 3.9. Something has
+    to keep that from happening.
 
-    Which interpreter uv then picks is deliberately NOT hardcoded here: a repo's
-    own .python-version wins, and the global pin (`uv python pin --global`)
-    answers everywhere else. Asserting the absence of `--python` is the point —
-    re-adding it would override the operator's pin, which is the behaviour this
-    contract gives up on purpose.
+    That something is bin/mente-python rather than a `uv run` spelled out here.
+    The promise this test has always made is unchanged — the operator's pin
+    decides which interpreter uv picks, and nothing in the plugin overrides it
+    — but the hook now delegates instead of restating it, so the uv-absent case
+    has one answer shared with every skill rather than none at all.
     """
     argv = declared_command()
-    assert argv[0] == "uv"
-    assert "--no-project" in argv, "must not adopt the session directory's project"
+    assert argv[0] == "sh"
+    assert argv[1].endswith("/bin/mente-python"), argv
+    assert Path(argv[1]).exists(), "the hook names a launcher that ships"
     assert "--python" not in argv, "the operator's pin decides, not this file"
 
 

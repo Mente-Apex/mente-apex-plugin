@@ -1,0 +1,56 @@
+#!/bin/sh
+# The one place this plugin decides which interpreter runs its Python.
+#
+# Call sites (skills, hooks) name THIS file, never `uv` and never an
+# interpreter, so the resolution order below is changed once rather than at
+# every invocation. That indirection is the whole point: the previous design
+# repeated `uv run --no-project` across nine surfaces, so the machine-dependent
+# half of the decision was invisible until it failed on someone else's laptop.
+#
+# Resolution order:
+#   1. uv, which resolves the operator's own pin -- a repo's .python-version
+#      first, then `uv python pin --global`. Deliberately NOT `--python X.Y`:
+#      an operator who pinned an interpreter meant it.
+#   2. Failing that, a system interpreter new enough to parse this plugin's
+#      code, plus a nudge toward uv on stderr.
+#   3. Failing that, a diagnosis -- never a SyntaxError traceback.
+#
+# The floor is real, not defensive: this plugin is formatted by black at
+# target py314, which emits PEP 758 `except A, B:`. An older interpreter does
+# not run this code badly, it refuses to parse it. So a fallback below the
+# floor is not a degraded mode, it is a crash with extra steps -- step 3 says
+# so in words the operator can act on.
+set -eu
+
+MINIMUM_VERSION="3.14"
+UV_INSTALL_URL="https://docs.astral.sh/uv/getting-started/installation/"
+
+# The floor is interpolated rather than repeated as a literal tuple: two copies
+# of "3.14" in one file is one copy too many, and the stale one would be the
+# check rather than the message.
+meets_minimum() {
+    "$1" -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= tuple(
+        int(part) for part in '$MINIMUM_VERSION'.split('.')) else 1)" \
+        >/dev/null 2>&1
+}
+
+if command -v uv >/dev/null 2>&1; then
+    exec uv run --no-project python "$@"
+fi
+
+for candidate in python3.14 python3 python; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    meets_minimum "$candidate" || continue
+    printf '%s\n' \
+        "mente-apex: uv not found; falling back to $candidate." \
+        "  Install uv so this plugin runs on your pinned interpreter: $UV_INSTALL_URL" \
+        >&2
+    exec "$candidate" "$@"
+done
+
+printf '%s\n' \
+    "mente-apex: no usable Python found." \
+    "  This plugin requires Python >= $MINIMUM_VERSION; every interpreter on PATH is older." \
+    "  Install uv and it will fetch a suitable one: $UV_INSTALL_URL" \
+    >&2
+exit 1
