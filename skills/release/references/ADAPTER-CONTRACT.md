@@ -71,8 +71,9 @@ empty square, where it builds, it tags, and nothing further mirrors or ships.
 > fingerprint only on **shipping evidence**. Neither may look at the other's.
 
 - **Build evidence** — `uv.lock`, `package-lock.json`, `package.json`, `Cargo.lock`,
-  `Cargo.toml`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `pyproject.toml`,
-  `setup.py`, and predicates over them such as `pyproject.toml#tool.uv.package==false`.
+  `Cargo.toml`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `gradle.properties`,
+  `pyproject.toml`, `setup.py`, and predicates over them such as
+  `pyproject.toml#tool.uv.package==false`.
   This list must cover everything the [Level 1](#level-1--technology) table names, since
   that is the table Step 0 walks the repository for; a test compares them.
 - **Shipping evidence** — `.claude-plugin/`, and the registry configuration and publish
@@ -118,6 +119,38 @@ fingerprint names a **shipping selector into a shared manifest**:
   selector: Python and its lockfiles have shipping evidence of their own to point at, so
   the one justification for the carve-out — no second file exists — does not apply. Adding
   a fourth shared manifest means arguing that case here first.
+
+**The fourth shared manifest: `gradle.properties`.** The case is the one that admitted
+`pom.xml`, made sharper by Gradle's build files being *code*. A Gradle project records
+its version, and any project-wide value its build script reads, in `gradle.properties`;
+`build.gradle.kts` is imperative Kotlin, so it is not a second file a fingerprint could
+be redirected to — it is not addressable by any selector language at all (see [Selector
+syntax](#selector-syntax)). Gradle therefore has strictly *fewer* places to put a
+shipping fact than Maven does, not more, and the "no second file exists" justification
+applies with more force here than in the case that established it.
+
+What it does **not** license is the loose reading. `gradle.properties` joins the shared
+manifests under the same two clauses as the other three: a bare `gradle.properties`
+fingerprint from a distribution adapter is still a violation, and only the **named**
+shipping selectors below are readable across the axis. It is admitted because Gradle has
+no alternative, not because a `.properties` file is generically neutral.
+
+The named shipping facts, by shared manifest:
+
+| Shared manifest | Named shipping selectors |
+|---|---|
+| `pom.xml` | `/project/distributionManagement`, `/project/properties/spring-boot.build-image.imageName` |
+| `Cargo.toml` | `package.publish` |
+| `package.json` | `.private`, `.publishConfig`, `.files` |
+| `gradle.properties` | `imageName` |
+
+`gradle.properties#imageName` is the weakest entry in that table and the one to read
+sceptically: Maven's is a property **Spring Boot's own plugin defines and reads**, while
+Gradle defines no equivalent, so `imageName` is a convention the OCI adapter imposes
+rather than one the ecosystem already had. It is declared here so the imposition is
+visible in the contract instead of buried in an adapter, and the adapter that relies on
+it says so in its body. A Gradle project naming its image any other way does not resolve
+that adapter, which is the correct outcome — a missed detection, not a wrong one.
 - The build direction is constrained by the same two clauses, read the other way.
   `SHIPPING_EVIDENCE` is matched on the whole path regardless of selector, because
   `.claude-plugin/` and an `.npmrc` carry no build fact at any selector for one to
@@ -184,6 +217,19 @@ preference:
 | YAML — `.yaml`, `.yml` | jq path, as `yq` accepts it | leading `.` | `galaxy.yml#.version` |
 | TOML — `.toml` | dotted key path | bare key first | `pyproject.toml#project.version` |
 | XML — `.xml` | XPath | leading `/` | `pom.xml#/project/version` |
+| Java properties — `.properties` | the property key, verbatim | bare key first | `gradle.properties#version` |
+
+**A properties key is not a TOML dotted path**, which is why it is its own row rather
+than reusing `dotted`. In TOML, `a.b.c` *navigates* three nested tables; in a properties
+file it is one flat key whose name happens to contain dots (`org.gradle.caching`). A
+parser that treated them alike would resolve `version` correctly and
+`org.gradle.parallel` not at all, and the failure would be silent.
+
+The row exists because Gradle otherwise has **no addressable version at all**.
+`build.gradle.kts` is imperative Kotlin and `build.gradle` imperative Groovy — a
+`version = computeVersion()` line is not a value any selector language can name, at any
+level of cleverness. `gradle.properties` is the one declarative file in a Gradle build,
+which is what makes it the only possible `version_source` for that toolchain.
 
 Each is the idiom a reader of that format already knows, and — more to the point — the
 input the format's standard query tool already takes. The rule exists because it was
@@ -572,6 +618,7 @@ Each row's fingerprint cell lists that adapter's `fingerprint` entries verbatim,
 | `python` | `uv.lock` | `uv` |
 | `typescript` | `package-lock.json` | `npm` |
 | `java` | `pom.xml` | `maven` |
+| `java` | `build.gradle.kts` or `build.gradle` | `gradle` |
 | `rust` | `Cargo.lock` | `cargo` |
 
 Note the ordering within `python` is load-bearing: both rows can match one repository,

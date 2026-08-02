@@ -80,8 +80,9 @@ scanning before a single finding exists (on a big repo this is where the minutes
 So produce a small **inventory artifact** in `docs/reports/code-quality/` now and hand
 it to every analyzer: the scoped **file list** (source *and* tests, with rough LOC,
 vendored/generated dirs already excluded) and the **import graph** built once with the
-real tool (`grimp` for Python, `madge` for TS — clean-architecture needs it anyway, so
-build it here and share rather than have each lens re-derive imports by grep). Build a **third artifact next to the file list and import graph: a symbol
+real tool (`grimp` for Python, `madge` for TS, `jdeps` for Java/JVM — clean-architecture
+needs it anyway, so build it here and share rather than have each lens re-derive imports
+by grep; note `jdeps` reads bytecode, so the Java leg needs a compile first). Build a **third artifact next to the file list and import graph: a symbol
 index** — every class / function / method definition with its `file:line`, name,
 and rough LOC — **once**, with a real tool when reachable and degrading exactly
 as the import graph does: **an existing `graphify-out/graph.json`** (free when the

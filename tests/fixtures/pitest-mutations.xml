@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mutations partial="false">
+<mutation detected="true" status="KILLED" numberOfTestsRun="2">
+  <sourceFile>Money.java</sourceFile>
+  <mutatedClass>com.example.money.Money</mutatedClass>
+  <mutatedMethod>add</mutatedMethod>
+  <methodDescription>(Lcom/example/money/Money;)Lcom/example/money/Money;</methodDescription>
+  <lineNumber>24</lineNumber>
+  <mutator>org.pitest.mutationtest.engine.gregor.mutators.MathMutator</mutator>
+  <indexes><index>7</index></indexes>
+  <blocks><block>1</block></blocks>
+  <killingTest>com.example.money.MoneyTest.addsTwoAmounts</killingTest>
+  <description>Replaced long addition with subtraction</description>
+</mutation>
+<mutation detected="false" status="SURVIVED" numberOfTestsRun="2">
+  <sourceFile>Money.java</sourceFile>
+  <mutatedClass>com.example.money.Money</mutatedClass>
+  <mutatedMethod>isOverThreshold</mutatedMethod>
+  <methodDescription>(J)Z</methodDescription>
+  <lineNumber>31</lineNumber>
+  <mutator>org.pitest.mutationtest.engine.gregor.mutators.ConditionalsBoundaryMutator</mutator>
+  <indexes><index>3</index></indexes>
+  <blocks><block>0</block></blocks>
+  <killingTest/>
+  <succeedingTests>com.example.money.MoneyTest.memberOverThresholdGetsTenPercentOff|com.example.money.MoneyTest.vacuousGuardAssertsNothingReal</succeedingTests>
+  <description>changed conditional boundary</description>
+</mutation>
+<mutation detected="false" status="SURVIVED" numberOfTestsRun="1">
+  <sourceFile>Discount.java</sourceFile>
+  <mutatedClass>com.example.pricing.Discount$Tier</mutatedClass>
+  <mutatedMethod>rate</mutatedMethod>
+  <methodDescription>()D</methodDescription>
+  <lineNumber>12</lineNumber>
+  <mutator>org.pitest.mutationtest.engine.gregor.mutators.ReturnValsMutator</mutator>
+  <indexes><index>1</index></indexes>
+  <blocks><block>0</block></blocks>
+  <killingTest/>
+  <description>replaced double return with 0.0d</description>
+</mutation>
+<mutation detected="false" status="NO_COVERAGE" numberOfTestsRun="0">
+  <sourceFile>Money.java</sourceFile>
+  <mutatedClass>com.example.money.Money</mutatedClass>
+  <mutatedMethod>negate</mutatedMethod>
+  <methodDescription>()Lcom/example/money/Money;</methodDescription>
+  <lineNumber>45</lineNumber>
+  <mutator>org.pitest.mutationtest.engine.gregor.mutators.MathMutator</mutator>
+  <indexes><index>2</index></indexes>
+  <blocks><block>0</block></blocks>
+  <killingTest/>
+  <description>Replaced long multiplication with division</description>
+</mutation>
+<mutation detected="false" status="TIMED_OUT" numberOfTestsRun="1">
+  <sourceFile>Money.java</sourceFile>
+  <mutatedClass>com.example.money.Money</mutatedClass>
+  <mutatedMethod>accumulate</mutatedMethod>
+  <methodDescription>()V</methodDescription>
+  <lineNumber>52</lineNumber>
+  <mutator>org.pitest.mutationtest.engine.gregor.mutators.IncrementsMutator</mutator>
+  <indexes><index>4</index></indexes>
+  <blocks><block>2</block></blocks>
+  <killingTest/>
+  <description>Changed increment from 1 to -1</description>
+</mutation>
+<mutation detected="false" status="NON_VIABLE" numberOfTestsRun="0">
+  <sourceFile>Money.java</sourceFile>
+  <mutatedClass>com.example.money.Money</mutatedClass>
+  <mutatedMethod>currency</mutatedMethod>
+  <methodDescription>()Ljava/util/Currency;</methodDescription>
+  <lineNumber>58</lineNumber>
+  <mutator>org.pitest.mutationtest.engine.gregor.mutators.VoidMethodCallMutator</mutator>
+  <indexes><index>5</index></indexes>
+  <blocks><block>0</block></blocks>
+  <killingTest/>
+  <description>removed call to java/util/Currency::getInstance</description>
+</mutation>
+<mutation detected="false" status="MEMORY_ERROR" numberOfTestsRun="1">
+  <sourceFile>Ledger.java</sourceFile>
+  <mutatedClass>com.example.money.Ledger</mutatedClass>
+  <mutatedMethod>replay</mutatedMethod>
+  <methodDescription>()V</methodDescription>
+  <lineNumber>77</lineNumber>
+  <mutator>org.pitest.mutationtest.engine.gregor.mutators.NegateConditionalsMutator</mutator>
+  <indexes><index>9</index></indexes>
+  <blocks><block>3</block></blocks>
+  <killingTest/>
+  <description>negated conditional</description>
+</mutation>
+<mutation detected="false" status="RUN_ERROR" numberOfTestsRun="1">
+  <sourceFile>Ledger.java</sourceFile>
+  <mutatedClass>com.example.money.Ledger</mutatedClass>
+  <mutatedMethod>close</mutatedMethod>
+  <methodDescription>()V</methodDescription>
+  <lineNumber>84</lineNumber>
+  <mutator>org.pitest.mutationtest.engine.gregor.mutators.EmptyObjectReturnValsMutator</mutator>
+  <indexes><index>6</index></indexes>
+  <blocks><block>1</block></blocks>
+  <killingTest/>
+  <description>replaced return value with null</description>
+</mutation>
+</mutations>

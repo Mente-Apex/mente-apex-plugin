@@ -174,6 +174,7 @@ def as_report_payload(result, scope):
         "baseline_failures": list(result.baseline_failures),
         "baseline_error": result.baseline_error,
         "run_errors": list(result.run_errors),
+        "scope_notes": list(result.scope_notes),
         "selected": result.selected,
     }
 
@@ -202,6 +203,23 @@ def render_markdown(result, scope):
         lines.append("")
         for message in result.run_errors:
             lines.extend(_render_run_error(message))
+        lines.append("")
+
+    if result.scope_notes:
+        # Deliberately NOT folded into `run_errors`. These runs COMPLETED and
+        # their per-mutant results are trustworthy -- printing the "did not
+        # complete" banner over them would be its own kind of lie. What they
+        # covered is narrower (or wider) than what was selected, and an empty
+        # survivor list under a silently-widened scope reads exactly like a
+        # clean one, which is the failure this section exists to prevent.
+        lines.append(
+            "**Scope caveats** — a backend ran to completion but did not "
+            "mutate exactly the selection it was handed, so read its results "
+            "against the scope named here rather than the one you asked for:"
+        )
+        lines.append("")
+        for note in result.scope_notes:
+            lines.append(f"- {note}")
         lines.append("")
 
     survived = [s for s in result.survivors if is_survivor(s)]

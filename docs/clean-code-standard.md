@@ -93,6 +93,13 @@ thing — a function that handles errors should mostly just do that.
 **Where this bends:** in languages/ecosystems where result types or error returns
 are idiomatic (Go's `err`, Rust's `Result`, option types), follow the language —
 forcing exceptions there is the unclean choice. Match the platform's conventions.
+**And where the option type has a narrower contract than "an option type", honour
+that too:** Java's `Optional` was designed as a *return* type only — as a field it
+is not serializable, and as a parameter it forces every caller to wrap, so
+`Optional` in either position is the finding rather than the fix. Java's checked
+exceptions cut the other way: a checked exception crossing an abstraction boundary
+drags the callee's failure mode into every caller's signature, so wrap it at the
+boundary rather than propagating it upward.
 
 ### 10. Comments are a last resort, not a failure to be punished
 Prefer code that explains itself; a comment that restates the code is noise, and a

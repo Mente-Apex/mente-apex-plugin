@@ -68,8 +68,14 @@ Detect a graph tool and use it when present; **degrade to agent-driven import
 reading** when not (say which mode ran in the report). The detected language's
 `references/<language>.md` names the tools and the how-to: `grimp` +
 `import-linter` (`python.md`), `dependency-cruiser` / `madge` (`typescript.md`),
-via any available runner (`uvx`, `pipx run`, `npx`, `pnpm dlx`, project-local) —
-never a hard install.
+`jdeps` + ArchUnit (`java.md`), via any available runner (`uvx`, `pipx run`,
+`npx`, `pnpm dlx`, project-local) — never a hard install.
+
+Java is the one language where a graph tool is **always** reachable — `jdeps`
+ships with the JDK — and where the leave-behind contract runs inside the
+project's existing test suite rather than as a separate CI step, because
+ArchUnit rules *are* JUnit tests. Read `java.md` before assuming the Python
+degrade path applies.
 
 ## Leave-behind artifact
 
