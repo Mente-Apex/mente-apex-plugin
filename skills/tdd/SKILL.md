@@ -161,7 +161,7 @@ explicitly. Silence is how this step evaporates.
 **Measure first, then judge.** Run the probe over what this cycle changed:
 
 ```bash
-uv run python scripts/complexity_probe.py --scope working-tree --gate
+sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --scope working-tree --gate
 ```
 
 It prints each changed function's complexity and length, then reports the
