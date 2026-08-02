@@ -193,16 +193,29 @@ reads existing ArchUnit rules before proposing its own.
 
 ### 4.3 Chunk review (the human path)
 
-Reuses skills that already accept a chunk. `/clean-code` today takes *"a diff,
-file, or PR"*; `/solid` likewise. Neither has numbers. Feeding them a
-`Measurement` adds triage to judgment without touching their judgment logic —
-open/closed.
+Reuses skills that already accept a chunk. Feeding them a `Measurement` adds
+triage to judgment without touching their judgment logic — open/closed.
+
+**Verified against the skills, 2026-08-02** — the reuse holds, but two of the
+three chunk forms below are new work, not existing capability:
+
+| Skill | Documented today | Source |
+|---|---|---|
+| `/clean-code` | `/clean-code [scope]`, reviews *"a diff, file, or PR"*; gears scale to scope size | `skills/clean-code/SKILL.md:7,35,42-45` |
+| `/solid` | `/solid [path]` — *"`path` scopes the analysis (default: repo root)"* | `skills/solid/SKILL.md:38` |
 
 A chunk is, in order of expected use:
 
-1. **unspecified** — everything uncommitted in the working tree
-2. **a path** — that file or directory
-3. **a range** — `OrderService.java:40-120`
+| Form | Example | Status |
+|---|---|---|
+| **unspecified** — everything uncommitted in the working tree | `/clean-code` | **new** — `/solid` currently defaults to *repo root*, and `/clean-code` states no bare default |
+| **a path** — that file or directory | `/clean-code src/main/java/orders/` | **exists** in both |
+| **a range** — one method | `/clean-code OrderService.java:40-120` | **new** — neither skill documents line ranges |
+
+The working-tree default matters more than it looks: a learner asking *"check
+what I just wrote"* does not want `/solid`'s whole-repo audit. Repo root is the
+right default for an audit and the wrong one for a chunk, so the chunk path must
+supply its own.
 
 The number triages; the lens judges. For a learner the lens output is the
 valuable half — *"this is a type switch; Java 25's sealed interfaces plus
@@ -244,6 +257,10 @@ scripts/complexity_probe.py --json           # for a sink to consume
 
 `--scope` takes the same values the mutation gate does (`merge-base`,
 `working-tree`, `full`) so the two sensors share one vocabulary.
+
+**Two of these forms do not exist yet** — the bare working-tree default and the
+line range (§4.3). They are requirements on the implementation, not descriptions
+of current behavior.
 
 **Documentation duty at implementation time.** `README.md` and the affected
 `SKILL.md` files (`tdd`, `clean-code`, `solid`, `code-quality`) must be updated
