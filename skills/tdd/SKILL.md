@@ -164,10 +164,10 @@ explicitly. Silence is how this step evaporates.
 sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --scope working-tree --gate
 ```
 
-It prints each changed function's complexity and length, then reports the
-cycle-gate verdict. **Produce that output, or state why there isn't any** — no
-probe for this language, tool absent, needs compiled classes. Either is a
-complete answer; saying nothing is not.
+It prints each changed function's complexity and length. When `--gate` is passed,
+it also reports the cycle-gate verdict at the end. **Produce that output, or state why
+there isn't any** — no probe for this language, tool absent, needs compiled classes.
+Either is a complete answer; saying nothing is not.
 
 The numbers are triage, never a verdict: a high count says *look here*, it does
 not say *fix this*. The judgment is still yours, against the checklist below.

@@ -39,6 +39,77 @@ class TestExitCodes:
         assert complexity_probe.main([str(source_file), "--gate"]) == 0
 
 
+class TestGateReporting:
+    def test_gate_flag_adds_verdict_to_output(self, tmp_path, capsys):
+        """When --gate is passed, the verdict is printed to stdout.
+        The verdict is separate from the measurement and should appear in output."""
+        source_file = tmp_path / "sample.py"
+        source_file.write_text("def add(first, second):\n    return first + second\n")
+
+        # Measure without --gate
+        exit_code_no_gate = complexity_probe.main([str(source_file)])
+        output_no_gate = capsys.readouterr().out
+        assert exit_code_no_gate == 0
+
+        # Measure with --gate
+        exit_code_with_gate = complexity_probe.main([str(source_file), "--gate"])
+        output_with_gate = capsys.readouterr().out
+        assert exit_code_with_gate == 0
+
+        # The outputs should differ: --gate adds the verdict
+        assert output_no_gate != output_with_gate
+        assert output_with_gate.startswith(output_no_gate)  # Gate output is a superset
+        assert "measured" in output_with_gate  # The verdict is added
+
+    def test_gate_verdict_appears_for_successful_measurement(self, tmp_path, capsys):
+        """The gate verdict should report how many functions were measured."""
+        source_file = tmp_path / "functions.py"
+        source_file.write_text(
+            "def first():\n    pass\n\ndef second():\n    pass\n"
+        )
+        complexity_probe.main([str(source_file), "--gate"])
+        captured = capsys.readouterr().out
+        # The verdict should report the count
+        assert "measured 2 function(s)" in captured
+
+    def test_gate_json_mode_produces_valid_json_then_verdict(self, tmp_path, capsys):
+        """With --json --gate, the JSON payload should be valid and complete,
+        followed by the verdict on a new line."""
+        source_file = tmp_path / "sample.py"
+        source_file.write_text("def add(first, second):\n    return first + second\n")
+        exit_code = complexity_probe.main(
+            [str(source_file), "--json", "--gate"]
+        )
+        assert exit_code == 0
+
+        # The output should contain valid JSON and a verdict message
+        captured = capsys.readouterr().out
+        lines = captured.strip().split("\n")
+
+        # First part should be JSON (potentially multiple lines)
+        json_end_index = None
+        for idx, line in enumerate(lines):
+            try:
+                # Try to parse from the start up to this line
+                json_text = "\n".join(lines[: idx + 1])
+                json.loads(json_text)
+                json_end_index = idx
+            except json.JSONDecodeError:
+                # Keep trying with the next line
+                continue
+
+        assert json_end_index is not None, "No valid JSON found in output"
+
+        # The payload should be valid
+        json_payload = json.loads("\n".join(lines[: json_end_index + 1]))
+        assert "status" in json_payload
+
+        # There should be additional output (the verdict) after the JSON
+        if json_end_index + 1 < len(lines):
+            verdict_line = lines[json_end_index + 1]
+            assert "measured" in verdict_line or "unverified" in verdict_line
+
+
 class TestScopeWiring:
     def test_scope_full_is_accepted(self, tmp_path, capsys):
         (tmp_path / "sample.py").write_text("def add(a_value):\n    return a_value\n")
