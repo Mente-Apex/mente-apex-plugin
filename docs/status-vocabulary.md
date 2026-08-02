@@ -6,6 +6,10 @@ did not run must never read as a check that found nothing.
 Defined once here so the lenses reference it rather than each restating it.
 Cited by [#121](https://github.com/menteapex/mente-apex-plugin/issues/121) and by
 [`superpowers/specs/2026-08-02-cycle-gate-verdict-design.md`](superpowers/specs/2026-08-02-cycle-gate-verdict-design.md) §2.2.
+Implemented in [`scripts/complexity_probe_gate.py`](../scripts/complexity_probe_gate.py)
+(`CycleGate`, `ran`/`degraded`/`unverified`/silence) and
+[`scripts/complexity_probe_measurement.py`](../scripts/complexity_probe_measurement.py)
+(the invariant enforced at construction).
 
 ## The four states
 

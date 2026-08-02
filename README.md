@@ -138,3 +138,36 @@ uv run ruff check --fix . # lint, autofixing what it can
 Both formatter and linter must be clean before a commit. Runtime code stays
 standard-library-only — `pytest`, `black`, and `ruff` are declared under
 `[dependency-groups] dev` and never ship to users of the plugin.
+
+### Complexity probe
+
+Measures changed functions so the cleanup step produces evidence instead of
+prose. Three entry points, one engine:
+
+```bash
+# during a TDD cycle — appends the cycle-gate verdict after the measurement
+sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --scope working-tree --gate
+
+# reviewing a chunk you wrote by hand — never blocks
+sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --sink review OrderService.java:40-120
+
+# feeding an audit
+sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --scope full --json
+```
+
+The rule: **produce a measurement, or state why there isn't one. Silence is the
+only thing that blocks.** Numbers are triage — a high count is a place to look,
+never a finding on its own.
+
+`--gate` reports that verdict, it does not enforce it by exit code: this CLI
+always produces a measurement (a real one, or an `unverified` one carrying the
+reason it couldn't run), so the only thing the rule ever calls "silence" — an
+agent never running the probe at all — is not something a self-contained
+invocation of this script can observe about itself. In transcript/review mode
+`--gate` appends the verdict line after the measurement; with `--json` it adds
+a `verdict` object (`status`, `message`) inside the same payload so stdout
+stays one parseable document.
+
+Thresholds come from what your repo already declares (Checkstyle, PMD, ruff's
+`mccabe`, ESLint's `complexity`). The plugin ships none of its own. Statuses
+follow [`docs/status-vocabulary.md`](docs/status-vocabulary.md).

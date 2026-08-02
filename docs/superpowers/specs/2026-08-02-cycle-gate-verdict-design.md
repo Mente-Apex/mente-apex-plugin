@@ -1,6 +1,8 @@
 # The cycle-gate verdict — design
 
-**Status: SETTLED.** Resolves §5.1 and §5.2 of
+**Status: IMPLEMENTED 2026-08-03.** Plan:
+[`../plans/2026-08-02-cycle-gate.md`](../plans/2026-08-02-cycle-gate.md).
+Resolves §5.1 and §5.2 of
 [`2026-07-30-quality-in-the-loop-design.md`](2026-07-30-quality-in-the-loop-design.md),
 which were the two open questions blocking [#117](https://github.com/menteapex/mente-apex-plugin/issues/117)
 and [#124](https://github.com/menteapex/mente-apex-plugin/issues/124).
