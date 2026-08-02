@@ -42,6 +42,7 @@ class TestOnlySilenceBlocks:
         verdict = CycleGate().evaluate(a_measurement(), probe_available=True)
         assert verdict.blocks is False
         assert verdict.status == RAN
+        assert verdict.message == "measured 1 function(s)"
 
     def test_a_degraded_measurement_does_not_block(self):
         verdict = CycleGate().evaluate(
