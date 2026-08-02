@@ -72,9 +72,11 @@ class TestGateReporting:
         # The verdict should report the count
         assert "measured 2 function(s)" in captured
 
-    def test_gate_json_mode_produces_valid_json_then_verdict(self, tmp_path, capsys):
-        """With --json --gate, the JSON payload should be valid and complete,
-        followed by the verdict on a new line."""
+    def test_gate_json_mode_produces_valid_json_with_verdict_field(
+        self, tmp_path, capsys
+    ):
+        """With --json --gate, the entire stdout is a single valid JSON document
+        that includes the verdict as a field in the payload."""
         source_file = tmp_path / "sample.py"
         source_file.write_text("def add(first, second):\n    return first + second\n")
         exit_code = complexity_probe.main(
@@ -82,32 +84,15 @@ class TestGateReporting:
         )
         assert exit_code == 0
 
-        # The output should contain valid JSON and a verdict message
         captured = capsys.readouterr().out
-        lines = captured.strip().split("\n")
 
-        # First part should be JSON (potentially multiple lines)
-        json_end_index = None
-        for idx, line in enumerate(lines):
-            try:
-                # Try to parse from the start up to this line
-                json_text = "\n".join(lines[: idx + 1])
-                json.loads(json_text)
-                json_end_index = idx
-            except json.JSONDecodeError:
-                # Keep trying with the next line
-                continue
-
-        assert json_end_index is not None, "No valid JSON found in output"
-
-        # The payload should be valid
-        json_payload = json.loads("\n".join(lines[: json_end_index + 1]))
-        assert "status" in json_payload
-
-        # There should be additional output (the verdict) after the JSON
-        if json_end_index + 1 < len(lines):
-            verdict_line = lines[json_end_index + 1]
-            assert "measured" in verdict_line or "unverified" in verdict_line
+        # The entire output should parse as one valid JSON document.
+        # No prefix-scanning, no special handling — it should all be JSON.
+        json_payload = json.loads(captured)
+        assert "status" in json_payload, "Payload missing status field"
+        assert "verdict" in json_payload, "Payload missing verdict field (--gate)"
+        assert "status" in json_payload["verdict"], "Verdict missing status"
+        assert "message" in json_payload["verdict"], "Verdict missing message"
 
 
 class TestScopeWiring:
