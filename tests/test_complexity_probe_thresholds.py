@@ -227,6 +227,79 @@ class TestAbsence:
         result = EslintThresholds().thresholds_for(tmp_path)
         assert result is None
 
+    def test_eslint_url_on_earlier_line_extracts_real_rule(self, tmp_path):
+        # Regression: URL string on earlier line with // must not affect
+        # real rule on later line. Real-world: metadata with docsUrl.
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n"
+            "  {\n"
+            '    meta: { docsUrl: "https://example.com/rules/complexity" },\n'
+            "    rules: {\n"
+            '      complexity: ["error", 12],\n'
+            "    },\n"
+            "  },\n"
+            "];\n"
+        )
+        result = EslintThresholds().thresholds_for(tmp_path)
+        assert result.cyclomatic_complexity == 12
+
+    def test_eslint_url_same_line_as_rule_extracts_real_rule(self, tmp_path):
+        # Regression: URL on same line as real rule must not blank the rule
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [{\n"
+            '  meta: { url: "https://example.com" }, rules: { complexity: ["error", 9] }\n'
+            "}];\n"
+        )
+        result = EslintThresholds().thresholds_for(tmp_path)
+        assert result.cyclomatic_complexity == 9
+
+    def test_eslint_genuine_comment_with_url_is_stripped(self, tmp_path):
+        # Real comment containing URL is stripped; rule works
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n"
+            "  {\n"
+            "    // See https://example.com/rules for details\n"
+            "    rules: {\n"
+            '      complexity: ["error", 11],\n'
+            "    },\n"
+            "  },\n"
+            "];\n"
+        )
+        result = EslintThresholds().thresholds_for(tmp_path)
+        assert result.cyclomatic_complexity == 11
+
+    def test_eslint_rule_inside_backtick_template_literal_yields_nothing(
+        self, tmp_path
+    ):
+        # Rule inside backtick string should not be extracted
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n"
+            "  {\n"
+            '    docstring: `complexity: ["error", 10]`,\n'
+            "    rules: {\n"
+            '      complexity: "off",\n'
+            "    },\n"
+            "  },\n"
+            "];\n"
+        )
+        result = EslintThresholds().thresholds_for(tmp_path)
+        assert result is None
+
+    def test_eslint_escaped_quote_before_pattern_handled_correctly(self, tmp_path):
+        # Escaped quote should not end string prematurely
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n"
+            "  {\n"
+            '    text: "\\"quoted\\" text",\n'
+            "    rules: {\n"
+            '      complexity: ["error", 14],\n'
+            "    },\n"
+            "  },\n"
+            "];\n"
+        )
+        result = EslintThresholds().thresholds_for(tmp_path)
+        assert result.cyclomatic_complexity == 14
+
     def test_the_null_source_always_yields_nothing(self, tmp_path):
         assert NullThresholds().thresholds_for(tmp_path) is None
 

@@ -147,8 +147,11 @@ class EslintThresholds:
     """Read complexity thresholds from ESLint config files.
 
     Tries flat config (ESLint 9+) first, then falls back to legacy .json format.
-    Flat config extraction is conservative: comments and string literals are
-    excluded, and ambiguous matches return None rather than guess.
+    Flat config extraction matches patterns like `complexity: ["error", N]` or
+    `complexity: ["warn", N]` where N is a bare number. Strings and comments are
+    excluded by sanitization. Does NOT extract: variables, object form
+    ({ max: 10 }), spreads, or template expressions. Multiple conflicting
+    candidates return None rather than guess.
     """
 
     def thresholds_for(self, repo_root):
@@ -185,12 +188,9 @@ class EslintThresholds:
     def _extract_from_flat_config(self, config_path):
         """Extract complexity limit from flat config JS file.
 
-        Flat config is a JavaScript module. Conservative regex matching extracts
-        patterns like `complexity: ["error", N]` or `complexity: ["warn", N]`.
-        Before matching, comments are stripped and any matches inside string
-        literals are rejected. Multiple conflicting candidates return None.
-        Matches inside objects, spreads, variables, or other non-literal forms
-        are not extracted.
+        Single-pass sanitization replaces strings and comments with spaces,
+        preserving line structure and offsets. Then regex matches patterns
+        that occur in code, never in blanked-out content.
         """
         if not config_path.exists():
             return None
@@ -199,21 +199,20 @@ class EslintThresholds:
         except (OSError, UnicodeDecodeError):
             return None
 
-        # Strip comments before matching to avoid false positives
-        content_without_comments = self._strip_js_comments(content)
+        # Sanitize: replace strings and comments with spaces, preserve newlines
+        sanitized = self._sanitize_for_pattern_match(content)
 
-        # Find all candidate patterns: complexity: ["error"|"warn", N]
-        pattern = r'complexity\s*:\s*\[\s*["\'](?:error|warn)["\'],\s*(\d+)\s*\]'
+        # Find all candidate patterns: complexity: [..., N]
+        # After sanitization, strings are blanked, so pattern tolerates blanks
+        # where the severity used to be: complexity: [   , 10] vs [error, 10]
+        pattern = r"complexity\s*:\s*\[\s*[^,]*,\s*(\d+)\s*\]"
         candidates = []
-        for match in re.finditer(pattern, content_without_comments):
-            value = int(match.group(1))
-            offset = match.start()
-
-            # Reject if this match falls inside a string literal
-            if self._is_inside_string_literal(content_without_comments, offset):
+        for match in re.finditer(pattern, sanitized):
+            try:
+                value = int(match.group(1))
+                candidates.append(value)
+            except (TypeError, ValueError):
                 continue
-
-            candidates.append(value)
 
         # No candidates, or conflicting candidates → return None (be conservative)
         if not candidates:
@@ -231,62 +230,84 @@ class EslintThresholds:
             return None
 
     @staticmethod
-    def _strip_js_comments(text):
-        """Remove /* */ and // comments from JavaScript source.
+    def _sanitize_for_pattern_match(text):
+        """Replace strings and comments with spaces, preserving line structure.
 
-        Preserves string literals and does not handle all edge cases
-        (e.g., comments inside strings), but sufficient for config files.
+        Returns text of same length where:
+        - Characters inside strings (', ", `) become spaces
+        - Characters inside comments (// and /* */) become spaces
+        - Newlines are always preserved
+        - All other characters remain
+
+        This allows regex patterns to safely match code-level constructs
+        while avoiding false matches in strings or comments (e.g., URLs,
+        documentation strings).
         """
         result = []
         i = 0
         while i < len(text):
-            # Block comment: /* ... */
+            # Check for block comment start: /* ... */
             if i < len(text) - 1 and text[i : i + 2] == "/*":
-                j = text.find("*/", i + 2)
-                i = j + 2 if j != -1 else len(text)
+                result.append(" ")
+                result.append(" ")
+                i += 2
+                # Consume until end of block comment
+                while i < len(text):
+                    if i < len(text) - 1 and text[i : i + 2] == "*/":
+                        result.append(" ")
+                        result.append(" ")
+                        i += 2
+                        break
+                    result.append("\n" if text[i] == "\n" else " ")
+                    i += 1
                 continue
 
-            # Line comment: // ...
+            # Check for line comment start: // ...
             if i < len(text) - 1 and text[i : i + 2] == "//":
-                j = text.find("\n", i)
-                if j != -1:
-                    result.append("\n")  # Keep the newline
-                    i = j + 1
-                else:
-                    i = len(text)
+                result.append(" ")
+                result.append(" ")
+                i += 2
+                # Consume until end of line
+                while i < len(text) and text[i] != "\n":
+                    result.append(" ")
+                    i += 1
+                # Preserve newline if present
+                if i < len(text) and text[i] == "\n":
+                    result.append("\n")
+                    i += 1
                 continue
 
+            # Check for string literal start: ', ", or `
+            if text[i] in ('"', "'", "`"):
+                quote = text[i]
+                result.append(" ")  # Opening quote becomes space
+                i += 1
+                # Consume string content until closing quote
+                while i < len(text):
+                    if text[i] == "\\" and i + 1 < len(text):
+                        # Escape sequence: both chars become spaces
+                        result.append(" ")
+                        result.append(" ")
+                        i += 2
+                    elif text[i] == quote:
+                        # Closing quote
+                        result.append(" ")
+                        i += 1
+                        break
+                    elif text[i] == "\n":
+                        # Newline in string (valid in backticks)
+                        result.append("\n")
+                        i += 1
+                    else:
+                        result.append(" ")
+                        i += 1
+                continue
+
+            # Regular character: copy as-is
             result.append(text[i])
             i += 1
 
         return "".join(result)
-
-    @staticmethod
-    def _is_inside_string_literal(text, offset):
-        """Check if offset falls inside a ', ", or ` string literal.
-
-        Left-to-right scan tracking quote state and honouring backslash escapes.
-        """
-        in_string = None  # None, "'", '"', or "`"
-        i = 0
-        while i < offset and i < len(text):
-            char = text[i]
-
-            # Handle escape sequences
-            if char == "\\" and i + 1 < len(text):
-                i += 2
-                continue
-
-            # Toggle string state
-            if char in ("'", '"', "`"):
-                if in_string == char:
-                    in_string = None
-                elif in_string is None:
-                    in_string = char
-
-            i += 1
-
-        return in_string is not None
 
 
 class NullThresholds:
