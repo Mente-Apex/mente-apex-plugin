@@ -6,6 +6,8 @@ derived_manifests:
   - .claude-plugin/marketplace.json#.plugins[0].version?
 install_verify_command: claude plugin list
 release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
+publish_command: null
+distribution_names: null
 ---
 
 # claude-plugin

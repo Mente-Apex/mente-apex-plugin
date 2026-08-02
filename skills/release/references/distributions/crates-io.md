@@ -5,6 +5,8 @@ fingerprint: Cargo.toml#package.publish
 derived_manifests: null
 install_verify_command: cargo install <distribution-name:crate> --version <version>
 release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
+publish_command: null
+distribution_names: null
 ---
 
 # crates-io

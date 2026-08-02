@@ -5,6 +5,8 @@ fingerprint: pom.xml#/project/distributionManagement
 derived_manifests: null
 install_verify_command: mvn dependency:get -Dartifact=<distribution-name:group>:<distribution-name:artifact>:<version>
 release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
+publish_command: null
+distribution_names: null
 ---
 
 # maven-central
