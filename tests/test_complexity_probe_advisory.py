@@ -1,6 +1,10 @@
 """Advice makes `unverified` actionable. It never blocks, never invents a
 version, and distinguishes install from upgrade."""
 
+import re
+
+import pytest
+
 from complexity_probe_advisory import (
     ABSENT,
     TOO_OLD,
@@ -48,16 +52,87 @@ class TestAdviceContent:
         advice = advice_for("jacoco", tmp_path, reason=ABSENT)
         assert "jacoco" in advice.snippet
 
+    @pytest.mark.parametrize(
+        "tool,build_system,marker",
+        [
+            ("archunit", "gradle-kotlin", "com.tngtech.archunit"),
+            ("archunit", "gradle-groovy", "com.tngtech.archunit"),
+            ("archunit", "maven", "com.tngtech.archunit"),
+            ("pit", "gradle-kotlin", "pitest"),
+            ("pit", "gradle-groovy", "pitest"),
+            ("pit", "maven", "pitest"),
+            ("jacoco", "gradle-kotlin", "jacoco"),
+            ("jacoco", "gradle-groovy", "jacoco"),
+            ("jacoco", "maven", "jacoco"),
+            ("checkstyle", "gradle-kotlin", "checkstyle"),
+            ("checkstyle", "gradle-groovy", "checkstyle"),
+            ("checkstyle", "maven", "maven-checkstyle"),
+            ("pmd", "gradle-kotlin", "pmd"),
+            ("pmd", "gradle-groovy", "pmd"),
+            ("pmd", "maven", "maven-pmd"),
+            ("spotbugs", "gradle-kotlin", "spotbugs"),
+            ("spotbugs", "gradle-groovy", "spotbugs"),
+            ("spotbugs", "maven", "spotbugs"),
+            ("spring-modulith", "gradle-kotlin", "spring-modulith"),
+            ("spring-modulith", "gradle-groovy", "spring-modulith"),
+            ("spring-modulith", "maven", "spring-modulith"),
+        ],
+    )
+    def test_all_snippet_table_cells_are_populated(
+        self, tmp_path, tool, build_system, marker
+    ):
+        if build_system == "gradle-kotlin":
+            (tmp_path / "build.gradle.kts").write_text("")
+        elif build_system == "gradle-groovy":
+            (tmp_path / "build.gradle").write_text("")
+        elif build_system == "maven":
+            (tmp_path / "pom.xml").write_text("<project/>")
+        advice = advice_for(tool, tmp_path, reason=ABSENT)
+        assert advice is not None, f"{tool} on {build_system} should have advice"
+        assert (
+            marker in advice.snippet
+        ), f"{tool} on {build_system} should contain '{marker}' in snippet"
+
 
 class TestNoInventedVersions:
-    def test_no_advice_contains_a_version_literal(self, tmp_path):
-        (tmp_path / "build.gradle.kts").write_text("")
-        for tool in ("archunit", "pit", "jacoco", "checkstyle", "pmd"):
-            advice = advice_for(tool, tmp_path, reason=ABSENT)
-            assert not any(
-                part.replace(".", "").isdigit() and "." in part
-                for part in advice.snippet.split('"')
-            ), f"{tool} advice appears to pin a version"
+    @pytest.mark.parametrize(
+        "tool,build_system",
+        [
+            ("archunit", "gradle-kotlin"),
+            ("archunit", "gradle-groovy"),
+            ("archunit", "maven"),
+            ("pit", "gradle-kotlin"),
+            ("pit", "gradle-groovy"),
+            ("pit", "maven"),
+            ("jacoco", "gradle-kotlin"),
+            ("jacoco", "gradle-groovy"),
+            ("jacoco", "maven"),
+            ("checkstyle", "gradle-kotlin"),
+            ("checkstyle", "gradle-groovy"),
+            ("checkstyle", "maven"),
+            ("pmd", "gradle-kotlin"),
+            ("pmd", "gradle-groovy"),
+            ("pmd", "maven"),
+            ("spotbugs", "gradle-kotlin"),
+            ("spotbugs", "gradle-groovy"),
+            ("spotbugs", "maven"),
+            ("spring-modulith", "gradle-kotlin"),
+            ("spring-modulith", "gradle-groovy"),
+            ("spring-modulith", "maven"),
+        ],
+    )
+    def test_no_advice_contains_a_version_literal(self, tmp_path, tool, build_system):
+        if build_system == "gradle-kotlin":
+            (tmp_path / "build.gradle.kts").write_text("")
+        elif build_system == "gradle-groovy":
+            (tmp_path / "build.gradle").write_text("")
+        elif build_system == "maven":
+            (tmp_path / "pom.xml").write_text("<project/>")
+        advice = advice_for(tool, tmp_path, reason=ABSENT)
+        assert advice is not None, f"{tool} on {build_system} should have advice"
+        assert not re.search(
+            r"\d+\.\d+", advice.snippet
+        ), f"{tool} advice appears to pin a version: {advice.snippet}"
 
 
 class TestInstallVersusUpgrade:
