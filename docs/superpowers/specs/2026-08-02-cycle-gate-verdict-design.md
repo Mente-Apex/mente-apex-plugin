@@ -139,6 +139,7 @@ fired on a learner's hand-written Java — actively hostile to the use case.
 | `ThresholdSource` | where a project's declared limits are read from |
 | `MeasurementSink` | where a measurement is delivered |
 | `TierMap` | which probes are affordable at which frequency |
+| `ToolAdvisory` | what a build system needs to make a missing tool available |
 | `CycleGate` | deciding `ran` / `degraded` / `unverified` / silence |
 
 **`ComplexityProbe`** — `measure(paths) -> Measurement`. `LizardProbe` is the
@@ -167,8 +168,10 @@ with a third consumer added. The producer does not know which sink it feeds.
 rung, per language. Java's entry places `lizard` at cycle frequency and
 `jdeps` / ArchUnit / PIT at branch frequency.
 
-**`CycleGate`** — holds only the §2.3 rule. Receives a probe, a sink, and a tier
-map; owns no knowledge of any concrete tool.
+**`ToolAdvisory`** — see §4.5.
+
+**`CycleGate`** — holds only the §2.3 rule. Receives a probe, a sink, a tier map
+and an advisory; owns no knowledge of any concrete tool.
 
 ### 4.2 Thresholds (resolves parent §5.2)
 
@@ -249,7 +252,62 @@ uninvokable command is worse than documenting nothing. The plugin's standing
 rule ("always update README.md when changing the plugin — skills, commands,
 scripts, structure") applies.
 
-### 4.5 How DIP shaped this
+### 4.5 Tool advisories — making `unverified` actionable
+
+An `unverified` verdict says *why* a check could not run. On its own that is a
+dead end: "PIT is not in the build" leaves the reader to go find out what to do
+about it. The verdict should also say **how to make the tool available**.
+
+This is a distinct reason to change — build coordinates and plugin ids move
+independently of probe logic — so it is a separate unit, not a field the probe
+fills in.
+
+**`ToolAdvisory`** — `advice_for(tool, build_system) -> Advice | None`.
+Implementations: `GradleKotlinAdvisory`, `GradleGroovyAdvisory`,
+`MavenAdvisory`, `NullAdvisory`. The build system is detected from the repo
+(`build.gradle.kts` / `build.gradle` / `pom.xml`); an unrecognized one yields
+`NullAdvisory` and the verdict simply carries no advice. Adding a build system
+is adding a file.
+
+**Advice is offered, never enforced.** A missing tool remains `unverified` and
+remains non-blocking (§3). The advisory does not turn into a nag, is printed
+once per verdict, and never converts absence into a finding.
+
+#### What to add, per tool (JVM)
+
+Coordinates are stable; **versions are not** — pin the current release rather
+than copying a number from this table.
+
+| Tool | Gradle (Kotlin DSL) | Maven |
+|---|---|---|
+| **ArchUnit** — dependency rules as a JUnit test | `testImplementation("com.tngtech.archunit:archunit-junit5:<version>")` | `com.tngtech.archunit:archunit-junit5`, scope `test` |
+| **PIT** — mutation testing | `id("info.solidsoft.pitest")` plugin + `testImplementation("org.pitest:pitest-junit5-plugin:<version>")` | `org.pitest:pitest-maven` plugin + `org.pitest:pitest-junit5-plugin` dependency |
+| **JaCoCo** — coverage | built-in: `plugins { jacoco }` | `org.jacoco:jacoco-maven-plugin` |
+| **Checkstyle** — declared complexity limits | built-in: `plugins { checkstyle }` | `org.apache.maven.plugins:maven-checkstyle-plugin` |
+| **PMD** — declared complexity limits | built-in: `plugins { pmd }` | `org.apache.maven.plugins:maven-pmd-plugin` |
+| **SpotBugs** | `id("com.github.spotbugs")` | `com.github.spotbugs:spotbugs-maven-plugin` |
+| **Spring Modulith** — module boundary verification | `testImplementation("org.springframework.modulith:spring-modulith-starter-test")` — version managed by the Boot 4 BOM | same, via the Boot 4 BOM |
+| **jdeps** | none — ships with the JDK | none |
+| **lizard** — the complexity probe | none — a Python tool, resolved via `uv run --with lizard`, never a build dependency | none |
+
+#### Java 25 caveat the advisory must carry
+
+**Every bytecode-reading tool above must be new enough to parse class-file
+version 69 (Java 25).** ArchUnit, PIT, JaCoCo and SpotBugs all read compiled
+classes and historically lag a new JDK release by weeks to months. A version
+that is merely "recent" is not sufficient.
+
+The advisory must state this constraint rather than name a version, because a
+version number written into a spec goes stale silently and would be copied into
+a build where it fails with an opaque class-file error. When a tool is present
+but fails on class-file version, that is `unverified` with the reason *"tool
+predates Java 25 class files"* — distinct from *"tool absent"*, and pointing at
+an upgrade rather than an install.
+
+`jdeps` and `lizard` are exempt: `jdeps` ships with the JDK in use, and `lizard`
+reads source text (§5.2 verifies it on Java 25 syntax).
+
+### 4.6 How DIP shaped this
 
 High-level policy (`CycleGate`, the REFACTOR step, the review lenses) depends
 only on the four protocols above. Every collaborator is constructor- or
@@ -257,20 +315,33 @@ parameter-injected; nothing constructs a concrete probe, sink, or threshold
 reader in place. There are no globals and no singletons.
 
 The payoff is concrete and immediate: **all verdict logic is testable with a
-stub probe and no subprocess** (§6). ISP is honored by four narrow protocols
+stub probe and no subprocess** (§6). ISP is honored by five narrow protocols
 rather than one `QualityGate` interface that every consumer would over-import.
+
+`ToolAdvisory` is the clearest case of the split earning its keep: build
+coordinates and JDK-compatibility floors change on someone else's release
+schedule, and none of that reaches the probe, the sink, or the gate.
 
 ---
 
 ## 5. Failure handling
 
-| Case | Outcome |
-|---|---|
-| Probe unavailable for the language | `unverified` + reason. Non-blocking. |
-| lizard not installed | `unverified` + reason. Rare: `uv run --with lizard` resolved it in ~20ms under test. |
-| Java structural tools at cycle tier | `unverified — needs compiled classes, deferred to branch tier`. Self-documents the tier map. |
-| Probe exceeds its time budget | partial result, `degraded`, state what was skipped. |
-| Chunk too large for the tier | cycle measures changed functions only; review measures what it is pointed at; audit measures everything. |
+Every row is non-blocking. Where a build could supply the missing tool, the
+verdict also carries the §4.5 advisory.
+
+| Case | Outcome | Advice? |
+|---|---|---|
+| Probe unavailable for the language | `unverified` + reason | no — nothing to add |
+| lizard not installed | `unverified` + reason. Rare: `uv run --with lizard` resolved it in ~20ms under test. | no — not a build dependency |
+| Tool absent from the build (ArchUnit, PIT, JaCoCo, Checkstyle, PMD) | `unverified — <tool> not in the build` | **yes** — coordinates for the detected build system |
+| Tool present but predates Java 25 class files | `unverified — <tool> cannot read class-file 69` | **yes** — upgrade, not install |
+| Java structural tools at cycle tier | `unverified — needs compiled classes, deferred to branch tier`. Self-documents the tier map. | no — it is present, just not affordable here |
+| Probe exceeds its time budget | partial result, `degraded`, state what was skipped | no |
+| Chunk too large for the tier | cycle measures changed functions only; review measures what it is pointed at; audit measures everything | no |
+
+Note the third and fourth rows are deliberately different verdicts. *Absent* and
+*too old* point at different fixes, and collapsing them would send a reader to
+add a dependency that is already there.
 
 ### 5.1 Known probe inaccuracy
 
@@ -309,6 +380,10 @@ Three groups, in descending order of importance:
 3. **Threshold discovery** against fixture repos containing a `checkstyle.xml`,
    a ruff config, an `.eslintrc`, and one containing nothing — the last must
    yield no thresholds rather than invented ones.
+4. **Advisories** — a Gradle-Kotlin, a Gradle-Groovy and a Maven fixture each
+   yield build-appropriate coordinates for the same missing tool; an
+   unrecognized build system yields no advice rather than a guess; *absent* and
+   *predates-Java-25* yield different advice (§5).
 
 The mutation gate should cover the verdict logic: branching on
 ran/degraded/unverified/silence is exactly where a vacuous test hides.
