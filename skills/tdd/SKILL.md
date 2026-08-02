@@ -244,6 +244,10 @@ repo, then load the matching file (list `references/` for the current set):
 - **TypeScript / Vitest (or Jest)** → read `references/typescript-vitest.md`
   (`describe`/`it`/`expect`, `vi` spies/mocks, `it.each`, async `rejects.toThrow`,
   conventions discovery; Jest is covered by the compatibility note there).
+- **Java / JUnit 5 (or 6)** → read `references/java-junit5.md` (AssertJ,
+  Mockito, `@ParameterizedTest`, `@Nested`, Maven-vs-Gradle single-test
+  invocation, Spring Boot test slices and why domain tests use no Spring at
+  all; JUnit 6 is covered by the compatibility note there).
 - **No adapter for this stack?** Discover the project's test conventions from the repo
   and apply the core cycle with the stack's standard test runner. Mention that an
   adapter reference could be added to this skill for next time.

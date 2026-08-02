@@ -20,6 +20,7 @@ from mutation_gate_workspace import scratch_workspace
 STACK_SUFFIXES = {
     "python": (".py",),
     "js": (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"),
+    "java": (".java", ".kt", ".scala"),
     "prose": (".md",),
 }
 
@@ -51,6 +52,14 @@ class Survivor:
     - `timeout`, `no_coverage`, `compile_error`, `runtime_error`, `ignored`,
       `pending` — Stryker's `STATUS_MAP`. A status Stryker emits that the map
       does not know raises rather than being dropped.
+    - `non_viable`, `memory_error` — PIT's `STATUS_MAP`, which otherwise reuses
+      the vocabulary above: `NO_COVERAGE`, `TIMED_OUT` and `RUN_ERROR` map onto
+      `no_coverage`, `timeout` and `runtime_error` rather than growing
+      backend-specific synonyms for the same fact. The two here have no
+      equivalent — `NON_VIABLE` means the mutated bytecode never loaded, so no
+      test ever ran against it, and `MEMORY_ERROR` means the mutant exhausted
+      the heap rather than being caught. Like Stryker's, an unrecognised PIT
+      status raises rather than being dropped.
     - `skipped`, `suspicious`, `segfault`, `no tests`, `not checked`,
       `caught by type check`, `check was interrupted by user` — mutmut's own
       non-`killed`/non-`survived` statuses (`status_by_exit_code` in mutmut's
@@ -144,6 +153,18 @@ class Backend(Protocol):
     # double that has no run-level failure mode of its own need not implement
     # it.
 
+    # Optional: a backend may implement `scope_notes(repo_root) -> tuple[str,
+    # ...]` to report that its run COMPLETED but covered something other than
+    # the selection it was handed -- pitest falling back to the project's own
+    # `targetClasses` because a selected path could not be resolved to a class,
+    # for instance. This is deliberately NOT `run_errors`: the tool ran and its
+    # per-mutant results are trustworthy, so the report must not print the
+    # "this run did not complete" banner over them. What it must not do either
+    # is stay silent, because "no survivors over a narrower scope than you
+    # asked for" renders identically to "no survivors". Collected the same way
+    # `run_errors` is, so a backend without the failure mode need not implement
+    # it.
+
 
 @dataclass(frozen=True, kw_only=True)
 class GateResult:
@@ -200,6 +221,7 @@ class GateResult:
     baseline_failures: tuple[str, ...] = ()
     baseline_error: str = ""
     run_errors: tuple[str, ...] = ()
+    scope_notes: tuple[str, ...] = ()
     selected: int = 0
 
 
@@ -259,6 +281,7 @@ def run_gate(
     unavailable = []
     unclaimed = []
     run_errors = []
+    scope_notes = []
     for stack in REGISTRABLE_STACKS:
         selection = partitions.get(stack, ())
         if not selection:
@@ -274,6 +297,9 @@ def run_gate(
         backend_run_errors = getattr(backend, "run_errors", None)
         if backend_run_errors is not None:
             run_errors.extend(backend_run_errors(repo_root))
+        backend_scope_notes = getattr(backend, "scope_notes", None)
+        if backend_scope_notes is not None:
+            scope_notes.extend(backend_scope_notes(repo_root))
 
     already_red = set(baseline_failures)
     marked = tuple(
@@ -293,6 +319,7 @@ def run_gate(
         baseline_failures=tuple(baseline_failures),
         baseline_error=baseline_error,
         run_errors=tuple(run_errors),
+        scope_notes=tuple(scope_notes),
         selected=len(paths),
     )
 

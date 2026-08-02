@@ -84,11 +84,13 @@ ADAPTER_CLASSIFICATIONS = {
     "python/uv": "working",
     "typescript/npm": "stub",
     "java/maven": "stub",
+    "java/gradle": "stub",
     "rust/cargo": "stub",
     "distributions/claude-plugin": "working",
     "distributions/npm-registry": "stub",
     "distributions/maven-central": "stub",
     "distributions/crates-io": "stub",
+    "distributions/oci-image": "stub",
 }
 
 # Adapters whose lockfile records the project's *own* version, so stamping the
@@ -126,6 +128,7 @@ BUILD_EVIDENCE = (
     "pom.xml",
     "build.gradle",
     "build.gradle.kts",
+    "gradle.properties",
     "pyproject.toml",
     "setup.py",
 )
@@ -147,16 +150,26 @@ SHIPPING_EVIDENCE = (
 # has one, so the carve-out does not reach it: a distribution adapter
 # fingerprinting `pyproject.toml#project.version` or `uv.lock#anything` is a
 # violation, selector or no selector.
-SHARED_MANIFESTS = ("pom.xml", "Cargo.toml", "package.json")
+# `gradle.properties` is the fourth, admitted on a sharper form of the case that
+# admitted `pom.xml`: a Gradle build's other files are imperative Kotlin/Groovy, so
+# they are not a second file a fingerprint could be redirected to — they are not
+# addressable by any selector language at all. See the contract's "The fourth shared
+# manifest" section, which also records that its one named shipping selector is a
+# convention the OCI adapter imposes rather than one Gradle defines.
+SHARED_MANIFESTS = ("pom.xml", "Cargo.toml", "package.json", "gradle.properties")
 
 # The named shipping facts each shared manifest records. Prefix-matched, so a
 # predicate form (`.private==false`) reads the same as the bare selector. A
 # selector into a shared manifest that is NOT one of these is a build fact, and
 # naming it from either axis is an offence in that axis's direction.
 SHIPPING_SELECTORS = {
-    "pom.xml": ("/project/distributionManagement",),
+    "pom.xml": (
+        "/project/distributionManagement",
+        "/project/properties/spring-boot.build-image.imageName",
+    ),
     "Cargo.toml": ("package.publish",),
     "package.json": (".private", ".publishConfig", ".files"),
+    "gradle.properties": ("imageName",),
 }
 
 
@@ -433,12 +446,18 @@ SELECTOR_LANGUAGE_BY_SUFFIX = {
     ".yml": "jq",
     ".toml": "dotted",
     ".xml": "xpath",
+    ".properties": "properties",
 }
 
+# `properties` is deliberately NOT an alias for `dotted`, despite matching the same
+# shape: a TOML `a.b.c` navigates three nested tables, while a properties `a.b.c` is
+# one flat key whose name contains dots. Collapsing them would resolve `version`
+# correctly and `org.gradle.parallel` not at all, silently.
 SELECTOR_SHAPE_BY_LANGUAGE = {
     "jq": re.compile(r"^\.[A-Za-z_]"),
     "dotted": re.compile(r"^[A-Za-z_]"),
     "xpath": re.compile(r"^/[A-Za-z_]"),
+    "properties": re.compile(r"^[A-Za-z_]"),
 }
 
 # `path/to/file#selector==value`, the predicate form of a fingerprint entry.
