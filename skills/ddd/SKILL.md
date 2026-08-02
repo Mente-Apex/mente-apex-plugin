@@ -38,8 +38,9 @@ current set); `references/report-template.md` + `agents/*` only in `analyze` mod
 
 ## Invocation
 
-`/ddd [design|analyze] [path]`
+`/ddd [design|analyze] [scope]`
 
+- `scope` is a path, a diff, or a range (default: repo root).
 - `design` — model and build a new domain (touches code, via `tdd`).
 - `analyze` — review existing code, report only (no code changes).
 - **Bare `/ddd`**: inspect the target path — empty/thin → propose `design`;

@@ -28,7 +28,7 @@ auto-generated heading anchors don't handle the `/`).
 - Findings: <n> Critical, <n> Major, <n> Minor
 - Top readability wins: <the 2–3 recs a human should care about most, one line each>
 
-## Recommendations
+## Findings
 
 ### Critical
 
@@ -55,6 +55,16 @@ auto-generated heading anchors don't handle the `/`).
 ### Minor
 
 #### [solid/minor-1] ...
+
+## Coverage & method
+
+Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
+`unverified`, one line each, and **every `unverified` states its reason**. Absence
+is data, never silence.
+
+| What | Status | Note |
+|---|---|---|
+| <check or measurement> | <ran \| degraded \| unverified> | <rung that ran, what was skipped, or why it did not run> |
 
 ## Reviewer notes
 

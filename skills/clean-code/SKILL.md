@@ -33,7 +33,9 @@ gets *used*.
   line is clean **by construction**. You don't invoke anything for this — it is
   the house default for writing and editing code here.
 - **Standalone review (invoked).** `/clean-code [scope]` reviews code for
-  cleanliness with no other lens in play.
+  cleanliness with no other lens in play. `scope` is a path, a diff, or a
+  range (default: the uncommitted working tree — this lens reviews a change,
+  not a tree).
 
 ## Review — two gears
 

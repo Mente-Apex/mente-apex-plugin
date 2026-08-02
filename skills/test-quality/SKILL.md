@@ -48,9 +48,9 @@ it links those files rather than re-deriving what a good test is.
 
 ## Invocation
 
-`/test-quality [path]`
+`/test-quality [scope]`
 
-- `path` scopes the audit to a test tree/subtree (default: the repo's tests).
+- `scope` is a path, a diff, or a range, scoping the audit to a test tree/subtree (default: the repo's tests).
 - Report-only is the default outcome; applying anything is opt-in at the gate.
 - Pre-authorizations count as the human review for what they cover.
 

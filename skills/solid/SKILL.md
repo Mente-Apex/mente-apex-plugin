@@ -35,7 +35,7 @@ detects (the detect-and-load convention in the shared workflow). Reports go to
 
 ## Invocation
 
-`/solid [path]` — `path` scopes the analysis (default: repo root). The user may
+`/solid [scope]` — `scope` is a path, a diff, or a range (default: repo root). The user may
 also pre-authorize in the same breath ("apply everything Critical", "doc only",
 "don't ask, use light verification"). **Pre-authorizations count as the human
 review for whatever they cover — don't re-ask.** This also makes the skill

@@ -100,8 +100,8 @@ Phase-0 scope/baseline notes.
    than leaving a reader to re-derive it, and add the one-line *why* under the table for
    any non-obvious step. All `Status` start `pending`.
 
-10. **Write** `docs/reports/code-quality/CODE-QUALITY-<YYYY-MM-DD>.md` per the
-   template, Recommendations sorted Critical → Major → Minor. Fill Summary counts
+10. **Write** `docs/reports/code-quality/CODE-QUALITY-REPORT-<YYYY-MM-DD>.md` per the
+   template, Findings sorted Critical → Major → Minor. Fill Summary counts
    *after* dedup (report the deduped count and how many findings folded into how many
    grouped changes). Non-edit overlaps (hand-offs, overlaps adjudicated to no action)
    go in **Cross-lens notes**, not Grouped changes. Every finding's **Full detail**

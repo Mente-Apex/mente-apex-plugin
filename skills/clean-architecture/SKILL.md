@@ -43,9 +43,10 @@ rubric.
 
 ## Invocation
 
-`/clean-architecture [path] [--cohesion] [--metrics]`
+`/clean-architecture [scope] [--cohesion] [--metrics]`
 
-- Default: the **headline** checks only.
+- `scope` is a path, a diff, or a range (default: repo root).
+- Default depth: the **headline** checks only.
 - `--cohesion`: also run the **secondary** checks (packaging, Screaming
   Architecture, composition root). May also be offered interactively ("go
   deeper?").

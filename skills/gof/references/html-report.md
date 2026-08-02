@@ -100,7 +100,7 @@ its one-line reason — mirrors the MD report's "Not applicable" table.
 |---|---|
 | Executive Summary card | `## Summary` |
 | Detected-pattern cards | `## Detected patterns (graded inventory — informational)` |
-| Recommendation cards | `## Recommendations` (Critical / Major / Minor) |
+| Recommendation cards | `## Findings` (Critical / Major / Minor) |
 | Not Applicable grid | `## Not applicable` |
 
 Reviewer notes and the Apply log are internal to the MD workflow and are not

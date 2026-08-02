@@ -63,6 +63,16 @@ auto-generated heading anchors don't handle the `/`).
 and their invariants, the ports the domain needs, and which existing modules map
 to domain / application / adapters / web>
 
+## Coverage & method
+
+Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
+`unverified`, one line each, and **every `unverified` states its reason**. Absence
+is data, never silence.
+
+| What | Status | Note |
+|---|---|---|
+| <check or measurement> | <ran \| degraded \| unverified> | <rung that ran, what was skipped, or why it did not run> |
+
 ## Reviewer notes
 
 - Draft findings pruned as false positives: <finding → one-line reason>, or "none"

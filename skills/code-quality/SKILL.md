@@ -162,7 +162,7 @@ next wave; a lens that errors is a recorded coverage gap, not a blocker.
 
 Dispatch **six reviewer subagents**, one per lens (`skills/<lens>/agents/reviewer.md`),
 each given only its own lens's draft. They run their normal verified pass and write
-their lens's own report (e.g. `docs/reports/solid/SOLID-REPORT-<date>.md`). They
+their lens's own report (e.g. `docs/reports/solid/SOLID-REPORT-<YYYY-MM-DD>.md`). They
 need **not** cross-reference each other here — because dedup is deferred to the
 consolidator, the six reviewers are independent and run concurrently. (If a
 reviewer cross-references the hub out of habit, that's harmless; the consolidator is
@@ -173,7 +173,7 @@ authoritative.)
 Dispatch **one consolidator subagent** reading
 [agents/consolidator.md](agents/consolidator.md). Tell it which lens reports exist
 (name the absent ones explicitly). It merges the six reports into
-`docs/reports/code-quality/CODE-QUALITY-<YYYY-MM-DD>.md` per
+`docs/reports/code-quality/CODE-QUALITY-REPORT-<YYYY-MM-DD>.md` per
 [references/report-template.md](references/report-template.md), filing each shared
 smell once at the owning altitude and cross-referencing the rest. Read the merged
 report yourself before the gate.
