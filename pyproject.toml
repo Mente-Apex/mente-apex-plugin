@@ -1,6 +1,6 @@
 [project]
 name = "mente-apex-plugin"
-version = "0.27.0"  # canonical source of truth; .claude-plugin/*.json derive from it
+version = "0.28.0"  # canonical source of truth; .claude-plugin/*.json derive from it
 description = "Mente Apex Claude Code plugin — config-sync engine and skills"
 requires-python = ">=3.14"
 
