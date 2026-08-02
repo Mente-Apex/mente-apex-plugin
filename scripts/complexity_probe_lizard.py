@@ -70,6 +70,11 @@ def parse_lizard_csv(csv_text: str) -> tuple[FunctionMetric, ...]:
 class SubprocessLizardRunner:
     """Resolves lizard from PATH, falling back to uv's ephemeral resolution."""
 
+    def __init__(self, process_runner=None):
+        self._process_runner = (
+            process_runner if process_runner is not None else subprocess.run
+        )
+
     def is_available(self) -> bool:
         return shutil.which("lizard") is not None or shutil.which("uv") is not None
 
@@ -79,7 +84,7 @@ class SubprocessLizardRunner:
         return ["uv", "run", "--with", "lizard", "lizard", "--csv"]
 
     def run(self, paths) -> str:
-        completed = subprocess.run(
+        completed = self._process_runner(
             self._command() + list(paths),
             capture_output=True,
             text=True,
