@@ -5,7 +5,14 @@ that one is the regression net for "can we still parse this language".
 
 from pathlib import Path
 
-from complexity_probe_lizard import LizardProbe, LizardRunFailedError, parse_lizard_csv
+import pytest
+
+from complexity_probe_lizard import (
+    LizardProbe,
+    LizardRunFailedError,
+    SubprocessLizardRunner,
+    parse_lizard_csv,
+)
 from complexity_probe_measurement import RAN, UNVERIFIED
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests/fixtures/probe/java"
@@ -106,6 +113,77 @@ class TestTheProbe:
         assert measurement.status == RAN
         assert measurement.functions == ()
         assert runner.calls == []
+
+
+class FakeProcessResult:
+    """Mimics subprocess.CompletedProcess for testing the failure-detection predicate."""
+
+    def __init__(self, returncode, stdout, stderr):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+class TestFailureDetectionInSubprocessLizardRunner:
+    """Tests that exercise the failure-detection predicate in SubprocessLizardRunner.run()."""
+
+    def test_non_zero_exit_raises_with_stderr_text(self):
+        """Non-zero exit code raises LizardRunFailedError with stderr message."""
+
+        def fake_process_runner(command, **kwargs):
+            return FakeProcessResult(
+                returncode=2,
+                stdout="",
+                stderr="lizard: unrecognized option: --bad-flag\n",
+            )
+
+        runner = SubprocessLizardRunner(process_runner=fake_process_runner)
+        with pytest.raises(LizardRunFailedError) as excinfo:
+            runner.run(["/x/Shape.java"])
+        assert "unrecognized option" in str(excinfo.value)
+
+    def test_zero_exit_with_stderr_and_empty_stdout_raises(self):
+        """Exit 0 with stderr but empty stdout raises with stderr message."""
+
+        def fake_process_runner(command, **kwargs):
+            return FakeProcessResult(
+                returncode=0,
+                stdout="",
+                stderr="Error: Fail to read source file '/x/bad.java'\n",
+            )
+
+        runner = SubprocessLizardRunner(process_runner=fake_process_runner)
+        with pytest.raises(LizardRunFailedError) as excinfo:
+            runner.run(["/x/bad.java"])
+        assert "Fail to read source file" in str(excinfo.value)
+
+    def test_zero_exit_with_stderr_and_stdout_does_not_raise(self):
+        """Exit 0 with both stderr (warning) and stdout (results) returns stdout."""
+
+        def fake_process_runner(command, **kwargs):
+            return FakeProcessResult(
+                returncode=0,
+                stdout="1,1,10,0,1,func@1-1@x,x,func,func(),1,1\n",
+                stderr="warning: something minor\n",
+            )
+
+        runner = SubprocessLizardRunner(process_runner=fake_process_runner)
+        result = runner.run(["/x/Shape.java"])
+        assert result == "1,1,10,0,1,func@1-1@x,x,func,func(),1,1\n"
+
+    def test_zero_exit_with_no_stderr_returns_stdout(self):
+        """Exit 0 with no stderr returns stdout."""
+
+        def fake_process_runner(command, **kwargs):
+            return FakeProcessResult(
+                returncode=0,
+                stdout="1,1,10,0,1,func@1-1@x,x,func,func(),1,1\n",
+                stderr="",
+            )
+
+        runner = SubprocessLizardRunner(process_runner=fake_process_runner)
+        result = runner.run(["/x/Shape.java"])
+        assert result == "1,1,10,0,1,func@1-1@x,x,func,func(),1,1\n"
 
 
 class TestAgainstRealLizardOnJava25:
