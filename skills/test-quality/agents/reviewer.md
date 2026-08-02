@@ -41,6 +41,11 @@ no code and no tests** — you write the report only.
        uv run python scripts/mutation_gate.py --repo-root <path> --scope merge-base \
            --report docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md
 
+   The exit code is a verdict, not a crash signal: `0` clean, `1` survivors found, `2`
+   the scope could not be verified (missing tool, crashed backend, broken baseline, zero
+   mutants). A `2` still writes its section — read `unverified_reasons` in it and carry
+   that into Reviewer notes rather than letting an empty survivor list read as clean.
+
    This is a second mutation run — the analyzer's earlier sweep fed the draft, this one
    writes the section — and that is the deliberate cost of the section being produced by
    the script rather than pasted by an agent. Everything outside the markers is left

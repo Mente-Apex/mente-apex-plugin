@@ -19,12 +19,20 @@ from pathlib import Path
 
 # --- Pure transforms ---------------------------------------------------------
 
+# The template families that exist under Legal/. One list, so the CLI cannot
+# accept a code no template was ever written in.
+SUPPORTED_LANGUAGES = ("en", "es-ES", "es-419", "hr")
+
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-# A fill-in slot is [bracketed prose] NOT immediately followed by "(" (which would
-# make it a Markdown link label, e.g. [text](url)). A purely numeric bracket like [1]
-# is a footnote/reference marker, not a slot — a real slot always carries descriptive
-# prose — so the leading negative lookahead excludes it.
-_PLACEHOLDER_RE = re.compile(r"\[(?!\s*\d+\s*\])[^\[\]]+\](?!\()")
+
+# A bracketed span NOT immediately followed by "(" — which would make it a
+# Markdown link label, e.g. [text](url).
+_BRACKET_RE = re.compile(r"\[([^\[\]]+)\](?!\()")
+
+# A footnote DEFINITION: a list item that opens with the marker it defines,
+# as handover-template.md's "Technical reference" section does:
+#     - [1] Hosting account: [Cloudflare account — Workers/Pages]
+_FOOTNOTE_DEFINITION_RE = re.compile(r"^\s*[-*]\s*\[(\d+)\]\s", re.MULTILINE)
 
 
 def strip_comments(markdown: str) -> str:
@@ -32,12 +40,41 @@ def strip_comments(markdown: str) -> str:
     return _COMMENT_RE.sub("", markdown)
 
 
+def defined_footnotes(markdown: str) -> set[str]:
+    """The footnote numbers this document actually defines.
+
+    Whether `[30]` is a footnote marker or an unfilled value slot is not a
+    property of the brackets — both are digits, both are space-separated from
+    the surrounding prose. It is a property of the DOCUMENT: a real marker has
+    a definition somewhere, and a value slot does not.
+    """
+    return set(_FOOTNOTE_DEFINITION_RE.findall(markdown))
+
+
 def find_placeholders(markdown: str) -> list[str]:
     """Return every unfilled `[placeholder]` slot, in order.
 
-    Markdown links (`[label](url)`) are excluded — they are content, not fill-ins.
+    Markdown links (`[label](url)`) are excluded — they are content, not
+    fill-ins. So is a numeric marker the document defines as a footnote.
+
+    A numeric marker it does NOT define is a slot, and this is the correction:
+    excluding every purely numeric bracket meant `engagement-agreement-
+    template.md`'s "Invoices are due within [15] days." and `dpa-template.md`'s
+    "delete or return all personal data within [30] days" passed the
+    completeness gate, `--check` printed "no placeholders remain", and a signed
+    engagement agreement and a GDPR DPA shipped with visible brackets where a
+    number belonged. Those two documents have no reference list at all; the
+    tests pinning the old behaviour were written against `handover`, whose
+    markers really are footnotes.
     """
-    return _PLACEHOLDER_RE.findall(markdown)
+    defined = defined_footnotes(markdown)
+    found = []
+    for match in _BRACKET_RE.finditer(markdown):
+        inner = match.group(1).strip()
+        if inner.isdigit() and inner in defined:
+            continue
+        found.append(match.group(0))
+    return found
 
 
 # --- Markdown → HTML (bounded subset our Legal/ templates use) ----------------
@@ -53,9 +90,28 @@ _TABLE_SEP_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$")
 
 
 def _inline(text: str) -> str:
-    """Escape HTML then apply inline Markdown: links, bold, italic."""
+    """Escape HTML then apply inline Markdown: links, bold, italic.
+
+    The link href gets its quotes escaped as well. Body text is escaped with
+    `quote=False` (a quote in prose is content, and escaping it would litter
+    the document with `&quot;`), but the href lands inside a double-quoted
+    attribute, where an unescaped `"` closes it early:
+    `[site](https://x/?a=1&b=2" onmouseover="x)` produced markup with an
+    attribute nobody wrote.
+
+    ONLY the quotes, applied to the already-escaped text -- a second full
+    `html.escape` would turn the `&amp;` the first pass produced into
+    `&amp;amp;`, so every `&` in a query string would render literally as
+    `&amp;` in the link.
+    """
     text = _html.escape(text, quote=False)
-    text = _LINK_RE.sub(r'<a href="\2">\1</a>', text)
+    text = _LINK_RE.sub(
+        lambda match: (
+            f'<a href="{match.group(2).replace(chr(34), "&quot;")}">'
+            f"{match.group(1)}</a>"
+        ),
+        text,
+    )
     text = _BOLD_RE.sub(r"<strong>\1</strong>", text)
     text = _ITALIC_RE.sub(r"<em>\1</em>", text)
     return text
@@ -307,12 +363,20 @@ def _masthead(
         f'<span class="val">{_html.escape(value)}</span></div>'
         for label, value in meta.items()
     )
+    # Both blocks are omitted when empty rather than emitted hollow. `.mh-meta`
+    # carries `border-top: 1px solid` and `padding-top: 6mm`, so an empty one
+    # shipped a stray hairline rule with nothing under it on the navy cover of
+    # a client-facing proposal, and an empty `.doc` left the kicker slot blank.
+    kicker_html = (
+        f'<span class="doc">{_html.escape(doc_kicker)}</span>' if doc_kicker else ""
+    )
+    meta_html = f'<div class="mh-meta">{meta_cells}</div>' if meta_cells else ""
     return (
         '<section class="masthead">'
         f'<div class="mh-top"><span class="wm">{wordmark_svg}</span>'
-        f'<span class="doc">{_html.escape(doc_kicker)}</span></div>'
+        f"{kicker_html}</div>"
         f"<h1>{_html.escape(title)}</h1>"
-        f'<div class="mh-meta">{meta_cells}</div>'
+        f"{meta_html}"
         "</section>"
     )
 
@@ -384,8 +448,25 @@ def _file_url(path: Path) -> str:
     return Path(path).resolve().as_uri()
 
 
+# A Chrome that has not finished in this long is not going to. Unbounded, a
+# hung headless Chrome blocked the skill with no output and no explanation.
+PDF_TIMEOUT_SECONDS = 120
+
+
 def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
-    """Render a self-contained HTML file to PDF via headless Chrome. Returns success."""
+    """Render a self-contained HTML file to PDF via headless Chrome.
+
+    Success means CHROME SUCCEEDED, not "a non-empty file exists at the
+    output path". Those came apart in the worst possible way: with a PDF
+    already there from an earlier render, a Chrome that died (crashed
+    renderer, profile lock, sandbox denial) left the OLD file in place,
+    non-empty, and this returned True. The operator was told
+    `PDF: offer-acme.pdf` and emailed yesterday's price.
+
+    So the stale file is removed BEFORE the run — the output cannot survive a
+    failure and be mistaken for the result — the exit code is checked, and
+    Chrome's stderr is surfaced rather than swallowed.
+    """
     chrome = _find_chrome()
     if not chrome:
         print(
@@ -393,19 +474,65 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
         )
         return False
     pdf_path = Path(pdf_path).resolve()
-    subprocess.run(
-        [
-            chrome,
-            "--headless=new",
-            "--run-all-compositor-stages-before-draw",
-            f"--print-to-pdf={pdf_path}",
-            "--no-pdf-header-footer",
-            _file_url(html_path),
-        ],
-        check=False,
-        capture_output=True,
-    )
-    return pdf_path.exists() and pdf_path.stat().st_size > 0
+    # Before the run, so a failure leaves no file rather than a stale one.
+    pdf_path.unlink(missing_ok=True)
+    try:
+        completed = subprocess.run(
+            [
+                chrome,
+                "--headless=new",
+                "--run-all-compositor-stages-before-draw",
+                f"--print-to-pdf={pdf_path}",
+                "--no-pdf-header-footer",
+                _file_url(html_path),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=PDF_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"⚠ Chrome did not finish within {PDF_TIMEOUT_SECONDS}s — no PDF "
+            "written; HTML written.",
+            file=sys.stderr,
+        )
+        return False
+
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", "replace").strip()
+        print(
+            f"⚠ Chrome exited {completed.returncode} — no PDF written; HTML "
+            f"written. {stderr}",
+            file=sys.stderr,
+        )
+        return False
+    if not (pdf_path.exists() and pdf_path.stat().st_size > 0):
+        print(
+            f"⚠ Chrome reported success but wrote no PDF at {pdf_path}; HTML "
+            "written.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _parse_meta(entries: list[str]) -> dict[str, str]:
+    """Turn repeated `LABEL=VALUE` arguments into the masthead's meta dict.
+
+    Order is preserved (dicts are ordered), so the cells appear in the order
+    the caller listed them. A malformed entry raises rather than being dropped:
+    a missing meta cell on a client cover page is exactly the kind of silent
+    omission this document family cannot afford.
+    """
+    meta: dict[str, str] = {}
+    for entry in entries:
+        label, separator, value = entry.partition("=")
+        if not separator or not label.strip():
+            raise ValueError(
+                f'--meta {entry!r} is not LABEL=VALUE (e.g. --meta "Client=Acme")'
+            )
+        meta[label.strip()] = value.strip()
+    return meta
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -418,11 +545,38 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Exit 1 and list any unfilled [placeholder]; render nothing.",
     )
-    parser.add_argument("--lang", default="en", help="en | es-ES | es-419 | hr")
+    # `choices`, because the language is carried entirely by which Markdown
+    # template was copied and nothing else cross-checks it. `--lang es` for
+    # `es-419`, or a transposed code, silently rendered `<html lang="xx-BAD">`
+    # and exited 0.
+    parser.add_argument(
+        "--lang",
+        default="en",
+        choices=SUPPORTED_LANGUAGES,
+        help="Document language; must match the template family you filled.",
+    )
     parser.add_argument(
         "--kind", default="letterhead", choices=["identity", "letterhead"]
     )
     parser.add_argument("--title", default=None)
+    # The masthead's kicker and meta block had no CLI route at all, so every
+    # `--kind identity` cover shipped with an empty kicker and an empty meta
+    # block — the code and the CSS both existed and were simply unreachable.
+    parser.add_argument(
+        "--kicker",
+        default="",
+        help='Cover-page kicker above the title, e.g. "PROPOSAL" (identity only).',
+    )
+    parser.add_argument(
+        "--meta",
+        action="append",
+        default=[],
+        metavar="LABEL=VALUE",
+        help=(
+            'Cover-page meta cell, repeatable, e.g. --meta "Client=Acme" '
+            '--meta "Date=2026-08-02" (identity only).'
+        ),
+    )
     parser.add_argument(
         "--out", default=None, help="Output directory (default: alongside input)."
     )
@@ -455,8 +609,20 @@ def main(argv: list[str] | None = None) -> int:
     if brand.warning:
         print(brand.warning, file=sys.stderr)
 
+    try:
+        meta = _parse_meta(args.meta)
+    except ValueError as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return 1
+
     html = build_document(
-        markdown, brand, kind=args.kind, lang=args.lang, title=args.title
+        markdown,
+        brand,
+        kind=args.kind,
+        lang=args.lang,
+        title=args.title,
+        meta=meta,
+        doc_kicker=args.kicker,
     )
 
     out_dir = Path(args.out) if args.out else source.parent
@@ -465,10 +631,17 @@ def main(argv: list[str] | None = None) -> int:
     html_path.write_text(html)
 
     pdf_path = out_dir / f"{source.stem}.pdf"
-    if html_to_pdf(html_path, pdf_path):
+    pdf_written = html_to_pdf(html_path, pdf_path)
+    if pdf_written:
         print(f"PDF: {pdf_path}")
     print(f"HTML: {html_path}")
-    return 0
+    # Non-zero when the PDF did not render. The HTML is still written and
+    # still useful, but the PDF is the deliverable that goes to the client:
+    # exiting 0 with only a stderr warning let a caller — a script, or an
+    # agent reading the exit code — record the deliverable as produced when
+    # the file is not there at all. `html_to_pdf` now unlinks the stale one,
+    # so "no PDF" really does mean no PDF.
+    return 0 if pdf_written else 2
 
 
 if __name__ == "__main__":

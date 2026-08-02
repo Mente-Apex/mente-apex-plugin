@@ -21,6 +21,10 @@ from dataclasses import dataclass
 # same token to wherever it actually cloned the repo.
 ROOT_ENV_PREFIX = "CONFIG_SYNC_ROOT_"
 
+# A `${TOKEN}` sentinel as `portabilize` writes it. Token names come from the
+# env-var suffix, so they are the characters a shell variable name may carry.
+_TOKEN_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
 
 @dataclass(frozen=True)
 class Root:
@@ -54,6 +58,45 @@ class RootRegistry:
         for root in self._roots:
             command = command.replace("${" + root.token + "}", root.path)
         return command
+
+    def token_names(self) -> list[str]:
+        """Every token name this machine declares, HOME included.
+
+        This is exactly the set `portabilize` can mint, so an exporting machine
+        publishes it alongside the snapshot: it is the only party that knows
+        which `${...}` in a command it put there. See `unresolved_tokens`.
+        """
+        return sorted(root.token for root in self._roots)
+
+    def unresolved_tokens(self, command: str, minted_tokens) -> list[str]:
+        """Root sentinels in `command` this machine cannot expand.
+
+        `localize` only substitutes tokens this machine declares and silently
+        leaves the rest in place. A command exported from a machine declaring
+        `CONFIG_SYNC_ROOT_MENTE_APEX_MEMORY`, imported onto one that does not,
+        kept a literal `${MENTE_APEX_MEMORY}` in the hook command written to
+        settings.json -- where the shell expands an undefined variable to
+        nothing, so the hook ran `python3 /hooks/protect.py` and failed on
+        every matching tool call.
+
+        `minted_tokens` is what makes this safe, and its absence was a bug in
+        its own right: matching every `${...}` treated `${CLAUDE_PLUGIN_ROOT}`
+        (this plugin's own hooks.json), Claude Code's documented
+        `${CLAUDE_PROJECT_DIR}`, and any ordinary shell variable as a root
+        sentinel -- so a guard against broken hooks deleted working ones. Only
+        a token the EXPORTING machine says it minted can be one of ours; every
+        other `${...}` belongs to somebody else and is none of this function's
+        business.
+        """
+        declared = {root.token for root in self._roots}
+        minted = set(minted_tokens)
+        return sorted(
+            {
+                token
+                for token in _TOKEN_PATTERN.findall(command)
+                if token in minted and token not in declared
+            }
+        )
 
     def portabilize_settings(self, settings: dict) -> dict:
         """Return a copy of `settings` with every hook command portabilized."""

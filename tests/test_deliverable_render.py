@@ -5,8 +5,11 @@ These tests pin the pure transforms — comment stripping, placeholder detection
 the Markdown subset our Legal/ templates use, and the brand-book-first token wiring.
 """
 
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 # render.py lives beside the skill, not in the repo-level scripts/ dir.
 _SKILL_SCRIPTS = (
@@ -221,27 +224,56 @@ class TestCheckCli:
 
 
 class TestFootnoteMarkersAreNotPlaceholders:
-    # Some Legal/ templates carry numeric footnote markers like [1] [2]. Those are
-    # content, not fill-in slots — a real slot is always descriptive prose. The
-    # completeness gate must not flag them, or a legitimately-complete document fails.
-    def test_pure_numeric_bracket_is_a_footnote_marker_not_a_slot(self):
-        md = "See the schedule[1] and the annex[2]."
+    # A numeric bracket is a footnote marker only when the DOCUMENT DEFINES it.
+    # Excluding every numeric bracket instead meant `[15] days` in the
+    # engagement agreement and `[30] days` in the DPA — real value slots, in
+    # documents with no reference list at all — passed the completeness gate,
+    # and both shipped to clients with visible brackets where a number belonged.
+    # These tests were originally written against `handover`, whose markers
+    # genuinely are footnotes; the rule they pinned was wrong for the others.
+
+    REFERENCE_LIST = (
+        "\n\n**Technical reference**\n\n"
+        "- [1] Hosting account: Cloudflare\n"
+        "- [2] Domain: Cloudflare Registrar\n"
+        "- [10] Storage: R2\n"
+    )
+
+    def test_a_defined_marker_is_not_a_slot(self):
+        md = "See the schedule [1] and the annex [2]." + self.REFERENCE_LIST
         assert render.find_placeholders(md) == []
 
-    def test_multi_digit_footnote_marker_ignored(self):
-        assert render.find_placeholders("As noted[10] above.") == []
+    def test_a_multi_digit_defined_marker_is_not_a_slot(self):
+        assert (
+            render.find_placeholders("As noted [10] above." + self.REFERENCE_LIST) == []
+        )
 
-    def test_prose_slot_alongside_footnote_marker_still_flagged(self):
-        md = "**For:** [Client / business] — see clause[3]."
+    def test_prose_slot_alongside_a_defined_marker_is_still_flagged(self):
+        md = "**For:** [Client / business] — see clause [1]." + self.REFERENCE_LIST
         assert render.find_placeholders(md) == ["[Client / business]"]
 
     def test_currency_slot_with_digits_still_flagged(self):
-        # Only PURELY numeric brackets are markers; a slot like [€Y] keeps its digit.
+        # Only PURELY numeric brackets can ever be markers; [€Y] keeps its digit.
         assert render.find_placeholders("Price [€Y], value [€X].") == ["[€Y]", "[€X]"]
 
-    def test_check_passes_on_template_with_footnote_markers(self):
-        md = "All the prose is filled.\n\nReference[1] and note[2] remain as markers."
+    def test_check_passes_on_a_document_whose_markers_are_defined(self):
+        md = "All the prose is filled.\n\nReference [1] and note [2]." + (
+            self.REFERENCE_LIST
+        )
         assert render.check(md) == []
+
+    def test_an_undefined_numeric_bracket_is_a_slot(self):
+        """The correction. No reference list anywhere in the document, so
+        `[30]` is a number somebody forgot to fill in."""
+        md = "Delete or return all personal data within [30] days."
+        assert render.find_placeholders(md) == ["[30]"]
+
+    def test_the_engagement_agreements_payment_term_is_flagged(self):
+        md = "Invoices are due within [15] days of issue."
+        assert render.find_placeholders(md) == ["[15]"]
+
+    def test_defined_footnotes_are_read_from_the_reference_list(self):
+        assert render.defined_footnotes(self.REFERENCE_LIST) == {"1", "2", "10"}
 
 
 class TestFileUrl:
@@ -262,3 +294,168 @@ class TestFileUrl:
         url = render._file_url(target)
         assert " " not in url
         assert "my%20doc.html" in url
+
+
+class TestPdfSuccessMeansChromeSucceeded:
+    """`html_to_pdf` declared success from "a non-empty file exists at the
+    output path". With a PDF already there from an earlier render, a Chrome
+    that died left the OLD file in place, non-empty, and this returned True --
+    so the operator was told the render succeeded and emailed yesterday's
+    price.
+    """
+
+    @staticmethod
+    def _fake_chrome(monkeypatch, returncode, *, writes=None):
+        monkeypatch.setattr(render, "_find_chrome", lambda: "/fake/chrome")
+
+        def fake_run(argv, check, capture_output, timeout):
+            if writes is not None:
+                Path(writes).write_bytes(b"%PDF-1.4 FRESH")
+            return subprocess.CompletedProcess(argv, returncode, b"", b"boom")
+
+        monkeypatch.setattr(render.subprocess, "run", fake_run)
+
+    def test_a_failed_chrome_does_not_report_success(self, tmp_path, monkeypatch):
+        pdf = tmp_path / "offer.pdf"
+        pdf.write_bytes(b"%PDF-1.4 STALE - PRICE 5000 EUR")
+        self._fake_chrome(monkeypatch, returncode=1)
+
+        assert render.html_to_pdf(tmp_path / "offer.html", pdf) is False
+
+    def test_a_failed_chrome_leaves_no_stale_pdf_to_be_mistaken_for_the_result(
+        self, tmp_path, monkeypatch
+    ):
+        pdf = tmp_path / "offer.pdf"
+        pdf.write_bytes(b"%PDF-1.4 STALE - PRICE 5000 EUR")
+        self._fake_chrome(monkeypatch, returncode=1)
+
+        render.html_to_pdf(tmp_path / "offer.html", pdf)
+
+        assert not pdf.exists()
+
+    def test_a_successful_chrome_still_reports_success(self, tmp_path, monkeypatch):
+        """The control: refusing a stale result must not refuse a real one."""
+        pdf = tmp_path / "offer.pdf"
+        self._fake_chrome(monkeypatch, returncode=0, writes=pdf)
+
+        assert render.html_to_pdf(tmp_path / "offer.html", pdf) is True
+        assert pdf.read_bytes() == b"%PDF-1.4 FRESH"
+
+    def test_a_zero_exit_that_wrote_nothing_is_not_success(self, tmp_path, monkeypatch):
+        pdf = tmp_path / "offer.pdf"
+        self._fake_chrome(monkeypatch, returncode=0)
+
+        assert render.html_to_pdf(tmp_path / "offer.html", pdf) is False
+
+    def test_a_hung_chrome_is_bounded(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(render, "_find_chrome", lambda: "/fake/chrome")
+
+        def fake_run(argv, check, capture_output, timeout):
+            raise subprocess.TimeoutExpired(argv, timeout)
+
+        monkeypatch.setattr(render.subprocess, "run", fake_run)
+
+        assert render.html_to_pdf(tmp_path / "x.html", tmp_path / "x.pdf") is False
+
+
+class TestTheMastheadIsReachableAndNeverHollow:
+    def test_the_kicker_and_meta_reach_the_cover_page_through_the_cli(
+        self, tmp_path, monkeypatch
+    ):
+        """Through `main`, not `build_document`. `build_document` always
+        accepted `meta` and `doc_kicker`; the defect was that NOTHING passed
+        them, so every `--kind identity` cover shipped with an empty kicker
+        and an empty meta block. A test calling `build_document` directly
+        passes with the defect fully present."""
+        source = tmp_path / "offer.md"
+        source.write_text("Body.", encoding="utf-8")
+        monkeypatch.setattr(render, "html_to_pdf", lambda html_path, pdf_path: False)
+
+        render.main(
+            [
+                str(source),
+                "--kind",
+                "identity",
+                "--title",
+                "Website build",
+                "--kicker",
+                "PROPOSAL",
+                "--meta",
+                "Client=Acme",
+                "--meta",
+                "Date=2026-08-02",
+            ]
+        )
+
+        html = (tmp_path / "offer.html").read_text(encoding="utf-8")
+        assert ">PROPOSAL<" in html
+        assert "Acme" in html
+        assert "2026-08-02" in html
+
+    def test_an_empty_meta_block_is_omitted_not_rendered_hollow(self):
+        """`.mh-meta` carries a border-top, so an empty one shipped a stray
+        hairline rule with nothing under it on a client-facing navy cover."""
+        html = render.build_document(
+            "Body.",
+            render.resolve_brand(Path("/nonexistent"), fallback_dir=render._ASSETS_DIR),
+            kind="identity",
+            lang="en",
+            title="Website build",
+        )
+
+        assert 'class="mh-meta"' not in html
+        assert 'class="doc"' not in html
+
+    def test_meta_arguments_parse_into_ordered_cells(self):
+        assert render._parse_meta(["Client=Acme", "Date=2026-08-02"]) == {
+            "Client": "Acme",
+            "Date": "2026-08-02",
+        }
+
+    def test_a_malformed_meta_argument_is_refused_not_dropped(self):
+        with pytest.raises(ValueError, match="LABEL=VALUE"):
+            render._parse_meta(["ClientAcme"])
+
+
+class TestTheLanguageCodeIsValidated:
+    def test_an_unknown_language_is_rejected(self, tmp_path):
+        source = tmp_path / "doc.md"
+        source.write_text("Body.", encoding="utf-8")
+
+        with pytest.raises(SystemExit):
+            render.main([str(source), "--lang", "xx-BAD"])
+
+    def test_every_supported_language_is_accepted(self, tmp_path):
+        source = tmp_path / "doc.md"
+        source.write_text("Body.", encoding="utf-8")
+
+        for language in render.SUPPORTED_LANGUAGES:
+            render.main([str(source), "--lang", language, "--check"])
+
+
+class TestAQuoteInAUrlCannotBreakOutOfTheAttribute:
+    def test_the_href_is_quote_escaped(self):
+        html = render._inline('[site](https://x.com/?a=1&b=2" onmouseover="x)')
+
+        # The attribute value must contain no raw `"`, so nothing after the
+        # injected quote can become an attribute of its own.
+        href_value = html.split('href="', 1)[1].split('"', 1)[0]
+        assert "&quot;" in href_value
+        assert "onmouseover" in href_value  # inert: still inside the attribute
+
+    def test_an_ordinary_link_is_unchanged(self):
+        assert render._inline("[site](https://x.com/)") == (
+            '<a href="https://x.com/">site</a>'
+        )
+
+    def test_an_ampersand_in_a_query_string_is_escaped_exactly_once(self):
+        """A second full `html.escape` on the href would make the `&amp;` from
+        the body pass into `&amp;amp;`, rendering a literal `&amp;` in the URL."""
+        html = render._inline("[q](https://x.com/?a=1&b=2)")
+
+        assert 'href="https://x.com/?a=1&amp;b=2"' in html
+
+    def test_a_quote_in_body_prose_is_not_escaped(self):
+        """`quote=False` on body text is deliberate — escaping every quote in
+        prose would litter the document with `&quot;`."""
+        assert '"' in render._inline('He said "hello".')

@@ -19,20 +19,40 @@ from typing import Protocol, runtime_checkable
 import config_sync_propagators as propagators
 
 
-def _read_installed_plugins(claude_dir: Path) -> dict:
-    path = claude_dir / "plugins" / "installed_plugins.json"
+class CorruptPluginStateError(RuntimeError):
+    """A plugin state file exists but does not parse.
+
+    Distinct from "not there yet", which honestly means `{}`. This one means
+    the machine HAS plugins and we cannot see them -- and the export writes
+    what it sees. Mapping it to `{}` published a manifest saying "this machine
+    desires no plugins", overwriting the previously-good one, so a plugin only
+    this machine had dropped out of the network's desired state permanently
+    and was never installed on a new machine. Reported as a successful export.
+    """
+
+
+def _read_plugin_state(path: Path) -> dict:
+    """Parse one plugin state file: `{}` when absent, raise when unreadable."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError, json.JSONDecodeError:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise CorruptPluginStateError(
+            f"{path} exists but is not valid JSON ({exc}); refusing to treat "
+            "this machine as having no plugins, because exporting that would "
+            "erase them from the network's desired state"
+        ) from exc
+
+
+def _read_installed_plugins(claude_dir: Path) -> dict:
+    return _read_plugin_state(claude_dir / "plugins" / "installed_plugins.json")
 
 
 def _read_known_marketplaces(claude_dir: Path) -> dict:
-    path = claude_dir / "plugins" / "known_marketplaces.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError, json.JSONDecodeError:
-        return {}
+    return _read_plugin_state(claude_dir / "plugins" / "known_marketplaces.json")
 
 
 SHAREABLE_SOURCE_KINDS = {"github", "git"}
@@ -286,6 +306,9 @@ def plan_convergence(
                 )
                 unresolved_marketplaces.add(marketplace_name)
                 continue
+        # Unconditional, including straight after an add: refreshing the
+        # marketplace index every run is the deliberate #22 fix (a stale index
+        # is what made plugin installs fail), not an oversight. Left alone.
         plan.actions.append(PlannedAction("update_marketplace", marketplace_name))
 
     for plugin_key in sorted(desired_plugins):
@@ -297,9 +320,25 @@ def plan_convergence(
             continue
         if plugin_key in installed:
             current_version = installed[plugin_key].get("version", "unknown")
+            desired_version = (desired_plugins[plugin_key] or {}).get("version")
+            # `current_version` was read and then never compared to anything,
+            # and the manifests' own `version` was never read at all -- so a
+            # fully-converged machine re-ran `claude plugin update` (180s
+            # timeout each) for every plugin on every single sync, and the
+            # desired version was decorative. Converged means nothing to do.
+            if desired_version and desired_version == current_version:
+                plan.skipped.append(
+                    f"plugin {plugin_key}: already at {current_version}"
+                )
+                continue
             plan.actions.append(
                 PlannedAction(
-                    "update_plugin", plugin_key, {"current_version": current_version}
+                    "update_plugin",
+                    plugin_key,
+                    {
+                        "current_version": current_version,
+                        "desired_version": desired_version,
+                    },
                 )
             )
         else:

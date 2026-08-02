@@ -23,6 +23,13 @@ from pathlib import Path
 
 _NOT_A_GIT_REPO = "not a git repository"
 
+# Bounded like every other subprocess the gate starts. Adding or removing a
+# worktree is local plumbing: quick, or stuck on a lock some crashed process
+# still holds. An unbounded wait here hangs the gate before any mutation runs,
+# and on teardown it would hang AFTER the results exist but before anything
+# reports them.
+GIT_TIMEOUT_SECONDS = 120
+
 
 def _c_locale_env():
     """The process environment with git's output pinned to English.
@@ -48,13 +55,20 @@ def _try_worktree(repo_root, destination):
     at all (the expected case for the copytree fallback). Any other git
     failure raises `WorkspaceSetupError` instead of falling back silently.
     """
-    result = subprocess.run(
-        ["git", "worktree", "add", "--detach", "-q", str(destination), "HEAD"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        env=_c_locale_env(),
-    )
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "add", "--detach", "-q", str(destination), "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            env=_c_locale_env(),
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise WorkspaceSetupError(
+            f"git worktree add did not finish within {GIT_TIMEOUT_SECONDS}s "
+            f"for {repo_root}"
+        ) from exc
     if result.returncode == 0:
         return True
     if _NOT_A_GIT_REPO in result.stderr:
@@ -103,12 +117,28 @@ def _link_node_modules(repo_root, destination):
 
 
 def _remove_worktree(repo_root, destination):
-    result = subprocess.run(
-        ["git", "worktree", "remove", "--force", str(destination)],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
+    """Unregister the scratch worktree, warning rather than raising on failure.
+
+    Teardown runs in a `finally` after the results already exist, so a failure
+    here must not replace them with an exception -- including a timeout, which
+    is warned about for exactly the same reason a non-zero exit is.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "remove", "--force", str(destination)],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        warnings.warn(
+            f"git worktree remove did not finish within "
+            f"{GIT_TIMEOUT_SECONDS}s for {destination}; a stale entry may "
+            f"remain registered against {repo_root}",
+            stacklevel=2,
+        )
+        return
     if result.returncode != 0:
         warnings.warn(
             f"git worktree remove failed for {destination}; a stale entry "

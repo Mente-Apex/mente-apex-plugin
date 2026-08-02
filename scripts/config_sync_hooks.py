@@ -410,6 +410,27 @@ def plan_hook_wiring(
     registered = registered_hooks(settings)
     by_script = registrations_by_script(settings)
 
+    # The `by_script` fallback keys on (event, matcher, script basename) and
+    # deliberately omits the root token that `hook_id` includes. Two named
+    # roots shipping a same-named script under the same event and matcher
+    # therefore have DIFFERENT hook_ids -- so the collision guard above cannot
+    # see them -- but the SAME fallback key. Each run, each declaration found
+    # the other's registration through the fallback and "updated" it out of
+    # existence, reported ok=True, and listed the displaced hook as already
+    # registered. It never converged; one of the two was always unwired.
+    #
+    # The fallback is what is ambiguous here, not the declarations. Both are
+    # perfectly well identified by their own hook_id, so the fix is to stop
+    # using the fallback for them rather than to refuse them: each registers
+    # under its own identity and neither displaces the other.
+    ambiguous_fallback = {
+        key
+        for key, count in Counter(
+            _fallback_key(declaration) for declaration in declarations
+        ).items()
+        if count > 1 and key is not None
+    }
+
     for declaration in declarations:
         if declaration.hook_id in collisions:
             plan.skipped.append(
@@ -427,13 +448,28 @@ def plan_hook_wiring(
             )
             continue
 
-        existing = registered.get(declaration.hook_id) or by_script.get(
-            (
-                declaration.event,
-                declaration.matcher,
-                script_name_of(declaration.command),
-            )
-        )
+        existing = registered.get(declaration.hook_id)
+        if existing is None:
+            fallback_key = _fallback_key(declaration)
+            if fallback_key in ambiguous_fallback:
+                # Not silent. Refusing to guess which of two same-named
+                # scripts owns a registration marked under an older identity
+                # is right, but it leaves that registration orphaned: still
+                # marked, still firing, and no longer claimed by any
+                # declaration. `hooks-doctor` reclaims it as an exact
+                # duplicate of the one being registered now, so the operator
+                # needs to know to run it.
+                if by_script.get(fallback_key) is not None:
+                    plan.skipped.append(
+                        f"{declaration.command}: another declared hook ships a "
+                        f"same-named script under the same event and matcher, "
+                        f"so an existing registration cannot be attributed to "
+                        f"either. Registering this one under its own id; run "
+                        f"`hooks-doctor` to clear the now-orphaned entry, or "
+                        f'give each declaration an explicit "id" in hooks.json.'
+                    )
+            else:
+                existing = by_script.get(fallback_key)
 
         if existing is None:
             plan.actions.append(
@@ -519,7 +555,7 @@ def execute_hook_plan(plan: HookPlan, host: SettingsHost) -> HookResult:
 
         if match_hook_id is None:
             entry = {"type": "command"}
-            entry.update(_declared_fields(action, marked_command))
+            _apply_declared_fields(entry, action, marked_command)
             hooks_block.setdefault(action.detail["event"], []).append(
                 {"matcher": action.detail["matcher"], "hooks": [entry]}
             )
@@ -539,7 +575,7 @@ def execute_hook_plan(plan: HookPlan, host: SettingsHost) -> HookResult:
                 )
             )
             continue
-        entry.update(_declared_fields(action, marked_command))
+        _apply_declared_fields(entry, action, marked_command)
         wrote_anything = True
         result.outcomes.append(HookOutcome(action.hook_id, ok=True))
 
@@ -548,14 +584,49 @@ def execute_hook_plan(plan: HookPlan, host: SettingsHost) -> HookResult:
     return result
 
 
-def _declared_fields(action: HookAction, marked_command: str) -> dict:
-    """The fields a declaration owns. Everything else already on an entry —
-    `statusMessage` most notably, which this plugin's own hooks.json declares —
-    belongs to whoever put it there and survives the rewrite."""
-    fields = {"command": marked_command}
-    if action.detail.get("timeout") is not None:
-        fields["timeout"] = action.detail["timeout"]
-    return fields
+def _fallback_key(declaration):
+    """The key `registrations_by_script` is looked up by, for one declaration.
+
+    Extracted so the planner's ambiguity check and its lookup cannot drift into
+    computing the key two different ways.
+    """
+    script_name = script_name_of(declaration.command)
+    if script_name is None:
+        return None
+    return (declaration.event, declaration.matcher, script_name)
+
+
+def _apply_declared_fields(
+    entry: dict, action: HookAction, marked_command: str
+) -> None:
+    """Bring `entry` in line with what the declaration says, in place.
+
+    Everything a declaration does not own — `statusMessage` most notably, which
+    this plugin's own hooks.json declares — belongs to whoever put it there and
+    survives the rewrite.
+
+    A declaration that no longer sets `timeout` REMOVES it, rather than leaving
+    the old value behind. Setting-only meant a hooks.json that dropped
+    `"timeout": 10` could never reach its declared state: the planner compared
+    the entry's surviving timeout against the declaration's `None`, found them
+    different, emitted an `update`, rewrote settings.json and reported success
+    -- on every single run, forever.
+    """
+    entry["command"] = marked_command
+    timeout = action.detail.get("timeout")
+    if timeout is None:
+        entry.pop("timeout", None)
+    else:
+        entry["timeout"] = timeout
+
+
+class CorruptSettingsError(RuntimeError):
+    """settings.json exists but does not parse.
+
+    Distinct from "there is no settings.json yet", which is an ordinary state
+    with an obvious answer (`{}`). This one has no safe answer: the file holds
+    configuration nothing can read, and every write path would replace it.
+    """
 
 
 class ClaudeSettingsHost:
@@ -571,10 +642,32 @@ class ClaudeSettingsHost:
         self._settings_path = claude_dir / "settings.json"
 
     def read_settings(self) -> dict:
+        """The parsed settings, or `{}` when the file does not exist yet.
+
+        A file that exists but does not parse is NOT `{}`. Folding
+        `JSONDecodeError` into the empty dict meant one trailing comma turned
+        `hooks-apply` into "the settings are empty, write my hooks into them" --
+        rewriting the file as `{"hooks": {...}}` and destroying `permissions`,
+        `model`, `env` and `statusLine`. `BackingUpSettingsHost` snapshots what
+        this method returns, so the rollback file was `{}` too and the original
+        was gone for good.
+
+        Raising instead stops the command before any write, which is the only
+        safe reading of "I cannot tell what is in this file".
+        """
         try:
-            return json.loads(self._settings_path.read_text(encoding="utf-8"))
-        except FileNotFoundError, json.JSONDecodeError:
+            raw = self._settings_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return {}
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise CorruptSettingsError(
+                f"{self._settings_path} exists but is not valid JSON "
+                f"({exc}); refusing to touch it, because rewriting it would "
+                "discard whatever it currently holds. Fix the syntax (or move "
+                "the file aside) and run this again"
+            ) from exc
 
     def write_settings(self, settings: dict) -> None:
         rendered = json.dumps(settings, indent=2, ensure_ascii=False)

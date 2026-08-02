@@ -28,8 +28,13 @@ import warnings
 from pathlib import Path
 
 from mutation_gate import Survivor
+from mutation_gate_freshness import ReportFreshness
 
 KILLED_STATUS = "Killed"
+
+# Bounded like every other subprocess the gate starts: `stryker run` drives the
+# audited repo's suite, which is arbitrary code and may never return.
+RUN_TIMEOUT_SECONDS = 1800
 
 STATUS_MAP = {
     "Survived": "survived",
@@ -82,6 +87,29 @@ def default_config(mutate_globs, test_runner):
         "reporters": ["json", "clear-text"],
         "coverageAnalysis": "perTest",
     }
+
+
+def _report_path(repo_root):
+    """Where Stryker's JSON reporter writes, as a one-element candidate list.
+
+    Shaped as a sequence because `ReportFreshness` takes a discovery strategy,
+    not a single path -- Stryker's location happens to be fixed, PIT's is a
+    tree of them, and the freshness policy should not care which.
+    """
+    return (Path(repo_root) / "reports" / "mutation" / "mutation.json",)
+
+
+def mutants_in_report(report):
+    """How many mutants the report accounts for, whatever their status.
+
+    A survivor list cannot distinguish "fifty mutants, all killed" from "zero
+    mutants, because the `mutate` globs matched nothing": both are empty. This
+    is the number that tells them apart.
+    """
+    return sum(
+        len(file_report.get("mutants", []))
+        for file_report in report.get("files", {}).values()
+    )
 
 
 def survivors_from_report(report):
@@ -215,6 +243,28 @@ def _configure(repo_root, paths):
     )
 
 
+def _scope_notes_for(repo_root, paths):
+    """Say so when this run will cover something other than the selection.
+
+    `_configure` deliberately leaves a repo's own Stryker config alone, which
+    means Stryker mutates that config's `mutate` globs rather than the paths
+    the gate selected. That is the right call -- the gate does not overwrite
+    an audited repo's decisions -- but it was silent, and a survivor-free
+    result over a scope you did not ask for renders identically to a clean
+    result over the scope you did. Same fact `PitestBackend` already reports
+    for an unscopable Gradle run, through the same channel.
+    """
+    existing = _existing_config(repo_root)
+    if existing is None:
+        return ()
+    return (
+        f"stryker ran under the repo's own config ({existing.name}), so it "
+        f"mutated that config's `mutate` globs rather than the "
+        f"{len(paths)} selected path(s); results cover the config's scope, "
+        "not the selection",
+    )
+
+
 def _npx_argv():
     """The npx invocation, routed through the fnm-resolved Node.
 
@@ -238,8 +288,14 @@ class StrykerBackend:
     stack = "js"
     tool = "stryker"
 
-    def __init__(self):
+    def __init__(self, freshness=None):
         self._run_errors = ()
+        self._mutants_executed = None
+        self._scope_notes = ()
+        # Injected so a test can substitute a trivial discovery strategy, and
+        # so this backend does not own the before/after policy it shares with
+        # every other report-reading backend.
+        self._freshness = freshness or ReportFreshness(_report_path)
 
     def available(self, repo_root):
         """True only when this backend can ACTUALLY run, not merely import.
@@ -277,8 +333,30 @@ class StrykerBackend:
         """
         return self._run_errors
 
+    def scope_notes(self, repo_root):
+        """What this run actually covered, when that is not the selection.
+
+        A repo with its own `stryker.conf.json` keeps it (`_configure` returns
+        early), and Stryker then mutates whatever that config's `mutate` globs
+        name -- which may have nothing to do with the paths the gate selected.
+        The run completes and its per-mutant results are real, so this is not
+        a `run_errors`; but a survivor-free result over somebody else's scope
+        reads exactly like a clean one over yours, which is what this says out
+        loud. PitestBackend already reported this class of fact; this backend
+        silently did not.
+        """
+        return self._scope_notes
+
+    def mutants_executed(self, repo_root):
+        """How many mutants the most recent `survivors()` call actually ran.
+
+        `None` when no report was read at all, so the gate reports the count
+        as unanswered rather than as a truthful zero.
+        """
+        return self._mutants_executed
+
     def survivors(self, repo_root, paths):
-        """Run Stryker over the workspace and parse its JSON report.
+        """Run Stryker over the workspace and parse the report IT wrote.
 
         A missing report after `stryker run` is not silently folded into "no
         survivors" -- that would be indistinguishable from a clean run to
@@ -286,29 +364,65 @@ class StrykerBackend:
         are surfaced via `run_errors()` (and still via a warning, for anyone
         capturing Python warnings) rather than being swallowed into an empty
         result that looks identical to a genuinely clean run.
+
+        Crucially the check is FRESHNESS, not existence. `reports/` is
+        gitignored, so `--scope working-tree` copies the operator's previous
+        report into the workspace; a `stryker run` that then died on a TS
+        compile error or a missing peer dep left that week-old, all-`Killed`
+        report exactly where `is_file()` looked, and the partition passed
+        clean over code that was never mutated.
+
         `survivors_from_report` itself still raises on an unrecognised
         Stryker status rather than being caught here -- that is the gate
         misunderstanding its own data, not a missing tool, and it must fail
         loudly.
         """
+        self._scope_notes = _scope_notes_for(repo_root, paths)
         _configure(repo_root, paths)
-        run_result = subprocess.run(
-            _npx_argv() + ["stryker", "run"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-        )
-        report_path = Path(repo_root) / "reports" / "mutation" / "mutation.json"
-        if not report_path.is_file():
+        self._freshness.snapshot(repo_root)
+        try:
+            run_result = subprocess.run(
+                _npx_argv() + ["stryker", "run"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=RUN_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            self._mutants_executed = None
             self._run_errors = (
-                f"stryker run did not complete in {repo_root} -- it produced "
-                f"no report at {report_path} after `stryker run` exited "
-                f"{run_result.returncode}, so no result from this partition "
-                f"can be trusted (stderr: {run_result.stderr.strip()!r})",
+                f"stryker run did not finish within {RUN_TIMEOUT_SECONDS}s in "
+                f"{repo_root}, so no result from this partition can be trusted",
             )
             warnings.warn(self._run_errors[0], stacklevel=2)
             return ()
+
+        written = self._freshness.written_since(repo_root)
+        if not written:
+            self._mutants_executed = None
+            self._run_errors = (
+                f"stryker run did not complete in {repo_root} -- it wrote no "
+                f"report at {_report_path(repo_root)[0]} during this run "
+                f"(`stryker run` exited {run_result.returncode}), so no result "
+                "from this partition can be trusted. Any report already at "
+                "that path is from an earlier run and was NOT read (stderr: "
+                f"{run_result.stderr.strip()!r})",
+            )
+            warnings.warn(self._run_errors[0], stacklevel=2)
+            return ()
+
+        try:
+            report = json.loads(written[-1].read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            self._mutants_executed = None
+            self._run_errors = (
+                f"stryker wrote a report at {written[-1]} that could not be "
+                f"read as JSON, so no result from this partition can be "
+                f"trusted: {exc}",
+            )
+            warnings.warn(self._run_errors[0], stacklevel=2)
+            return ()
+
         self._run_errors = ()
-        return survivors_from_report(
-            json.loads(report_path.read_text(encoding="utf-8"))
-        )
+        self._mutants_executed = mutants_in_report(report)
+        return survivors_from_report(report)

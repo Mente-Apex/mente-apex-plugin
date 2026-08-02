@@ -262,7 +262,7 @@ def test_mutmut_executable_is_none_when_neither_resolves(tmp_path, monkeypatch):
 
 
 def _fake_subprocess_run(run_stdout="", run_returncode=1, run_stderr="crashed"):
-    def fake_run(argv, cwd, capture_output, text):
+    def fake_run(argv, cwd, capture_output, text, timeout):
         if argv[-1] == "run":
             return subprocess.CompletedProcess(
                 argv, run_returncode, stdout="", stderr=run_stderr
@@ -312,14 +312,20 @@ def test_a_completed_run_has_no_run_errors(tmp_path, monkeypatch):
     real survived/inconclusive mutants keep flowing through individually."""
     mutants_dir = tmp_path / "mutants"
     mutants_dir.mkdir()
-    (mutants_dir / "mutmut-stats.json").write_text("{}", encoding="utf-8")
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "x"\n', encoding="utf-8"
     )
     monkeypatch.setattr("mutation_gate_mutmut._mutmut_executable", lambda: "mutmut")
-    monkeypatch.setattr(
-        "mutation_gate_mutmut.subprocess.run",
-        lambda argv, cwd, capture_output, text: subprocess.CompletedProcess(
+
+    def fake_run(argv, cwd, capture_output, text, timeout):
+        # A completed run WRITES the stats file -- it is not merely lying
+        # there from before. `mutants/` is gitignored and copied into the
+        # workspace verbatim under --scope working-tree, so presence alone
+        # never distinguished a completed run from a crashed one replaying a
+        # previous run's cache.
+        if argv[-1] == "run":
+            (mutants_dir / "mutmut-stats.json").write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(
             argv,
             0,
             stdout=(
@@ -327,8 +333,9 @@ def test_a_completed_run_has_no_run_errors(tmp_path, monkeypatch):
                 "    money.x_discount__mutmut_2: timeout\n"
             ),
             stderr="",
-        ),
-    )
+        )
+
+    monkeypatch.setattr("mutation_gate_mutmut.subprocess.run", fake_run)
 
     backend = MutmutBackend()
     survivors = backend.survivors(tmp_path, ["scripts/money.py"])

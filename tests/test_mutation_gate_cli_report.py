@@ -116,7 +116,9 @@ class TestTheCliWritesTheReport:
             ["--repo-root", str(tmp_path), "--report", str(report)]
         )
 
-        assert exit_code == 0
+        # 1, not 0: there is a survivor. Always returning 0 meant any shell or
+        # CI step reading the exit code recorded every run as a pass.
+        assert exit_code == 1
         written = report.read_text(encoding="utf-8")
         assert "money.discount" in written
         assert "_Not yet run._" not in written

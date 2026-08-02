@@ -24,6 +24,14 @@ STACK_SUFFIXES = {
     "prose": (".md",),
 }
 
+# Every subprocess this gate starts runs somebody else's code -- the audited
+# repo's test suite, or a mutation tool driving it -- so none of them may block
+# forever. Generous, because a real suite under mutation is slow, but finite:
+# an unbounded wait leaves the gate hung inside a scratch workspace that is
+# still registered as a worktree against the operator's repo, with no report
+# ever written and nothing to say why.
+SUITE_TIMEOUT_SECONDS = 1800
+
 
 @dataclass(frozen=True)
 class Survivor:
@@ -47,6 +55,12 @@ class Survivor:
       run. Not a survivor (nothing survived), but reported rather than
       dropped, so "this operator had nothing to change here" stays
       distinguishable from "it ran and the guard killed it".
+    - `declaration_error` — prose only: the `@pytest.mark.covers` declaration
+      could not be resolved (a heading renamed out from under it, an artifact
+      that no longer exists), so none of its operators ever produced a mutant.
+      Reported as one inconclusive row rather than raised, because it is one
+      declaration's problem: raising took down the whole run and discarded
+      every survivor the other backends had already collected.
     - `unreliable_baseline` — assigned by `run_gate`, not by a backend, when
       every test covering the survivor was already red before any mutant ran.
     - `timeout`, `no_coverage`, `compile_error`, `runtime_error`, `ignored`,
@@ -90,6 +104,19 @@ class Survivor:
 # deliberate `invert`-operator tiering) -- it belongs here, not with the
 # inconclusive statuses. See the Survivor docstring above.
 SURVIVED_STATUSES = frozenset({"survived", "survived_minor"})
+
+# Statuses recording a mutant that was NEVER APPLIED. They are reported so the
+# absence stays visible, but they are not part of the population
+# `BackendRun.mutants_executed` counts, and conflating the two broke the
+# all-inconclusive derivation in both directions: one `no_op_mutant` was enough
+# to make a run where pytest answered nothing report as clean, and enough to
+# make a run whose mutants were genuinely killed report as verifying nothing.
+NOT_EXECUTED_STATUSES = frozenset({"no_op_mutant", "declaration_error"})
+
+
+def was_executed(survivor):
+    """True when this row records a mutant that was actually applied and run."""
+    return survivor.status not in NOT_EXECUTED_STATUSES
 
 
 def is_survivor(survivor):
@@ -153,6 +180,17 @@ class Backend(Protocol):
     # double that has no run-level failure mode of its own need not implement
     # it.
 
+    # Optional, and strongly recommended: a backend may implement
+    # `mutants_executed(repo_root) -> int | None` reporting how many mutants
+    # its most recent `survivors()` call actually applied and ran. Without it
+    # an empty survivor list cannot be told apart from a run that generated no
+    # mutants at all, so a backend that does not implement it FORFEITS that
+    # check -- `run_gate` records the omission (`BackendRun.counts_mutants`)
+    # and `unverified_reasons` stays silent about it rather than condemning
+    # every conformant backend that simply never claimed to count. A backend
+    # that DOES implement it and returns None is saying it tried and could not,
+    # which is a reason. All four shipped backends implement it.
+
     # Optional: a backend may implement `scope_notes(repo_root) -> tuple[str,
     # ...]` to report that its run COMPLETED but covered something other than
     # the selection it was handed -- pitest falling back to the project's own
@@ -164,6 +202,39 @@ class Backend(Protocol):
     # asked for" renders identically to "no survivors". Collected the same way
     # `run_errors` is, so a backend without the failure mode need not implement
     # it.
+
+
+@dataclass(frozen=True, kw_only=True)
+class BackendRun:
+    """What one backend's invocation of its tool actually covered.
+
+    `mutants_executed` is how many mutants the tool applied and ran a test
+    against during THIS call. It exists because a survivor list cannot answer
+    the one question that decides whether an empty one means anything: a run
+    that generated zero mutants and a run that generated fifty and killed all
+    fifty both report no survivors, no run errors and no inconclusive
+    results. Without a count they are the same bytes, and the first is a
+    vacuous pass over code nothing tested.
+
+    `None` is deliberately distinct from `0`. `0` is a tool that ran and
+    mutated nothing (a `mutate` glob matching no file, a source path the
+    parser choked on); `None` is a backend that does not report the number at
+    all, so the question is unanswered rather than answered badly. Both stop
+    `unverified_reasons` from calling the run clean, and they say different
+    things to the operator about why.
+    """
+
+    stack: str
+    tool: str
+    mutants_executed: int | None = None
+    # Whether the backend implements `mutants_executed` AT ALL, which is a
+    # different question from what it answered. The method is optional on the
+    # Backend Protocol, and treating its absence as a blocking "unanswered"
+    # made every conformant backend that does not implement it -- including
+    # any test double -- exit 2 forever. A backend that never claimed to count
+    # forfeits the vacuous-run check; one that claims to and returns None
+    # tried and could not say, which IS a reason.
+    counts_mutants: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -223,6 +294,100 @@ class GateResult:
     run_errors: tuple[str, ...] = ()
     scope_notes: tuple[str, ...] = ()
     selected: int = 0
+    backend_runs: tuple[BackendRun, ...] = ()
+
+
+def unverified_reasons(result):
+    """Why an empty survivor list from this run may not be read as clean.
+
+    Empty means the run genuinely verified the scope and found nothing. Any
+    entry means it did not look -- or could not finish looking -- so "no
+    survivors" is an absence of data rather than a result.
+
+    Single-sourced deliberately. The renderer needs it to decide whether to
+    print the clean-run sentence, and `main` needs it to decide an exit code;
+    two independent judgements of the same question is how they drift and one
+    of them starts calling a broken run clean again. Returns operator-facing
+    strings rather than a bare bool so the report can say WHICH of these
+    happened without re-deriving it.
+
+    `selected == 0` is NOT here. A scope with no files in it is an honest
+    "nothing to do", not a failure to look, and it has its own sentence.
+    """
+    reasons = []
+    if result.baseline_error:
+        reasons.append(
+            "the clean-run baseline never completed, so no kill from this "
+            "run is trustworthy"
+        )
+    for message in result.run_errors:
+        # First line only. A `run_errors` message may carry a multi-KB tool
+        # dump, and the report already renders that once, bounded, in its own
+        # section -- repeating it verbatim here would splice the whole dump
+        # back in unbounded and undo that bounding.
+        summary = message.splitlines()[0] if message else message
+        reasons.append(f"a backend's tool run did not complete: {summary}")
+    for stack, hint in result.unavailable:
+        reasons.append(
+            f"no {stack} mutation tool was available, so the {stack} files in "
+            f"scope were never mutated (declare it with `{hint}`)"
+        )
+    if result.unclaimed:
+        reasons.append(
+            f"{len(result.unclaimed)} file(s) landed in a known stack with no "
+            "backend registered for it, so they were never mutated"
+        )
+    counting_runs = [
+        backend_run for backend_run in result.backend_runs if backend_run.counts_mutants
+    ]
+    for backend_run in counting_runs:
+        if backend_run.mutants_executed is None:
+            # Suppressed when the run already failed loudly: a crashed backend
+            # sets its count to None precisely BECAUSE it crashed, so saying
+            # "it could not say how many mutants it applied" alongside the
+            # crash is a second, misleading account of one event.
+            if not result.run_errors:
+                reasons.append(
+                    f"{backend_run.tool} could not say how many mutants it "
+                    "applied, so an empty survivor list from it cannot be "
+                    "distinguished from a run that mutated nothing"
+                )
+        elif backend_run.mutants_executed == 0:
+            reasons.append(
+                f"{backend_run.tool} ran but applied no mutants at all, so it "
+                "tested nothing"
+            )
+
+    counted = [
+        backend_run.mutants_executed
+        for backend_run in counting_runs
+        if backend_run.mutants_executed is not None
+    ]
+    if counted and len(counted) == len(counting_runs):
+        executed = sum(counted)
+        # Only rows recording a mutant that ACTUALLY RAN belong in this
+        # arithmetic. `mutants_executed` excludes never-applied mutants, so
+        # comparing it against the whole survivor list compared two different
+        # populations: a single `no_op_mutant` broke the equality, and with it
+        # both directions of this check. See `NOT_EXECUTED_STATUSES`.
+        executed_rows = [
+            survivor for survivor in result.survivors if was_executed(survivor)
+        ]
+        killed = executed - len(executed_rows)
+        # Every mutant that ran came back inconclusive -- a coverage analysis
+        # that misfired, a suite that could not answer under any mutant --
+        # which is not a clean sweep however much it renders like one.
+        if (
+            executed
+            and killed <= 0
+            and not any(is_survivor(survivor) for survivor in executed_rows)
+        ):
+            reasons.append(
+                f"all {executed} mutant(s) that ran came back inconclusive -- "
+                "none was killed and none survived, so nothing was actually "
+                "verified"
+            )
+    return tuple(reasons)
 
 
 def run_gate(
@@ -282,6 +447,7 @@ def run_gate(
     unclaimed = []
     run_errors = []
     scope_notes = []
+    backend_runs = []
     for stack in REGISTRABLE_STACKS:
         selection = partitions.get(stack, ())
         if not selection:
@@ -300,13 +466,26 @@ def run_gate(
         backend_scope_notes = getattr(backend, "scope_notes", None)
         if backend_scope_notes is not None:
             scope_notes.extend(backend_scope_notes(repo_root))
+        count_reporter = getattr(backend, "mutants_executed", None)
+        backend_runs.append(
+            BackendRun(
+                stack=stack,
+                tool=backend.tool,
+                mutants_executed=(
+                    count_reporter(repo_root) if count_reporter is not None else None
+                ),
+                counts_mutants=count_reporter is not None,
+            )
+        )
 
     already_red = set(baseline_failures)
     marked = tuple(
         (
             replace(survivor, status="unreliable_baseline")
             if survivor.associated_tests
-            and all(test in already_red for test in survivor.associated_tests)
+            and all(
+                _is_already_red(test, already_red) for test in survivor.associated_tests
+            )
             else survivor
         )
         for survivor in survivors
@@ -321,6 +500,7 @@ def run_gate(
         run_errors=tuple(run_errors),
         scope_notes=tuple(scope_notes),
         selected=len(paths),
+        backend_runs=tuple(backend_runs),
     )
 
 
@@ -374,24 +554,48 @@ def _record_baseline(repo_root, run_suite):
         return (), str(exc)
 
 
-_FAILED_PREFIX = "FAILED "
+_ALREADY_RED_PREFIXES = ("FAILED ", "ERROR ")
 
 
 def _failed_node_ids(output):
-    """Parse pytest's `-rf` short summary into the node ids that failed.
+    """Parse pytest's `-rfE` short summary into what was already red.
 
-    `-rf` prints one `FAILED <node id>[ - <reason>]` line per failing test in
-    the short summary section regardless of verbosity elsewhere in the run,
-    which is far more reliable to parse than scraping full tracebacks out of
-    `-v` output.
+    Both prefixes, deliberately. `-rf` alone reports only outright test
+    FAILURES; a test that ERRORS -- a broken fixture, a module-level import
+    blowing up, a collection error -- is summarised under `ERROR` and appears
+    only with `-rE`. Its exit code is 1, indistinguishable from an ordinary
+    failing test, so `_pytest_run_suite`'s exit-code guard does not catch it
+    either. Parsing only `FAILED` therefore recorded an errored test as a
+    CLEAN baseline, and every mutant whose covering test errored again under
+    mutation was scored as killed -- the exact phantom kill `baseline()`
+    exists to prevent.
+
+    An `ERROR` line may name a whole file rather than a node id (a collection
+    error has no node to blame). That is kept as-is; `_is_already_red` treats
+    a bare file entry as covering every node id beneath it.
     """
     node_ids = []
     for line in output.splitlines():
-        if not line.startswith(_FAILED_PREFIX):
-            continue
-        remainder = line[len(_FAILED_PREFIX) :]
-        node_ids.append(remainder.split(" - ", 1)[0].strip())
+        for prefix in _ALREADY_RED_PREFIXES:
+            if line.startswith(prefix):
+                remainder = line[len(prefix) :]
+                node_ids.append(remainder.split(" - ", 1)[0].strip())
+                break
     return tuple(node_ids)
+
+
+def _is_already_red(node_id, already_red):
+    """True when `node_id` was failing before any mutant was applied.
+
+    An exact match is the ordinary case. A collection error, though, is
+    reported against the FILE -- pytest has no node to name when the module
+    never imported -- and every test in that file was equally red. Matching
+    the file part as well is what stops a whole errored module's tests from
+    reading as clean covering tests.
+    """
+    if node_id in already_red:
+        return True
+    return node_id.split("::", 1)[0] in already_red
 
 
 def _pytest_run_suite(repo_root):
@@ -412,13 +616,31 @@ def _pytest_run_suite(repo_root):
     having actually run. Raising `BaselineRunFailedError` instead forces the
     failure through `_record_baseline` into `GateResult.baseline_error`,
     where it reaches the operator-facing report.
+
+    `-rfE`, not `-rf`: an errored test exits 1 like an ordinary failure and so
+    slips past the guard above, but is summarised under `ERROR` rather than
+    `FAILED`. See `_failed_node_ids`.
+
+    A timeout, because the audited repo's suite is arbitrary code: one test
+    blocking on a socket would otherwise hang the gate forever, inside a
+    scratch workspace still registered as a worktree against the operator's
+    repo. A hung baseline is a baseline that did not complete, so it takes the
+    same route to the report as any other broken baseline.
     """
-    result = subprocess.run(
-        ["uv", "run", "pytest", "--tb=no", "-q", "-rf"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["uv", "run", "pytest", "--tb=no", "-q", "-rfE"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=SUITE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise BaselineRunFailedError(
+            f"uv run pytest did not finish within {SUITE_TIMEOUT_SECONDS}s in "
+            f"{repo_root} while recording the clean-run baseline, so the "
+            "baseline did not complete"
+        ) from exc
     if result.returncode not in (0, 1):
         raise BaselineRunFailedError(
             f"uv run pytest exited {result.returncode} in {repo_root} while "
@@ -503,6 +725,27 @@ def main(argv=None):
             ),
             encoding="utf-8",
         )
+    return exit_code_for(result)
+
+
+def exit_code_for(result):
+    """0 only when this run looked and found nothing.
+
+    Non-zero for a survivor (there is a finding) and non-zero for a run that
+    could not verify its scope (`unverified_reasons`) -- an unavailable tool,
+    a crashed backend, a broken baseline, a run that mutated nothing. Always
+    returning 0 meant any shell or CI step reading the exit code recorded
+    every run as a pass, including the runs that never mutated a line, and the
+    verdict lived only in output nothing was checking.
+
+    Distinct codes so a caller can tell the two apart: a survivor is a real
+    finding to act on, an unverified run is a gate to fix before its silence
+    means anything.
+    """
+    if unverified_reasons(result):
+        return 2
+    if any(is_survivor(survivor) for survivor in result.survivors):
+        return 1
     return 0
 
 

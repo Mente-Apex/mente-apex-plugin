@@ -180,7 +180,7 @@ def test_a_missing_report_after_a_run_is_a_run_error_not_silent_success(
     """
     monkeypatch.setattr(
         "mutation_gate_stryker.subprocess.run",
-        lambda argv, cwd, capture_output, text: subprocess.CompletedProcess(
+        lambda argv, cwd, capture_output, text, timeout: subprocess.CompletedProcess(
             argv, 1, stdout="", stderr="stryker crashed"
         ),
     )
@@ -210,7 +210,7 @@ def _installed_stryker(root, runner="@stryker-mutator/vitest-runner"):
 def _stryker_run_that_fails(monkeypatch):
     monkeypatch.setattr(
         "mutation_gate_stryker.subprocess.run",
-        lambda argv, cwd, capture_output, text: subprocess.CompletedProcess(
+        lambda argv, cwd, capture_output, text, timeout: subprocess.CompletedProcess(
             argv, 1, stdout="", stderr=""
         ),
     )
