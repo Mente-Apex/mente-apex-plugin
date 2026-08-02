@@ -41,6 +41,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+# The repair side of the wire-hooks channel: diagnoses registered hooks whose
+# target has moved or been wired twice, and prunes them behind a consent gate.
+import config_sync_hook_doctor
+
 # Pure hook-provisioning core (issue #68): discovers hooks/hooks.json
 # declarations under the named roots and diffs/wires them into settings.json.
 import config_sync_hooks
@@ -1061,7 +1065,14 @@ def cmd_hooks_plan():
     registry = _root_registry()
     declarations = config_sync_hooks.discover_declarations(registry)
     host = config_sync_hooks.ClaudeSettingsHost(CLAUDE_DIR)
-    plan = config_sync_hooks.plan_hook_wiring(declarations, host.read_settings())
+    plan = config_sync_hooks.plan_hook_wiring(
+        declarations,
+        host.read_settings(),
+        localize=registry.localize,
+        checker=config_sync_hook_doctor.ProbingCommandChecker(
+            config_sync_hook_doctor.FilesystemProbe()
+        ),
+    )
     print(
         json.dumps(
             {
@@ -1085,13 +1096,19 @@ def cmd_hooks_apply():
     registry = _root_registry()
     declarations = config_sync_hooks.discover_declarations(registry)
     host = config_sync_hooks.ClaudeSettingsHost(CLAUDE_DIR)
-    plan = config_sync_hooks.plan_hook_wiring(declarations, host.read_settings())
+    # #65/#67 invariant: live settings.json holds localized absolute paths; only
+    # the exported snapshot carries ${TOKEN} form. So the declaration is brought
+    # into the live file's space before it is compared or written, rather than
+    # the file being dragged into the declaration's and pushed back after.
+    plan = config_sync_hooks.plan_hook_wiring(
+        declarations,
+        host.read_settings(),
+        localize=registry.localize,
+        checker=config_sync_hook_doctor.ProbingCommandChecker(
+            config_sync_hook_doctor.FilesystemProbe()
+        ),
+    )
     result = config_sync_hooks.execute_hook_plan(plan, host)
-    if result.outcomes:
-        # #65/#67 invariant: live settings.json holds localized absolute paths;
-        # only the exported snapshot carries ${TOKEN} form. The executor wrote the
-        # portable token; expand it to this machine's real paths so the hook runs.
-        host.write_settings(registry.localize_settings(host.read_settings()))
     print(
         json.dumps(
             {
@@ -1104,6 +1121,129 @@ def cmd_hooks_apply():
                     for outcome in result.outcomes
                 ],
                 "skipped": result.skipped,
+            },
+            indent=2,
+        )
+    )
+
+
+UNMANAGED_FLAG = "--include-unmanaged"
+
+
+def _diagnose_live_hooks():
+    host = config_sync_hooks.ClaudeSettingsHost(CLAUDE_DIR)
+    probe = config_sync_hook_doctor.FilesystemProbe()
+    return host, config_sync_hook_doctor.diagnose(host.read_settings(), probe)
+
+
+def _prune_backup_path():
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return CLAUDE_DIR / f"settings.json.pre-prune-{stamp}"
+
+
+def _as_report(diagnosis):
+    report = {
+        "event": diagnosis.site.event,
+        "matcher": diagnosis.site.matcher,
+        "command": diagnosis.site.command,
+        "hook_id": diagnosis.hook_id,
+        "managed": diagnosis.managed,
+        "findings": list(diagnosis.findings),
+    }
+    if diagnosis.missing_targets:
+        report["missing_targets"] = list(diagnosis.missing_targets)
+    if diagnosis.duplicate_of is not None:
+        report["duplicate_of"] = diagnosis.duplicate_of.command
+    return report
+
+
+def cmd_hooks_doctor():
+    """Query: which hooks in the live settings.json are broken or duplicated.
+
+    Reports every hook, not just config-sync's — a hand-added hook with a dead
+    path breaks tool calls just as loudly, and the operator is the only one who
+    can decide about it. Shell-fragment commands are counted as unchecked
+    rather than listed, since they carry no path to verify.
+    """
+    _, diagnoses = _diagnose_live_hooks()
+    listed = [
+        diagnosis
+        for diagnosis in diagnoses
+        if set(diagnosis.findings) - {config_sync_hook_doctor.OPAQUE}
+    ]
+    print(
+        json.dumps(
+            {
+                "summary": {
+                    "total": len(diagnoses),
+                    "healthy": sum(
+                        1 for diagnosis in diagnoses if not diagnosis.findings
+                    ),
+                    "unchecked": sum(
+                        1
+                        for diagnosis in diagnoses
+                        if diagnosis.findings == (config_sync_hook_doctor.OPAQUE,)
+                    ),
+                    "repairable": sum(
+                        1 for diagnosis in diagnoses if diagnosis.repairable
+                    ),
+                    # What a default `hooks-prune` would actually remove.
+                    # `repairable` counts hand-added entries too, which the
+                    # default run skips — gating on it promises removals that
+                    # never happen.
+                    "prunable_by_default": sum(
+                        1
+                        for diagnosis in diagnoses
+                        if diagnosis.prunable(include_unmanaged=False)
+                    ),
+                },
+                "findings": [_as_report(diagnosis) for diagnosis in listed],
+            },
+            indent=2,
+        )
+    )
+
+
+def cmd_hooks_prune(*flags):
+    """Gated mutation: remove hooks whose target is gone or exactly duplicated.
+
+    Config-sync's own registrations only, unless the operator passes
+    --include-unmanaged. Advisory findings are never acted on.
+    """
+    unknown = [flag for flag in flags if flag != UNMANAGED_FLAG]
+    if unknown:
+        print(
+            f"Error: unknown flag(s) {' '.join(unknown)}; "
+            f"'hooks-prune' accepts only {UNMANAGED_FLAG}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    live_host, diagnoses = _diagnose_live_hooks()
+    plan = config_sync_hook_doctor.plan_hook_pruning(
+        diagnoses, include_unmanaged=UNMANAGED_FLAG in flags
+    )
+    # The only command in config-sync that deletes. It gets a rollback path,
+    # written before the first mutation and only when there is one to make.
+    host = config_sync_hooks.BackingUpSettingsHost(live_host, _prune_backup_path())
+    result = config_sync_hook_doctor.execute_prune_plan(plan, host)
+    print(
+        json.dumps(
+            {
+                "removed": [
+                    {
+                        "command": outcome.command,
+                        "ok": outcome.ok,
+                        "reason": outcome.message,
+                    }
+                    for outcome in result.outcomes
+                ],
+                "skipped": result.skipped,
+                "backup": (
+                    str(host.backup_path)
+                    if any(outcome.ok for outcome in result.outcomes)
+                    else None
+                ),
             },
             indent=2,
         )
@@ -1130,6 +1270,8 @@ COMMANDS = {
     "plugins-apply": (cmd_plugins_apply, 1),
     "hooks-plan": (cmd_hooks_plan, 0),
     "hooks-apply": (cmd_hooks_apply, 0),
+    "hooks-doctor": (cmd_hooks_doctor, 0),
+    "hooks-prune": (cmd_hooks_prune, None),  # variadic: optional --include-unmanaged
     "apply-shared": (cmd_apply_shared, 1),
     "log-sync": (cmd_log_sync, None),  # variadic: repo [action] [summary]
     "scan": (cmd_scan, None),  # variadic: optional --gate flag
