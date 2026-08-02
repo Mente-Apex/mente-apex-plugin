@@ -19,6 +19,17 @@ from complexity_probe_measurement import (
     Measurement,
 )
 
+
+class LizardRunFailedError(RuntimeError):
+    """lizard ran but did not produce a usable measurement.
+
+    Distinguishes subprocess failures (non-zero exit or diagnostic stderr) from
+    the normal "ran cleanly, found nothing" case. This lets the gate fold
+    failures into UNVERIFIED with a reason, catching the silence that spec §2.3
+    exists to prevent.
+    """
+
+
 # lizard --csv emits no header. Column order, verified against lizard 1.23.0:
 # nloc, ccn, token_count, parameter_count, length, location, file, name,
 # long_name, start_line, end_line
@@ -74,6 +85,12 @@ class SubprocessLizardRunner:
             text=True,
             check=False,
         )
+        if completed.returncode != 0 or (
+            completed.stderr.strip() and not completed.stdout.strip()
+        ):
+            raise LizardRunFailedError(
+                completed.stderr.strip() or f"exit {completed.returncode}"
+            )
         return completed.stdout
 
 
@@ -99,7 +116,7 @@ class LizardProbe:
             )
         try:
             stdout = self._runner.run(requested_paths)
-        except OSError as error:
+        except (OSError, LizardRunFailedError) as error:
             return Measurement(
                 status=UNVERIFIED, reason=f"lizard could not be run: {error}"
             )
