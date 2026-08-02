@@ -66,13 +66,21 @@ class TestScopeWiring:
         straight to the probe. `tmp_path` is not a git repository; if the CLI
         still queried git on the side (its return value went unused even
         before scope resolution could raise), this would now misreport a
-        perfectly measurable pair of files as unverified."""
+        perfectly measurable pair of files as unverified.
+
+        `--repo-root` must point at `tmp_path` here: without it,
+        `arguments.repo_root` defaults to `"."`, the pytest process's real
+        working directory — this project's own git repo — where the discarded
+        `resolve_scope(None, repo_root=".")` call would succeed instead of
+        raising, and the test would pass whether or not the fix is present."""
         first_file = tmp_path / "first.py"
         first_file.write_text("def add(first, second):\n    return first + second\n")
         second_file = tmp_path / "second.py"
         second_file.write_text("def sub(first, second):\n    return first - second\n")
 
-        exit_code = complexity_probe.main([str(first_file), str(second_file)])
+        exit_code = complexity_probe.main(
+            [str(first_file), str(second_file), "--repo-root", str(tmp_path)]
+        )
         captured = capsys.readouterr()
 
         assert exit_code == 0
