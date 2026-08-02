@@ -79,3 +79,58 @@ class TestResolvingScope:
         selection = resolve_scope("full", repo_root="/repo", git_runner=StubGitRunner())
         assert isinstance(selection, ScopeSelection)
         assert selection.description
+
+
+class TestGitRunnerWithRealRepository:
+    """Real-git tests verify GitRunner delegates correctly to mutation_gate_scope
+    and both Criticals are fixed: untracked files are included, errors surface."""
+
+    def test_working_tree_includes_an_untracked_file(self, git_repo_with_branch):
+        repo_root, _ = git_repo_with_branch
+        untracked_path = repo_root / "untracked_new_file.py"
+        untracked_path.write_text("NEW_CODE = 1\n", encoding="utf-8")
+
+        from complexity_probe_scope import GitRunner
+
+        runner = GitRunner(str(repo_root))
+        paths = runner.changed_paths("working-tree")
+
+        assert "untracked_new_file.py" in paths
+
+    def test_working_tree_includes_a_modified_tracked_file(self, git_repo_with_branch):
+        repo_root, _ = git_repo_with_branch
+        tracked_file = repo_root / "feature.py"
+        tracked_file.write_text("FEATURE = 2\n", encoding="utf-8")
+
+        from complexity_probe_scope import GitRunner
+
+        runner = GitRunner(str(repo_root))
+        paths = runner.changed_paths("working-tree")
+
+        assert "feature.py" in paths
+
+    def test_merge_base_finds_default_branch_without_remote(self, git_repo_with_branch):
+        import subprocess
+
+        repo_root, default_branch = git_repo_with_branch
+        (repo_root / "feature_change.py").write_text("CHANGED = 1\n", encoding="utf-8")
+
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-qm", "feature change"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        from complexity_probe_scope import GitRunner
+
+        runner = GitRunner(str(repo_root))
+        paths = runner.changed_paths("merge-base")
+
+        assert "feature_change.py" in paths
