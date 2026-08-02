@@ -93,6 +93,42 @@ class TestBreachesPointRatherThanJudge:
         rendered = TranscriptSink().render(measurement_with(99), NO_THRESHOLDS)
         assert "look" not in rendered.lower()
 
+    def test_a_degraded_measurement_with_no_functions_preserves_the_reason(self):
+        degraded_empty = Measurement(
+            status=DEGRADED,
+            functions=(),
+            reason="incomplete parse due to missing imports",
+            skipped=("src/Missing.java", "src/External.java"),
+        )
+        rendered = TranscriptSink().render(degraded_empty, NO_THRESHOLDS)
+        assert "degraded" in rendered
+        assert "incomplete parse due to missing imports" in rendered
+        assert "src/Missing.java" in rendered
+        assert "src/External.java" in rendered
+
+    def test_no_sink_guards_against_breach_words_in_degraded_rendering(self):
+        degraded_with_functions = Measurement(
+            status=DEGRADED,
+            functions=(
+                FunctionMetric(
+                    name="partial::process",
+                    path="src/Handler.java",
+                    start_line=10,
+                    end_line=30,
+                    cyclomatic_complexity=12,
+                    length=20,
+                    parameter_count=2,
+                ),
+            ),
+            reason="skipped uncompiled nested classes",
+            skipped=("src/Nested.java",),
+        )
+        for sink in (TranscriptSink(), ReviewSink()):
+            rendered = sink.render(degraded_with_functions, NO_THRESHOLDS)
+            lowered = rendered.lower()
+            for forbidden_word in ("fail", "violation", "error", "must fix"):
+                assert forbidden_word not in lowered
+
 
 class TestTheArtifactSink:
     def test_it_produces_json_serializable_data(self):
