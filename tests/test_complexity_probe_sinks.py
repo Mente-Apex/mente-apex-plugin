@@ -4,6 +4,7 @@ numbers point, they do not judge."""
 import json
 
 from complexity_probe_measurement import (
+    DEGRADED,
     RAN,
     UNVERIFIED,
     FunctionMetric,
@@ -48,6 +49,30 @@ class TestTheTranscriptSink:
         rendered = TranscriptSink().render(Measurement(status=RAN), NO_THRESHOLDS)
         assert rendered.strip()
         assert "no functions" in rendered.lower()
+
+    def test_a_degraded_measurement_shows_functions_and_the_reason(self):
+        degraded = Measurement(
+            status=DEGRADED,
+            functions=(
+                FunctionMetric(
+                    name="incomplete::analyze",
+                    path="src/Parser.java",
+                    start_line=20,
+                    end_line=45,
+                    cyclomatic_complexity=8,
+                    length=25,
+                    parameter_count=1,
+                ),
+            ),
+            reason="missing nested class definitions",
+            skipped=("src/Nested.java",),
+        )
+        rendered = TranscriptSink().render(degraded, NO_THRESHOLDS)
+        assert "incomplete::analyze" in rendered
+        assert "8" in rendered
+        assert "degraded" in rendered
+        assert "missing nested class definitions" in rendered
+        assert "src/Nested.java" in rendered
 
 
 class TestBreachesPointRatherThanJudge:
@@ -96,3 +121,32 @@ class TestTheReviewSink:
         )
         rendered = ReviewSink().render(measurement, NO_THRESHOLDS)
         assert rendered.index("high") < rendered.index("low")
+
+    def test_it_labels_parameter_count_as_parameters(self):
+        rendered = ReviewSink().render(measurement_with(14), NO_THRESHOLDS)
+        assert "parameters 2" in rendered
+        assert "nesting-proxy" not in rendered
+
+    def test_a_degraded_measurement_shows_functions_and_the_reason(self):
+        degraded = Measurement(
+            status=DEGRADED,
+            functions=(
+                FunctionMetric(
+                    name="incomplete::analyze",
+                    path="src/Parser.java",
+                    start_line=20,
+                    end_line=45,
+                    cyclomatic_complexity=8,
+                    length=25,
+                    parameter_count=1,
+                ),
+            ),
+            reason="missing nested class definitions",
+            skipped=("src/Nested.java",),
+        )
+        rendered = ReviewSink().render(degraded, NO_THRESHOLDS)
+        assert "incomplete::analyze" in rendered
+        assert "8" in rendered
+        assert "degraded" in rendered
+        assert "missing nested class definitions" in rendered
+        assert "src/Nested.java" in rendered
