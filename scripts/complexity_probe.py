@@ -119,9 +119,15 @@ def main(argv=None) -> int:
 
     if arguments.gate:
         verdict = CycleGate().evaluate(measurement, probe.is_available())
+        # Report the verdict on all paths: the gate is a reporter, not a blocker.
+        # Non-blocking verdicts (the only reachable case from this CLI) report to stdout
+        # alongside the measurement they describe. The blocking branch stays for
+        # correctness with external callers that can observe silence; it reports to stderr.
         if verdict.blocks:
             print(verdict.message, file=sys.stderr)
             return 1
+        else:
+            print(verdict.message)
     return 0
 
 
