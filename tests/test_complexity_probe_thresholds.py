@@ -143,10 +143,8 @@ class TestAbsence:
         )
         assert CheckstyleThresholds().thresholds_for(tmp_path) is None
 
-    def test_checkstyle_regex_does_not_misattribute_another_modules_threshold(
-        self, tmp_path
-    ):
-        # Regression: regex must not match properties from other modules
+    def test_checkstyle_does_not_misattribute_another_modules_threshold(self, tmp_path):
+        # Regression: must not match properties from other modules (non-self-closed)
         (tmp_path / "checkstyle.xml").write_text(
             '<?xml version="1.0"?>\n'
             '<module name="Checker">\n'
@@ -159,6 +157,35 @@ class TestAbsence:
         )
         assert CheckstyleThresholds().thresholds_for(tmp_path) is None
 
+    def test_checkstyle_self_closing_module_yields_nothing(self, tmp_path):
+        # Regression: self-closing CyclomaticComplexity must not pick up
+        # following module's properties
+        (tmp_path / "checkstyle.xml").write_text(
+            '<?xml version="1.0"?>\n'
+            '<module name="Checker">\n'
+            '  <module name="CyclomaticComplexity"/>\n'
+            '  <module name="MethodLength">\n'
+            '    <property name="max" value="150"/>\n'
+            "  </module>\n"
+            "</module>\n"
+        )
+        assert CheckstyleThresholds().thresholds_for(tmp_path) is None
+
+    def test_checkstyle_reads_treewalker_nested_module(self, tmp_path):
+        # Real-world layout: CyclomaticComplexity nested inside TreeWalker
+        (tmp_path / "checkstyle.xml").write_text(
+            '<?xml version="1.0"?>\n'
+            '<module name="Checker">\n'
+            '  <module name="TreeWalker">\n'
+            '    <module name="CyclomaticComplexity">\n'
+            '      <property name="max" value="9"/>\n'
+            "    </module>\n"
+            "  </module>\n"
+            "</module>\n"
+        )
+        thresholds = CheckstyleThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 9
+
     def test_malformed_config_is_absence_not_a_crash(self, tmp_path):
         (tmp_path / ".eslintrc.json").write_text("{not json")
         assert EslintThresholds().thresholds_for(tmp_path) is None
@@ -170,6 +197,35 @@ class TestAbsence:
             "export default calculateComplexityDynamically();\n"
         )
         assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_eslint_commented_rule_beside_real_config_yields_nothing(self, tmp_path):
+        # Regression: commented-out rule should not be extracted
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n"
+            "  {\n"
+            '    // complexity: ["error", 10],  // old config\n'
+            '    complexity: "off",\n'
+            "  }\n"
+            "];\n"
+        )
+        result = EslintThresholds().thresholds_for(tmp_path)
+        assert result is None
+
+    def test_eslint_pattern_inside_string_literal_yields_nothing(self, tmp_path):
+        # Regression: complexity rule inside documentation string should
+        # not be extracted
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n"
+            "  {\n"
+            "    rules: {\n"
+            '      complexity: "off",\n'
+            "    },\n"
+            '    // Documentation: use complexity: ["error", 10] for stricter rules\n'
+            "  }\n"
+            "];\n"
+        )
+        result = EslintThresholds().thresholds_for(tmp_path)
+        assert result is None
 
     def test_the_null_source_always_yields_nothing(self, tmp_path):
         assert NullThresholds().thresholds_for(tmp_path) is None
@@ -234,7 +290,8 @@ class TestDiscoveryOrder:
         thresholds = discover_thresholds(tmp_path)
         assert thresholds.cyclomatic_complexity == 12
 
-    def test_registry_falls_through_to_ruff_when_checkstyle_missing(self, tmp_path):
+    def test_pmd_wins_over_ruff_in_default_registry_order(self, tmp_path):
+        # Checkstyle missing; PMD has a threshold → PMD wins over Ruff
         (tmp_path / "pmd-ruleset.xml").write_text(
             '<?xml version="1.0"?>\n'
             '<ruleset name="Custom" xmlns="http://pmd.sf.net/ruleset/1.0.0">\n'
@@ -247,10 +304,37 @@ class TestDiscoveryOrder:
             "[tool.ruff.lint.mccabe]\nmax-complexity = 8\n"
         )
         thresholds = discover_thresholds(tmp_path)
-        # Checkstyle doesn't exist; PMD should be checked; assume PMD regex
-        # works and returns 10. But wait, that would mean PMD is consulted
-        # before Ruff. Let me reconsider: the expected order is
-        # Checkstyle → PMD → Ruff → ESLint. So if Checkstyle returns None
-        # (missing file), we check PMD. If PMD has a threshold, we return it.
-        # Let me adjust this test.
         assert thresholds.cyclomatic_complexity == 10
+
+    def test_repo_root_checkstyle_wins_over_gradle_location(self, tmp_path):
+        # Both repo-root and Gradle-path configs exist → repo-root wins
+        (tmp_path / "checkstyle.xml").write_text(
+            '<?xml version="1.0"?>\n'
+            '<module name="Checker">\n'
+            '  <module name="CyclomaticComplexity">\n'
+            '    <property name="max" value="11"/>\n'
+            "  </module>\n"
+            "</module>\n"
+        )
+        (tmp_path / "config" / "checkstyle").mkdir(parents=True)
+        (tmp_path / "config" / "checkstyle" / "checkstyle.xml").write_text(
+            '<?xml version="1.0"?>\n'
+            '<module name="Checker">\n'
+            '  <module name="CyclomaticComplexity">\n'
+            '    <property name="max" value="9"/>\n'
+            "  </module>\n"
+            "</module>\n"
+        )
+        thresholds = discover_thresholds(tmp_path)
+        assert thresholds.cyclomatic_complexity == 11
+
+    def test_ruff_wins_over_eslint_in_default_registry_order(self, tmp_path):
+        # Both Ruff and ESLint configs exist → Ruff wins
+        (tmp_path / "pyproject.toml").write_text(
+            "[tool.ruff.lint.mccabe]\nmax-complexity = 7\n"
+        )
+        (tmp_path / ".eslintrc.json").write_text(
+            '{"rules": {"complexity": ["error", 5]}}'
+        )
+        thresholds = discover_thresholds(tmp_path)
+        assert thresholds.cyclomatic_complexity == 7

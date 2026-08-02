@@ -13,6 +13,7 @@ intact rather than quietly contradicted.
 import json
 import re
 import tomllib
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,14 +26,15 @@ class Thresholds:
 
 NO_THRESHOLDS = Thresholds(cyclomatic_complexity=None, source="none declared")
 
-_CHECKSTYLE_COMPLEXITY_MODULE = re.compile(
-    r'<module\s+name="CyclomaticComplexity".*?</module>', re.DOTALL
-)
-
-_MAX_PROPERTY = re.compile(r'<property\s+name="max"\s+value="(?P<max>\d+)"')
-
 
 class CheckstyleThresholds:
+    """Read complexity thresholds from Checkstyle XML config files.
+
+    Parses XML to find the CyclomaticComplexity module (which may be
+    self-closing or have child properties) and extracts its 'max' property.
+    The module may be top-level or nested inside a TreeWalker module.
+    """
+
     def thresholds_for(self, repo_root):
         repo_root_path = Path(repo_root)
         config_candidates = [
@@ -43,17 +45,39 @@ class CheckstyleThresholds:
         for config_path in config_candidates:
             if not config_path.exists():
                 continue
-            content = config_path.read_text()
-            module_match = _CHECKSTYLE_COMPLEXITY_MODULE.search(content)
-            if not module_match:
+            try:
+                result = self._extract_from_xml(config_path)
+                if result is not None:
+                    return Thresholds(
+                        cyclomatic_complexity=result,
+                        source=str(config_path.relative_to(repo_root_path)),
+                    )
+            except (OSError, UnicodeDecodeError):
                 continue
-            property_match = _MAX_PROPERTY.search(module_match.group(0))
-            if not property_match:
-                continue
-            return Thresholds(
-                cyclomatic_complexity=int(property_match.group("max")),
-                source=str(config_path.relative_to(repo_root_path)),
-            )
+        return None
+
+    def _extract_from_xml(self, config_path):
+        """Extract CyclomaticComplexity max value from Checkstyle XML.
+
+        Returns the max value as int, or None if not found or XML is malformed.
+        Handles self-closing modules and TreeWalker nesting.
+        """
+        try:
+            tree = ET.parse(config_path)
+            root = tree.getroot()
+        except ET.ParseError:
+            return None
+
+        # Find CyclomaticComplexity module: could be top-level or nested
+        for module_elem in root.iter("module"):
+            if module_elem.get("name") == "CyclomaticComplexity":
+                # Look for property element with name="max"
+                for prop_elem in module_elem.findall("property"):
+                    if prop_elem.get("name") == "max":
+                        try:
+                            return int(prop_elem.get("value", ""))
+                        except (TypeError, ValueError):
+                            return None
         return None
 
 
@@ -120,6 +144,13 @@ class RuffThresholds:
 
 
 class EslintThresholds:
+    """Read complexity thresholds from ESLint config files.
+
+    Tries flat config (ESLint 9+) first, then falls back to legacy .json format.
+    Flat config extraction is conservative: comments and string literals are
+    excluded, and ambiguous matches return None rather than guess.
+    """
+
     def thresholds_for(self, repo_root):
         repo_root_path = Path(repo_root)
 
@@ -154,10 +185,12 @@ class EslintThresholds:
     def _extract_from_flat_config(self, config_path):
         """Extract complexity limit from flat config JS file.
 
-        Flat config is a JavaScript module. We use conservative regex matching:
-        looking for a pattern like `rules: { complexity: ["error", N] }`.
-        If the pattern cannot be confidently matched, return None rather than
-        guess — a wrong number is far worse than "none declared".
+        Flat config is a JavaScript module. Conservative regex matching extracts
+        patterns like `complexity: ["error", N]` or `complexity: ["warn", N]`.
+        Before matching, comments are stripped and any matches inside string
+        literals are rejected. Multiple conflicting candidates return None.
+        Matches inside objects, spreads, variables, or other non-literal forms
+        are not extracted.
         """
         if not config_path.exists():
             return None
@@ -166,21 +199,94 @@ class EslintThresholds:
         except (OSError, UnicodeDecodeError):
             return None
 
-        # Match patterns like: complexity: ["error", 10] or complexity: ["warn", 10]
-        # Also handle: complexity: ["error", { max: 10 }] (less common)
-        match = re.search(
-            r'complexity\s*:\s*\[\s*["\'](?:error|warn)["\'],\s*(\d+)\s*\]', content
-        )
-        if match:
-            try:
-                return Thresholds(
-                    cyclomatic_complexity=int(match.group(1)),
-                    source=config_path.name,
-                )
-            except (TypeError, ValueError):
-                return None
+        # Strip comments before matching to avoid false positives
+        content_without_comments = self._strip_js_comments(content)
 
-        return None
+        # Find all candidate patterns: complexity: ["error"|"warn", N]
+        pattern = r'complexity\s*:\s*\[\s*["\'](?:error|warn)["\'],\s*(\d+)\s*\]'
+        candidates = []
+        for match in re.finditer(pattern, content_without_comments):
+            value = int(match.group(1))
+            offset = match.start()
+
+            # Reject if this match falls inside a string literal
+            if self._is_inside_string_literal(content_without_comments, offset):
+                continue
+
+            candidates.append(value)
+
+        # No candidates, or conflicting candidates → return None (be conservative)
+        if not candidates:
+            return None
+        if len(set(candidates)) > 1:
+            return None
+
+        # Exactly one value found
+        try:
+            return Thresholds(
+                cyclomatic_complexity=candidates[0],
+                source=config_path.name,
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _strip_js_comments(text):
+        """Remove /* */ and // comments from JavaScript source.
+
+        Preserves string literals and does not handle all edge cases
+        (e.g., comments inside strings), but sufficient for config files.
+        """
+        result = []
+        i = 0
+        while i < len(text):
+            # Block comment: /* ... */
+            if i < len(text) - 1 and text[i : i + 2] == "/*":
+                j = text.find("*/", i + 2)
+                i = j + 2 if j != -1 else len(text)
+                continue
+
+            # Line comment: // ...
+            if i < len(text) - 1 and text[i : i + 2] == "//":
+                j = text.find("\n", i)
+                if j != -1:
+                    result.append("\n")  # Keep the newline
+                    i = j + 1
+                else:
+                    i = len(text)
+                continue
+
+            result.append(text[i])
+            i += 1
+
+        return "".join(result)
+
+    @staticmethod
+    def _is_inside_string_literal(text, offset):
+        """Check if offset falls inside a ', ", or ` string literal.
+
+        Left-to-right scan tracking quote state and honouring backslash escapes.
+        """
+        in_string = None  # None, "'", '"', or "`"
+        i = 0
+        while i < offset and i < len(text):
+            char = text[i]
+
+            # Handle escape sequences
+            if char == "\\" and i + 1 < len(text):
+                i += 2
+                continue
+
+            # Toggle string state
+            if char in ("'", '"', "`"):
+                if in_string == char:
+                    in_string = None
+                elif in_string is None:
+                    in_string = char
+
+            i += 1
+
+        return in_string is not None
 
 
 class NullThresholds:
