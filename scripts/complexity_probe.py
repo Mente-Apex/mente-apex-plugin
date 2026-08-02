@@ -111,23 +111,30 @@ def main(argv=None) -> int:
     else:
         measurement = probe.measure(paths)
 
+    # Evaluate the verdict if --gate is passed, before rendering so JSON can include it.
+    verdict = None
+    if arguments.gate:
+        verdict = CycleGate().evaluate(measurement, probe.is_available())
+
     if arguments.json:
-        print(json.dumps(ArtifactSink().render(measurement, thresholds), indent=2))
+        artifact = ArtifactSink().render(measurement, thresholds)
+        # In JSON mode, include the verdict in the payload so the entire output is valid JSON.
+        if verdict:
+            artifact["verdict"] = {"status": verdict.status, "message": verdict.message}
+        print(json.dumps(artifact, indent=2))
     else:
         sink = TranscriptSink() if arguments.sink == "transcript" else ReviewSink()
         print(sink.render(measurement, thresholds))
+        # In transcript/review mode, print the verdict separately to stdout.
+        if verdict:
+            if verdict.blocks:
+                print(verdict.message, file=sys.stderr)
+                return 1
+            else:
+                print(verdict.message)
 
-    if arguments.gate:
-        verdict = CycleGate().evaluate(measurement, probe.is_available())
-        # Report the verdict on all paths: the gate is a reporter, not a blocker.
-        # Non-blocking verdicts (the only reachable case from this CLI) report to stdout
-        # alongside the measurement they describe. The blocking branch stays for
-        # correctness with external callers that can observe silence; it reports to stderr.
-        if verdict.blocks:
-            print(verdict.message, file=sys.stderr)
-            return 1
-        else:
-            print(verdict.message)
+    if verdict and verdict.blocks:
+        return 1
     return 0
 
 
