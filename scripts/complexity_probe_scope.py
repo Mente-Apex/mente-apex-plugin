@@ -4,11 +4,18 @@ Separate from the probe because "which files are in play" changes for reasons
 that have nothing to do with how a file is measured — a new scope form, a
 different VCS. `--scope` keeps the same vocabulary as scripts/mutation_gate.py
 so the two sensors are asked for a target the same way.
+
+Git queries for scope resolution delegate to mutation_gate_scope.changed_paths()
+so both probes answer "what changed?" identically. This shared implementation
+ensures that untracked files are included in working-tree, that merge-base
+errors surface rather than silently producing empty lists, and that future VCS
+changes affect both sensors the same way.
 """
 
 import re
-import subprocess
 from dataclasses import dataclass
+
+from mutation_gate_scope import changed_paths
 
 WORKING_TREE = "working-tree"
 MERGE_BASE = "merge-base"
@@ -39,30 +46,15 @@ def parse_range(argument: str):
 
 
 class GitRunner:
-    """The git queries scope resolution needs, isolated so tests can stub them."""
+    """Reuses the mutation gate's scope resolution so both sensors answer
+    'what changed?' identically. Untracked files are included in working-tree,
+    and errors surface rather than silently becoming empty lists."""
 
     def __init__(self, repo_root="."):
         self._repo_root = repo_root
 
     def changed_paths(self, mode: str) -> list[str]:
-        if mode == MERGE_BASE:
-            command = [
-                "git",
-                "diff",
-                "--name-only",
-                "--diff-filter=d",
-                "origin/HEAD...",
-            ]
-        else:
-            command = ["git", "diff", "--name-only", "--diff-filter=d", "HEAD"]
-        completed = subprocess.run(
-            command,
-            cwd=self._repo_root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return [line for line in completed.stdout.splitlines() if line.strip()]
+        return list(changed_paths(self._repo_root, mode))
 
 
 def resolve_scope(argument, repo_root=".", git_runner=None) -> ScopeSelection:
