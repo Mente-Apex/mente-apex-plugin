@@ -27,7 +27,7 @@ class TranscriptSink:
     """For the TDD cycle: compact lines the agent must answer to."""
 
     def render(self, measurement, thresholds) -> str:
-        if measurement.status != RAN:
+        if not measurement.has_numbers:
             return f"{measurement.status}: {measurement.reason}"
         if not measurement.functions:
             return "measured the change: no functions touched"
@@ -41,6 +41,12 @@ class TranscriptSink:
                 f"  {metric.name}  CC {metric.cyclomatic_complexity}"
                 f"  {metric.length} lines{marker}"
             )
+
+        if measurement.status != RAN:
+            lines.append(f"  ({measurement.status}: {measurement.reason})")
+            if measurement.skipped:
+                lines.append(f"  not covered: {', '.join(measurement.skipped)}")
+
         return "\n".join(lines)
 
 
@@ -77,7 +83,7 @@ class ReviewSink:
     """For on-demand chunk review: outlier first, so a lens knows where to look."""
 
     def render(self, measurement, thresholds) -> str:
-        if measurement.status != RAN:
+        if not measurement.has_numbers:
             return f"{measurement.status}: {measurement.reason}"
         if not measurement.functions:
             return "measured the chunk: no functions found"
@@ -92,7 +98,13 @@ class ReviewSink:
             lines.append(
                 f"  {metric.name}  ({metric.path}:{metric.start_line})"
                 f"  CC {metric.cyclomatic_complexity}"
-                f"  nesting-proxy {metric.parameter_count}"
+                f"  parameters {metric.parameter_count}"
                 f"  {metric.length} lines{marker}"
             )
+
+        if measurement.status != RAN:
+            lines.append(f"  ({measurement.status}: {measurement.reason})")
+            if measurement.skipped:
+                lines.append(f"  not covered: {', '.join(measurement.skipped)}")
+
         return "\n".join(lines)
