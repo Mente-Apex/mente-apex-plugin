@@ -1,7 +1,9 @@
 """Scope resolution, including the two forms the spec adds: a bare invocation
 meaning the uncommitted working tree, and a line range naming one function."""
 
-from complexity_probe_scope import ScopeSelection, parse_range, resolve_scope
+import pytest
+
+from complexity_probe_scope import GitRunner, ScopeSelection, parse_range, resolve_scope
 
 
 class StubGitRunner:
@@ -90,8 +92,6 @@ class TestGitRunnerWithRealRepository:
         untracked_path = repo_root / "untracked_new_file.py"
         untracked_path.write_text("NEW_CODE = 1\n", encoding="utf-8")
 
-        from complexity_probe_scope import GitRunner
-
         runner = GitRunner(str(repo_root))
         paths = runner.changed_paths("working-tree")
 
@@ -101,8 +101,6 @@ class TestGitRunnerWithRealRepository:
         repo_root, _ = git_repo_with_branch
         tracked_file = repo_root / "feature.py"
         tracked_file.write_text("FEATURE = 2\n", encoding="utf-8")
-
-        from complexity_probe_scope import GitRunner
 
         runner = GitRunner(str(repo_root))
         paths = runner.changed_paths("working-tree")
@@ -128,9 +126,50 @@ class TestGitRunnerWithRealRepository:
             capture_output=True,
         )
 
-        from complexity_probe_scope import GitRunner
-
         runner = GitRunner(str(repo_root))
         paths = runner.changed_paths("merge-base")
 
         assert "feature_change.py" in paths
+
+    def test_merge_base_raises_when_default_branch_cannot_be_determined(self, tmp_path):
+        import subprocess
+
+        repo_root = tmp_path / "unusual_repo"
+        repo_root.mkdir()
+
+        subprocess.run(
+            ["git", "init", "-b", "unusual-branch-name"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "t@example.com"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "T"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        (repo_root / "file.py").write_text("CODE = 1\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-qm", "initial"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        runner = GitRunner(str(repo_root))
+        with pytest.raises(ValueError, match="cannot determine the default branch"):
+            runner.changed_paths("merge-base")
