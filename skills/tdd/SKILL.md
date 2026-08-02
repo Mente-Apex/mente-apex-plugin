@@ -158,6 +158,20 @@ demanded by a test is code without a specification.
 Evaluate every cycle, even when the outcome is "nothing to refactor" — say so
 explicitly. Silence is how this step evaporates.
 
+**Measure first, then judge.** Run the probe over what this cycle changed:
+
+```bash
+uv run python scripts/complexity_probe.py --scope working-tree --gate
+```
+
+It prints each changed function's complexity and length, then reports the
+cycle-gate verdict. **Produce that output, or state why there isn't any** — no
+probe for this language, tool absent, needs compiled classes. Either is a
+complete answer; saying nothing is not.
+
+The numbers are triage, never a verdict: a high count says *look here*, it does
+not say *fix this*. The judgment is still yours, against the checklist below.
+
 Per-cycle checklist (fast — run it every time):
 
 - **Names** say what things are; no single-letter or abbreviated variables, including
