@@ -5,7 +5,7 @@ that one is the regression net for "can we still parse this language".
 
 from pathlib import Path
 
-from complexity_probe_lizard import LizardProbe, parse_lizard_csv
+from complexity_probe_lizard import LizardProbe, LizardRunFailedError, parse_lizard_csv
 from complexity_probe_measurement import RAN, UNVERIFIED
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests/fixtures/probe/java"
@@ -78,6 +78,26 @@ class TestTheProbe:
         measurement = probe.measure(["/x/Shape.java"])
         assert measurement.status == UNVERIFIED
         assert "boom" in measurement.reason
+
+    def test_a_failed_run_with_stderr_is_unverified_with_reason(self):
+        """Non-zero exit with stderr triggers LizardRunFailedError, caught as UNVERIFIED."""
+        probe = LizardProbe(
+            runner=StubRunner(
+                raises=LizardRunFailedError(
+                    "Error: Fail to read source file '/x/bad.java'"
+                )
+            )
+        )
+        measurement = probe.measure(["/x/bad.java"])
+        assert measurement.status == UNVERIFIED
+        assert "Fail to read source file" in measurement.reason
+
+    def test_a_failed_run_with_exit_code_is_unverified_with_reason(self):
+        """Non-zero exit without stderr triggers LizardRunFailedError with exit code."""
+        probe = LizardProbe(runner=StubRunner(raises=LizardRunFailedError("exit 2")))
+        measurement = probe.measure(["/x/Shape.java"])
+        assert measurement.status == UNVERIFIED
+        assert "exit 2" in measurement.reason
 
     def test_no_paths_is_ran_with_no_functions(self):
         """An empty change set measured is an answer, not a gap."""
