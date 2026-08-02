@@ -41,6 +41,13 @@ also pre-authorize in the same breath ("apply everything Critical", "doc only",
 review for whatever they cover — don't re-ask.** This also makes the skill
 usable non-interactively.
 
+**Measure before you read.** Run `sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --sink review <scope>`
+over the target first. `<scope>` is a path, a diff, or a range
+(`OrderService.java:40-120`). **This never blocks** — the numbers are triage,
+pointing at where a type switch or a god class is likely to be. A finding still
+has to name the design cost; a number alone is not one. Where the probe cannot
+run, record it and analyze unaided (`docs/status-vocabulary.md`).
+
 ## Apply, via TDD
 
 Approved recommendations are applied **through the TDD refactor job**

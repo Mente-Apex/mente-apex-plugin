@@ -37,6 +37,23 @@ gets *used*.
   range (default: the uncommitted working tree — this lens reviews a change,
   not a tree).
 
+## Measure before you read
+
+Run the probe over the chunk first — it costs a second and tells you where to
+look:
+
+```bash
+sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --sink review <scope>
+```
+
+`<scope>` is a path, a diff, or a range (`OrderService.java:40-120`); bare means
+the uncommitted working tree. **This never blocks** — it prints numbers and
+hands them to your judgment. A high count is a place to look, not a finding: it
+is only a finding once you can name the readability or changeability cost.
+
+Where the probe cannot run — no probe for the language, tool absent — say so and
+review unaided. Absence is data, never silence (`docs/status-vocabulary.md`).
+
 ## Review — two gears
 
 Scale effort to scope. **Read the standard first**, then:
