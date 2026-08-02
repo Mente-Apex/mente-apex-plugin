@@ -6,6 +6,16 @@ test doubles are **Mockito** — both arrive with `spring-boot-starter-test`, so
 Spring project they are already on the classpath and need no decision. **JUnit 6 is
 near-identical** for everything below; see the compatibility note at the end.
 
+**Spring baseline: Boot 4.x.** This matters more than it looks. Boot 4.0 **removed**
+`@MockBean` and `@SpyBean` (not merely deprecated them — that was 3.4) and **relocated
+most test-slice annotations into new packages**: `@DataJpaTest` is now
+`org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`, `@WebMvcTest` is
+`org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest`, and
+`@AutoConfigureTestDatabase` is `org.springframework.boot.jdbc.test.autoconfigure…`.
+Code written against 3.x imports will not compile. Detect the Boot generation from the
+build file before writing a single test, and where a project is still on 3.x, use
+`@MockitoBean` anyway — it exists from Spring Framework 6.2 and is correct on both.
+
 ## Discovering conventions
 
 Check, in order:
@@ -47,12 +57,15 @@ During the cycle, run the single new test first, then the full suite:
 ./gradlew build
 ```
 
-**Gradle's up-to-date check can hide a RED step.** If the test task's inputs have not
-changed, Gradle prints `UP-TO-DATE` and reuses the previous result — so a test you
-expected to fail can report the last run's success. In the red-green loop the inputs
-do change on every edit, but when you need certainty (re-running an unchanged test to
-confirm it still fails for the reason you think), use `./gradlew test --rerun` rather
-than trusting the cache.
+**Gradle's up-to-date check, and what it can and cannot hide.** A **failed task is never
+marked up-to-date**, so a red step always re-runs — Gradle will not turn red into green,
+and in the red-green loop editing a test changes the inputs anyway. The reachable hazard
+is the opposite one: **untracked inputs**. A test that depends on something Gradle cannot
+see — a file outside the project tree, an environment variable, an external service —
+leaves `:test UP-TO-DATE` and reports the *previous* run's success on a suite that is
+now actually red. Use `./gradlew test --rerun` (single task) when you need to trust a
+step whose inputs Gradle does not track; `--rerun-tasks` re-runs everything and is
+almost always more than you want.
 
 **Refactor jobs on a large suite — two-tier running.** A full `./mvnw verify` on a
 multi-module Spring project is minutes, not seconds, and paying it after the Primary
@@ -61,7 +74,12 @@ scope down:
 
 - Maven — `-Dtest='Pattern*Test'` to select by name, and `-pl <module> -am` to build
   only the changed module plus what it depends on. Add `-o` (offline) once the
-  dependencies have resolved once.
+  dependencies have resolved once. **Failsafe uses `-Dit.test`, not `-Dtest`** — a
+  detail that matters precisely because `verify` is the end gate below, and
+  `-Dtest=` silently selects nothing among the integration tests. (Maven's own
+  single-test docs still scope `-Dtest` to JUnit 4 and TestNG; it does work with the
+  JUnit Platform provider, but nothing official blesses it, so verify it runs what you
+  think on the project in front of you.)
 - Gradle — `:module:test` for one subproject, `--tests` for one class or method.
   Gradle's build cache and up-to-date checks already skip unchanged modules.
 
@@ -164,8 +182,15 @@ void rejectsInvalidEmail(String invalidEmail) {
 ```
 
 `@ValueSource` for one primitive argument, `@CsvSource` for several, `@MethodSource`
-for anything needing real objects, `@EnumSource` to cover every constant of an enum
-(the one case where exhaustiveness is checked for you).
+for anything needing real objects, `@EnumSource` for an enum's constants.
+
+**`@EnumSource` is a convenient default, not a check.** `@EnumSource(Status.class)`
+resolves at runtime to every constant declared *at that moment*, so a constant added
+later is picked up automatically — but nothing fails if coverage is incomplete, and the
+`names = {...}` form silently omits anything added after it was written. Do not read it
+as the compile-time exhaustiveness a `switch` over a sealed type gives you; that one is
+enforced by the compiler, this one is a runtime convenience, and conflating them is how
+a "covered" enum quietly grows an untested case.
 
 Use a parameterized test when testing the *same behavior* with different inputs.
 Distinct behaviors get distinct tests — cramming them into one `@CsvSource` hides
@@ -202,39 +227,74 @@ test. Reach for the narrowest slice that exercises the boundary:
 | *(none)* | nothing | domain and application logic — the default |
 | `@WebMvcTest(Controller.class)` | one controller + MVC infrastructure | HTTP mapping, status codes, serialization |
 | `@DataJpaTest` | JPA, repositories, a test datasource | mapping and query correctness |
-| `@JsonTest` | serializers only | (de)serialization contracts |
+| `@JsonTest` | the object-mapper slice — `@JacksonComponent` beans, `JacksonModule`s, and injected `JacksonTester` fields | (de)serialization contracts |
 | `@SpringBootTest` | everything | wiring, and only wiring |
 
-`@MockitoBean` replaces a bean in the slice's context (it superseded `@MockBean`,
-deprecated from Spring Boot 3.4). It is a container-level operation, so it is
-correct in a slice test and wrong in a domain test, where a constructor parameter
-does the same job with no framework involved.
+On Boot 4.x, `@SpringBootTest` also needs an explicit `@AutoConfigureMockMvc` before
+`MockMvc` is available — it is no longer implied.
 
-For adapter tests that need a real database, Testcontainers with `@ServiceConnection`
-wires the container into Spring's datasource properties with no manual URL plumbing:
+`@MockitoBean` replaces a bean in the slice's context. `@MockBean` was deprecated in
+Boot 3.4 and **removed in Boot 4.0**, so it is not a legacy-but-working alternative.
+Two behaviours worth knowing: the default override strategy is `REPLACE_OR_CREATE`, so
+it *creates* the bean when none exists unless you set `enforceOverride = true` — a typo
+in a bean name silently gives you a mock of nothing rather than a failure — and it is
+not supported on `@Configuration` classes.
+
+It is a container-level operation, so it is correct in a slice test and wrong in a
+domain test, where a constructor parameter does the same job with no framework involved.
+
+For adapter tests that need a real database, `@ServiceConnection` wires the container
+into Spring's datasource properties with no manual URL plumbing:
 
 ```java
 @DataJpaTest
-@Testcontainers
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class JpaUserRepositoryTest {
+@Import(PostgresContainerConfig.class)     // container declared as a Spring bean
+class JpaUserRepositoryTest { }
 
-    @Container
+@TestConfiguration(proxyBeanMethods = false)
+class PostgresContainerConfig {
+
+    @Bean
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17");
+    PostgreSQLContainer<?> postgres() {
+        return new PostgreSQLContainer<>("postgres:17");
+    }
 }
 ```
 
-Declare the container `static` so one instance is shared across the class rather than
-started per test method. Write these only when the mapping is the thing under test —
-per the core cycle, adapter integration tests are on request, not by default.
+**Prefer this to `@Testcontainers` + `@Container`.** Spring explicitly recommends
+against the JUnit extension here: it stops the container when the test class finishes,
+while Spring's TestContext framework caches the `ApplicationContext` beyond that point,
+so a later test or a bean destruction callback can fail against a container that is
+already gone. Declaring the container as a bean lets the context own its lifecycle.
+
+`@AutoConfigureTestDatabase(replace = NONE)` is **not needed** alongside
+`@ServiceConnection` on Boot 3.4+: the default became `Replace.NON_TEST`, which
+explicitly recognises Testcontainers-sourced databases. Seeing it in a codebase usually
+dates the test rather than doing anything. (If you ever do need the old behaviour, it is
+`Replace.AUTO_CONFIGURED`, not `NONE`.)
+
+Write these only when the mapping is the thing under test — per the core cycle, adapter
+integration tests are on request, not by default.
 
 ## JUnit 6 compatibility
 
-JUnit 6 (baseline Java 17) keeps the Jupiter programming model unchanged: `@Test`,
-`@Nested`, `@ParameterizedTest`, `assertThrows`, and every annotation above are
-identical, and AssertJ and Mockito are unaffected. What moves is packaging and
-baseline — the `junit-jupiter` aggregate coordinates and the platform version — so a
-migration is a dependency bump plus removal of anything already deprecated in JUnit
-5.x, not a rewrite of tests. Detect the version from the build file rather than
-assuming, and follow whichever the project resolves.
+JUnit 6 (baseline Java 17) keeps the Jupiter **programming model** unchanged: `@Test`,
+`@Nested`, `@ParameterizedTest`, `assertThrows` and every annotation above are
+identical, and AssertJ and Mockito are unaffected. So the tests you write here are the
+same tests either way.
+
+The *migration*, though, is more than a version bump, and three items bite:
+
+- **`junit-platform-runner` was removed with no replacement** — a suite still using the
+  JUnit 4 `@RunWith(JUnitPlatform.class)` bridge has nowhere to go but rewriting it.
+- **The parameterized CSV engine swapped from univocity to FastCSV**, which can turn a
+  passing `@CsvSource` test red with no prior deprecation warning. Quoting and escaping
+  edge cases are where it shows.
+- **Platform artifacts renumbered 1.x → 6.x**, so hand-pinned versions across
+  `junit-platform-*` and `junit-jupiter-*` will disagree. Use `junit-bom` and let it
+  align them.
+
+The real cost, though, is usually the **Java 8 → 17 baseline jump** rather than any of
+the above. Vintage is still available but deprecated. Detect the version from the build
+file rather than assuming, and follow whichever the project resolves.

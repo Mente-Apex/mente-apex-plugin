@@ -11,6 +11,12 @@ a DIP violation invisible.** A field-injected god service compiles, starts, and 
 its `@SpringBootTest` — the design smell shows up only as a test that cannot be written
 without the framework.
 
+**Spring baseline: Boot 4.x.** Nothing in this file's principles is version-sensitive —
+constructor injection, collection injection and `@ConfigurationProperties` behave the
+same across 3.x and 4.x — but if a finding leads you to *write* a test, read the baseline
+note in `tdd/references/java-junit5.md` first: Boot 4.0 removed `@MockBean`/`@SpyBean`
+and relocated the test-slice packages.
+
 ## Per-principle idioms
 
 **SRP** — split at class level; package-private classes cost nothing, so a package may

@@ -27,13 +27,18 @@ the **degrade path**; state "agent-driven (no graph tool)" in the report.
 
 ```bash
 ./mvnw -q -DskipTests compile
-jdeps -verbose:package -filter:none target/classes        # Gradle: build/classes/java/main
+jdeps -verbose:package target/classes        # Gradle: build/classes/java/main
 ```
 
-`-filter:none` is load-bearing: the default filter suppresses same-archive edges, which
-are exactly the intra-application edges this lens is about. Output is `from -> to` pairs
-at package granularity; aggregate them to your **component** level (a component is a
-sub-package tree, not a single package), drop intra-component edges, then:
+**No `-filter:none`.** jdeps' default is `-filter:package`, which suppresses only
+*self-package* edges — cross-package edges inside your application are already reported,
+and those are the ones this lens is about. `-filter:none` adds `com.example.domain ->
+com.example.domain` rows you then have to discard, and it disables `-filter:archive`,
+which was not on either. It is not load-bearing; it is noise.
+
+Output is `from -> to` pairs at package granularity; aggregate them to your **component**
+level (a component is a sub-package tree, not a single package), drop intra-component
+edges, then:
 
 - **Instability (SDP)** — `I = Ce / (Ce + Ca)` per component, where `Ce` is the count of
   distinct components it depends on and `Ca` the count that depend on it. A component
@@ -57,6 +62,15 @@ This is the deliverable. Draft the rules from the findings and write them to
 `src/test/java/.../architecture/` as a committed tripwire — never commit it silently.
 
 ```java
+import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.junit.AnalyzeClasses;
+import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchRule;
+
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.Architectures.onionArchitecture;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
+
 @AnalyzeClasses(packages = "com.example", importOptions = ImportOption.DoNotIncludeTests.class)
 class DependencyRuleTest {
 
@@ -64,7 +78,8 @@ class DependencyRuleTest {
     static final ArchRule frameworkIsADetail =
             noClasses().that().resideInAnyPackage("..domain..", "..application..")
                     .should().dependOnClassesThat().resideInAnyPackage(
-                            "org.springframework..", "jakarta.persistence..", "com.fasterxml.jackson..");
+                            "org.springframework..", "jakarta.persistence..", "com.fasterxml.jackson..")
+                    .allowEmptyShould(true);
 
     @ArchTest
     static final ArchRule dependenciesPointInward =
@@ -73,7 +88,11 @@ class DependencyRuleTest {
                     .domainServices("..domain.service..")
                     .applicationServices("..application..")
                     .adapter("web", "..adapter.web..")
-                    .adapter("persistence", "..adapter.persistence..");
+                    .adapter("persistence", "..adapter.persistence..")
+                    .withOptionalLayers(true)
+                    .ignoreDependency(
+                            resideInAnyPackage("com.example", "com.example.config.."),
+                            alwaysTrue());
 
     @ArchTest
     static final ArchRule noCycles =
@@ -81,15 +100,39 @@ class DependencyRuleTest {
 }
 ```
 
-`onionArchitecture()` is ArchUnit's built-in Clean Architecture check — it asserts that
-adapters may reach inward and nothing may reach outward, which is the Dependency Rule
-stated once rather than as a dozen `noClasses()` rules.
+Three details that decide whether this **runs** rather than merely reads well:
+
+- **`.withOptionalLayers(true)`** — `optionalLayers` defaults to `false`, so every
+  declared layer must contain at least one class or the rule fails with `Layer '<name>'
+  is empty`. A project with no `..domain.service..` classes yet fails on day one.
+- **The `ignoreDependency` on unassigned packages** — `onionArchitecture()` considers all
+  dependencies and treats adapters as accessible by no layer, so a class belonging to
+  *no* declared layer (`com.example.Application`, `com.example.config.*`) that touches a
+  domain or adapter type is a violation. That is the default Spring Boot layout. Assign
+  those packages to a layer, exclude them, or keep them out of the imported set.
+- **`.allowEmptyShould(true)` on the `noClasses()` rules** — since ArchUnit 1.0,
+  `failOnEmptyShould` defaults to true, so a rule about `..domain..` fails outright
+  before that package exists. The onion and slices rules set it internally; the
+  hand-written ones do not.
+
+**`onionArchitecture()` is the Onion / Hexagonal / Ports-and-Adapters check** — ArchUnit's
+own name for it — and it enforces **inter-layer access direction only**. It does *not*
+catch framework leakage: a domain class depending on `org.springframework..` is not a
+violation of it, because those targets belong to no layer. It does not subsume the
+`frameworkIsADetail` rule above; the two are complementary and you need both.
 
 **On an existing codebase, freeze rather than exempt.** `FreezingArchRule.freeze(rule)`
 records today's violations as an accepted baseline and fails only on *new* ones, so a
-legacy project can adopt the contract on day one instead of after the refactor. That is
+legacy project can adopt the contract before the refactor rather than after. That is
 almost always the right first move; a rule weakened with exclusions to make it pass is a
 rule that will never tighten.
+
+**The first run throws unless you enable store creation.** `allowStoreCreation` defaults
+to `false`, and the failure message (`Creating new violation store is disabled`) is not
+obviously about configuration. Set `freeze.store.default.allowStoreCreation=true` in
+`archunit.properties`, or pass
+`-Darchunit.freeze.store.default.allowStoreCreation=true` for the baselining run; the
+store lands in `archunit_store` and should be committed.
 
 **Spring Modulith**, if present, verifies module boundaries from package structure with
 `ApplicationModules.of(Application.class).verify()`. Complementary to ArchUnit rather
@@ -112,8 +155,13 @@ uses it; proposing JPMS adoption to a Spring Boot application is usually wrong.
 `A = abstract types / total types` per component. Java is the language Martin defined
 these metrics for, and the count is **unambiguous**: interfaces and `abstract` classes
 are abstract, everything else is concrete, with no `Protocol`-shaped hole to
-under-count. So `A`, and therefore `D = |A + I − 1|`, are exact rather than
-approximate — say so in the report, since the other language references cannot.
+under-count. So `A`, and therefore `D`, are exact rather than approximate — say so in the
+report, since the other language references cannot.
+
+Name which `D` you are reporting. `D = |A + I − 1| / √2` is the original; `D' = |A + I −
+1|` is the normalized form, which the *Clean Architecture* book uses and which is what
+the formula above gives. Both are in circulation, they differ by a constant factor, and
+a report claiming exactness owes the reader the variant.
 
 One judgement call: `sealed` interfaces and `record` implementations. A sealed interface
 is abstract by every structural definition; count it as such, and note that a component
