@@ -43,12 +43,21 @@ BUILD_FIELDS = (
 # `install_verify_command` is on BOTH field sets and both run: one proves the
 # built thing installs, the other proves the shipped thing arrived. Forcing them
 # into one field is what made that command a compound.
+# `publish_command` and `distribution_names` appear on BOTH field sets, like
+# `install_verify_command` above and for a related reason: the build axis is the
+# right home for them in every ecosystem where the toolchain both builds and
+# publishes, and the wrong one for a distribution whose identity the toolchain
+# does not determine. On the distribution side both default to `null`, meaning
+# "the build adapter's answer stands" -- which is what every adapter predating
+# the fields declares.
 DISTRIBUTION_FIELDS = (
     "kind",
     "fingerprint",
     "derived_manifests",
     "install_verify_command",
     "release_command",
+    "publish_command",
+    "distribution_names",
 )
 
 # The closed placeholder vocabulary. A command may contain these and nothing
@@ -141,6 +150,7 @@ SHIPPING_EVIDENCE = (
     ".npmrc",
     ".goreleaser.yml",
     ".goreleaser.yaml",
+    ".oci-image.toml",
 )
 
 # The ecosystems whose ONE manifest carries both kinds of fact, which is the whole
@@ -150,26 +160,21 @@ SHIPPING_EVIDENCE = (
 # has one, so the carve-out does not reach it: a distribution adapter
 # fingerprinting `pyproject.toml#project.version` or `uv.lock#anything` is a
 # violation, selector or no selector.
-# `gradle.properties` is the fourth, admitted on a sharper form of the case that
-# admitted `pom.xml`: a Gradle build's other files are imperative Kotlin/Groovy, so
-# they are not a second file a fingerprint could be redirected to — they are not
-# addressable by any selector language at all. See the contract's "The fourth shared
-# manifest" section, which also records that its one named shipping selector is a
-# convention the OCI adapter imposes rather than one Gradle defines.
-SHARED_MANIFESTS = ("pom.xml", "Cargo.toml", "package.json", "gradle.properties")
+# Still three. `gradle.properties` was proposed as a fourth and rejected: the
+# carve-out's precondition is that the ecosystem ALREADY records the shipping fact
+# somewhere, and Gradle records none — the convention would have been invented, and
+# an invented fact can be invented in a shipping-evidence file that needs no
+# carve-out. See the contract's "A fourth was proposed, argued, and rejected".
+SHARED_MANIFESTS = ("pom.xml", "Cargo.toml", "package.json")
 
 # The named shipping facts each shared manifest records. Prefix-matched, so a
 # predicate form (`.private==false`) reads the same as the bare selector. A
 # selector into a shared manifest that is NOT one of these is a build fact, and
 # naming it from either axis is an offence in that axis's direction.
 SHIPPING_SELECTORS = {
-    "pom.xml": (
-        "/project/distributionManagement",
-        "/project/properties/spring-boot.build-image.imageName",
-    ),
+    "pom.xml": ("/project/distributionManagement",),
     "Cargo.toml": ("package.publish",),
     "package.json": (".private", ".publishConfig", ".files"),
-    "gradle.properties": ("imageName",),
 }
 
 
@@ -596,6 +601,51 @@ def test_adapter_contract_documents_every_field():
     fields = set(BUILD_FIELDS + DISTRIBUTION_FIELDS)
     missing = sorted(field for field in fields if f"`{field}`" not in text)
     assert not missing, f"contract does not document fields: {missing}"
+
+
+_COUNT_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+
+
+def test_the_shared_manifests_match_the_contracts_prose():
+    """`SHARED_MANIFESTS` and the contract must name the same files.
+
+    These two drifted with nothing to catch them. A revision added
+    `gradle.properties` as a fourth shared manifest and updated the constant and
+    one prose section, leaving three other passages reading "those three" — so
+    an adapter author following the *authoring procedure* got the opposite
+    answer from the one the new section gave, and all tests stayed green.
+
+    The count word is pinned deliberately: the contract argues its carve-out
+    from the fact that exactly these ecosystems have one manifest each, so the
+    number is load-bearing prose, not decoration. Adding a manifest without
+    rewriting the argument should fail here.
+    """
+    text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    count_word = _COUNT_WORDS[len(SHARED_MANIFESTS)]
+
+    assert f"Call those {count_word} the **shared manifests**" in text, (
+        f"the contract must call the shared manifests '{count_word}' to match "
+        f"SHARED_MANIFESTS ({len(SHARED_MANIFESTS)} entries: {SHARED_MANIFESTS})"
+    )
+    unnamed = [manifest for manifest in SHARED_MANIFESTS if f"`{manifest}`" not in text]
+    assert not unnamed, f"contract does not name shared manifests: {unnamed}"
+
+
+def test_every_shipping_selector_is_named_in_the_contract():
+    """A selector readable across the axis must be declared where authors read.
+
+    `SHIPPING_SELECTORS` is what `names_a_shipping_fact` enforces, so a selector
+    added here silently widens the separation rule's carve-out for every future
+    adapter. The contract is where that widening has to be argued.
+    """
+    text = ADAPTER_CONTRACT.read_text(encoding="utf-8")
+    missing = [
+        f"{manifest}#{selector}"
+        for manifest, selectors in SHIPPING_SELECTORS.items()
+        for selector in selectors
+        if f"{manifest}#{selector}" not in text
+    ]
+    assert not missing, f"contract does not name shipping selectors: {missing}"
 
 
 def test_adapter_contract_explains_why_a_lockfile_is_not_a_derived_manifest():
@@ -1569,23 +1619,37 @@ def test_level_two_rows_are_parsed_from_the_real_contract():
 def all_build_declared_roles():
     """Every role any build adapter's `distribution_names` map declares.
 
-    A distribution adapter has no map of its own and will not get one — a
-    `<distribution-name:role>` token on the distribution side resolves against
-    the `distribution_names` of the build adapter that resolves alongside it,
-    which is where the toolchain-determined name already lives (see "Where the
-    axes tangle" in the contract), so nothing is duplicated. This structural
-    check has no notion of pairing — it cannot tell which build adapter
-    resolves alongside a given distribution adapter — so it checks against the
-    union of every build adapter's declared roles. A role missing from that
-    union is a real gap regardless of pairing; a role present in the union but
-    declared by the "wrong" build adapter is not something a static file-shape
-    check can catch, and is the runtime core's problem, not this contract's.
+    A distribution adapter's `<distribution-name:role>` token resolves against
+    **its own map first, the build adapter's as fallback** — see
+    `roles_available_to`. Where it has no map of its own (the three adapters
+    that predate the field), the role comes from the build adapter that
+    resolves alongside it, which is where a toolchain-determined name lives.
+
+    This structural check has no notion of pairing — it cannot tell which build
+    adapter resolves alongside a given distribution adapter — so it checks
+    against the union of every build adapter's declared roles. A role missing
+    from that union is a real gap regardless of pairing; a role present in the
+    union but declared by the "wrong" build adapter is not something a static
+    file-shape check can catch, and is the runtime core's problem.
     """
     roles = set()
     for adapter in adapter_files():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
         roles |= declared_roles(fields.get("distribution_names"))
     return roles
+
+
+def roles_available_to(distribution_fields, build_roles):
+    """Roles a distribution adapter may bind: its own map, then the build side.
+
+    The precedence is the contract's, and it is what lets `oci-image.md` name a
+    registry and repository that no build toolchain determines while
+    `npm-registry.md` keeps binding `package` against `typescript/npm` with no
+    map of its own. Union rather than override at this layer: a static check
+    cannot pair adapters, so it verifies the role exists *somewhere* it could
+    legitimately come from.
+    """
+    return declared_roles(distribution_fields.get("distribution_names")) | build_roles
 
 
 def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
@@ -1618,12 +1682,12 @@ def test_every_placeholder_used_by_an_adapter_is_bound_by_the_contract():
         )
         if unbound:
             offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {unbound}")
-    distribution_roles = all_build_declared_roles()
+    build_roles = all_build_declared_roles()
     for adapter in distribution_files():
         fields = parse_frontmatter(adapter.read_text(encoding="utf-8"))
         unbound = unbound_placeholders(
             (str(fields.get(field, "")) for field in DISTRIBUTION_FIELDS),
-            distribution_roles,
+            roles_available_to(fields, build_roles),
         )
         if unbound:
             offenders.append(f"{adapter.relative_to(REPO_ROOT)}: {unbound}")

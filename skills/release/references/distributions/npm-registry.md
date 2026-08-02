@@ -5,6 +5,8 @@ fingerprint: package.json#.private==false
 derived_manifests: null
 install_verify_command: npm view <distribution-name:package> version
 release_command: gh release create <tag> --title <tag> --notes-file <release-notes-file>
+publish_command: null
+distribution_names: null
 ---
 
 # npm-registry

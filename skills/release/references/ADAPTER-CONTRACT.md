@@ -64,6 +64,54 @@ empty square, where it builds, it tags, and nothing further mirrors or ships.
 | `derived_manifests` | List of `path#selector` stamped *from* the build adapter's `version_source`, same selector syntax. A trailing `?` marks an entry [optional](#optional-derived-manifests). | yes — `null` or an empty list, both meaning this distribution mirrors no version literal |
 | `install_verify_command` | Proves the *shipped* thing arrived. | no |
 | `release_command` | Creates the forge's release *object* from the pushed tag. | yes — targets where the tag is the whole release |
+| `publish_command` | Overrides the build adapter's outward-facing step. See [below](#publish_command-on-the-distribution-axis). | yes — and `null` is the default: the build adapter's publish stands |
+| `distribution_names` | This distribution's own role → `path#selector` map, consulted **before** the build adapter's. | yes — and `null` is the default: roles bind against the build adapter's map |
+
+### `publish_command` on the distribution axis
+
+`publish_command` lives on the build adapter because for `uv`, `npm` and `cargo` the
+outward-facing step **is** the build toolchain's own command — `uv publish`, `npm
+publish`, `cargo publish`. Publishing and building are the same tool's two verbs, so one
+axis holds both without strain.
+
+That stops being true the moment what ships is not what the toolchain knows how to
+publish. A container image is the clear case: pushing it to a registry is orthogonal to
+whether the component was built with Maven or Gradle, and both build adapters would
+otherwise have to carry an identical image-push command that has nothing to do with
+either toolchain. Worse, they would have to *narrow their fingerprints* to avoid claiming
+every repository of that technology — which is exactly the failure this rule was written
+after: a `java/maven` adapter fingerprinting bare `pom.xml` while its publish step pushed
+an OCI image claimed every Maven library in existence and would have tagged them,
+skipped `mvn deploy`, and reported success.
+
+So a distribution adapter may declare `publish_command`, and when it does **it replaces
+the build adapter's** rather than running alongside it. One repository has one outward-
+facing step; two would mean publishing twice.
+
+`null` is the default and the overwhelmingly common case — the three distribution
+adapters that predate this field all declare it, meaning "the build adapter's publish is
+the right one". Declaring a non-`null` value is a claim that **what this repository ships
+is not what its build toolchain publishes**, and an adapter making it should say why in
+its body.
+
+### `distribution_names` on the distribution axis
+
+The build adapter's map is justified on the grounds that "every value it holds is a path
+the *toolchain* determines" — `package.json#.name`, `pom.xml#/project/groupId`. True for
+every role that existed when that was written, and false for a container image: a
+registry host and a repository path are decided by where the team publishes, not by
+Maven.
+
+A distribution adapter may therefore declare its own map. Resolution is **its own map
+first, the root build adapter's as fallback**, which keeps every existing adapter working
+unchanged: `npm-registry.md`'s `<distribution-name:package>` and `maven-central.md`'s
+`<distribution-name:group>` declare no map of their own and still bind against
+`typescript/npm` and `java/maven` exactly as before.
+
+This does not reopen the axis tangle it was carved out of. The rule is unchanged in
+substance — **a name is declared by whichever axis actually determines it** — and the
+original placement was a correct reading of the only cases then in view. What the OCI
+adapter added was the first name no toolchain determines.
 
 ### The separation rule
 
@@ -73,12 +121,14 @@ empty square, where it builds, it tags, and nothing further mirrors or ships.
 - **Build evidence** — `uv.lock`, `package-lock.json`, `package.json`, `Cargo.lock`,
   `Cargo.toml`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `gradle.properties`,
   `pyproject.toml`, `setup.py`, and predicates over them such as
-  `pyproject.toml#tool.uv.package==false`.
+  `pyproject.toml#tool.uv.package==false`. `gradle.properties` is build evidence — it
+  carries the project's version — and is **not** a shared manifest: no distribution
+  adapter may read it at any selector.
   This list must cover everything the [Level 1](#level-1--technology) table names, since
   that is the table Step 0 walks the repository for; a test compares them.
 - **Shipping evidence** — `.claude-plugin/`, and the registry configuration and publish
   targets that carry no build fact of their own: `.npmrc`, `.goreleaser.yml`,
-  `.goreleaser.yaml`. Naming these concretely is what gives the build direction of the
+  `.goreleaser.yaml`, `.oci-image.toml`. Naming these concretely is what gives the build direction of the
   rule anything to match on; "registry configuration" as a phrase matched nothing.
 
 **This rule exists because the contract already walked into the failure it warned about.**
@@ -112,7 +162,11 @@ fingerprint names a **shipping selector into a shared manifest**:
 - A distribution adapter fingerprinting a **shipping selector** into a shared manifest
   (`pom.xml#/project/distributionManagement`, `Cargo.toml#package.publish`,
   `package.json#.private==false`) is reading a named shipping fact recorded inside it, not
-  the file's build identity, and is not a violation.
+  the file's build identity, and is not a violation. npm records three such facts and all
+  three are readable: `package.json#.private`, `package.json#.publishConfig` and
+  `package.json#.files` — respectively whether the package publishes at all, where it
+  publishes to, and what goes in the tarball. None of the three says anything about how
+  the package builds.
 - **The carve-out reaches no further than the shared manifests, and no further than the
   named shipping facts inside them.** A distribution adapter fingerprinting
   `pyproject.toml#project.version` or `uv.lock#anything` is a violation with or without a
@@ -120,37 +174,19 @@ fingerprint names a **shipping selector into a shared manifest**:
   the one justification for the carve-out — no second file exists — does not apply. Adding
   a fourth shared manifest means arguing that case here first.
 
-**The fourth shared manifest: `gradle.properties`.** The case is the one that admitted
-`pom.xml`, made sharper by Gradle's build files being *code*. A Gradle project records
-its version, and any project-wide value its build script reads, in `gradle.properties`;
-`build.gradle.kts` is imperative Kotlin, so it is not a second file a fingerprint could
-be redirected to — it is not addressable by any selector language at all (see [Selector
-syntax](#selector-syntax)). Gradle therefore has strictly *fewer* places to put a
-shipping fact than Maven does, not more, and the "no second file exists" justification
-applies with more force here than in the case that established it.
+**A fourth was proposed, argued, and rejected — the reasoning is worth keeping.** An OCI
+image distribution needs to know the image's name, and Gradle records no such fact
+anywhere addressable: `build.gradle.kts` is imperative Kotlin, unreadable by any selector
+language, which leaves only `gradle.properties`. The case looked like the one that
+admitted `pom.xml` — one declarative manifest, no second file to redirect to — and it is
+not, because the carve-out's precondition is that **the ecosystem already records the
+shipping fact somewhere**. Gradle records nothing; the convention would have been
+invented. And an invented convention can be invented in a **shipping-evidence file**,
+which needs no carve-out at all. `distributions/oci-image.md` does exactly that.
 
-What it does **not** license is the loose reading. `gradle.properties` joins the shared
-manifests under the same two clauses as the other three: a bare `gradle.properties`
-fingerprint from a distribution adapter is still a violation, and only the **named**
-shipping selectors below are readable across the axis. It is admitted because Gradle has
-no alternative, not because a `.properties` file is generically neutral.
-
-The named shipping facts, by shared manifest:
-
-| Shared manifest | Named shipping selectors |
-|---|---|
-| `pom.xml` | `/project/distributionManagement`, `/project/properties/spring-boot.build-image.imageName` |
-| `Cargo.toml` | `package.publish` |
-| `package.json` | `.private`, `.publishConfig`, `.files` |
-| `gradle.properties` | `imageName` |
-
-`gradle.properties#imageName` is the weakest entry in that table and the one to read
-sceptically: Maven's is a property **Spring Boot's own plugin defines and reads**, while
-Gradle defines no equivalent, so `imageName` is a convention the OCI adapter imposes
-rather than one the ecosystem already had. It is declared here so the imposition is
-visible in the contract instead of buried in an adapter, and the adapter that relies on
-it says so in its body. A Gradle project naming its image any other way does not resolve
-that adapter, which is the correct outcome — a missed detection, not a wrong one.
+The general rule this yields: *if you are inventing the fact, you do not get the
+carve-out, because you are free to invent it somewhere the separation rule already
+allows.* The carve-out exists for facts you inherit and cannot move.
 - The build direction is constrained by the same two clauses, read the other way.
   `SHIPPING_EVIDENCE` is matched on the whole path regardless of selector, because
   `.claude-plugin/` and an `.npmrc` carry no build fact at any selector for one to
@@ -665,10 +701,13 @@ different directories, carry different field sets, and are detected differently.
 1. Create the file with **its axis's field set** — a build adapter at
    `references/build/<technology>/<toolchain>.md` with the twelve
    [build adapter fields](#build-adapter-fields), a distribution adapter at
-   `references/distributions/<kind>.md` with the five
+   `references/distributions/<kind>.md` with the seven
    [distribution adapter fields](#distribution-adapter-fields). Do not mix them: a
    `build_command` on a distribution adapter, or a `derived_manifests` on a build adapter,
-   is the axis tangle this split exists to remove.
+   is the axis tangle this split exists to remove. **`publish_command` and
+   `distribution_names` are the two that appear on both axes**, and that is deliberate
+   rather than a leak — see their sections above; on the distribution side both default
+   to `null`, meaning "the build adapter's answer stands".
 2. On a build adapter, `tag_pattern` is the one people forget, because `v<version>` feels
    like a default rather than a choice, and `relock_command` is the one people get wrong:
    check whether your lockfile records the project's *own* version before declaring it
