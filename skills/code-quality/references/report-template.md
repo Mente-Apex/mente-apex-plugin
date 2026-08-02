@@ -1,6 +1,6 @@
 # Consolidated report template
 
-The consolidator writes `docs/reports/code-quality/CODE-QUALITY-<YYYY-MM-DD>.md`
+The consolidator writes `docs/reports/code-quality/CODE-QUALITY-REPORT-<YYYY-MM-DD>.md`
 in exactly this shape. Like every lens report it is **load-bearing**: the shared
 decision gate parses tiers and Risk fields to build the approval question, and
 the shared implementer updates Status and the Apply log in place
@@ -155,7 +155,7 @@ Apply `clean-arch/major-1` (subsumed riders resolve with it); then apply each
 Omit any rider role that has no member. A group whose riders are all subsumed keeps
 just the first clause.
 
-## Recommendations
+## Findings
 
 Full findings, grouped by tier (the gate reads these section headers). Every
 finding keeps its owning lens's fields; the **Related** line is where the umbrella

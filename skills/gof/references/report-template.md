@@ -38,7 +38,7 @@ auto-generated heading anchors don't handle the `/`).
 - **Recommendation**: <one actionable improvement>
 - **Related:** <SOLID principle / "none">
 
-## Recommendations
+## Findings
 
 ### Critical
 
@@ -68,6 +68,16 @@ auto-generated heading anchors don't handle the `/`).
 | Pattern | Reason |
 |---|---|
 | <pattern> | <one line> |
+
+## Coverage & method
+
+Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
+`unverified`, one line each, and **every `unverified` states its reason**. Absence
+is data, never silence.
+
+| What | Status | Note |
+|---|---|---|
+| <check or measurement> | <ran \| degraded \| unverified> | <rung that ran, what was skipped, or why it did not run> |
 
 ## Reviewer notes
 

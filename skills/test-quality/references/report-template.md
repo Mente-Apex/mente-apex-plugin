@@ -59,6 +59,16 @@ deletion gate).
 ### Minor
 #### [test-quality/minor-1] ...
 
+## Coverage & method
+
+Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
+`unverified`, one line each, and **every `unverified` states its reason**. Absence
+is data, never silence.
+
+| What | Status | Note |
+|---|---|---|
+| <check or measurement> | <ran \| degraded \| unverified> | <rung that ran, what was skipped, or why it did not run> |
+
 ## Reviewer notes
 - Draft findings pruned as false positives: <finding → reason>, or "none"
 - Related findings filed to other lenses (over-mocking design fixes, line craft): <ids>, or "none"

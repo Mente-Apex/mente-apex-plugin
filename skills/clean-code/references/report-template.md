@@ -49,6 +49,16 @@ auto-generated heading anchors don't handle the `/`).
 ## Looks good
 - <what is already clean and should be kept, incl. good why-comments>
 
+## Coverage & method
+
+Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
+`unverified`, one line each, and **every `unverified` states its reason**. Absence
+is data, never silence.
+
+| What | Status | Note |
+|---|---|---|
+| <check or measurement> | <ran \| degraded \| unverified> | <rung that ran, what was skipped, or why it did not run> |
+
 ## Reviewer notes
 - Draft findings pruned as false positives: <finding → reason>, or "none"
 - Areas not examined: <coverage gaps>

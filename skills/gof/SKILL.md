@@ -32,7 +32,7 @@ Phase 0 detects (ships `python.md`, `typescript.md`; list `references/` for the 
 
 ## Invocation
 
-`/gof [path]` — `path` scopes the analysis (default: repo root). The user may
+`/gof [scope]` — `scope` is a path, a diff, or a range (default: repo root). The user may
 also pre-authorize in the same breath ("apply everything Critical", "doc
 only", "don't ask, use light verification"). **Pre-authorizations count as
 the human review for whatever they cover — don't re-ask.** This also makes
@@ -50,7 +50,7 @@ feed the same draft findings file.
 
 ## Report
 
-Per `references/report-template.md`, only the **Recommendations** section —
+Per `references/report-template.md`, only the **Findings** section —
 new-pattern opportunities plus low-grade detected patterns worth improving —
 is apply-eligible; that's what the decision gate offers the human. The
 **Detected patterns** graded inventory and the **Not applicable** table are

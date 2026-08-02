@@ -58,8 +58,28 @@ offered as a CI tripwire; written to docs/reports/clean-architecture/>
 language reference's caveat)"; call out any Zone-of-Pain / Zone-of-Uselessness
 components — context, not findings>
 
+## Coverage & method
+
+Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
+`unverified`, one line each, and **every `unverified` states its reason**. Absence
+is data, never silence.
+
+| What | Status | Note |
+|---|---|---|
+| <check or measurement> | <ran \| degraded \| unverified> | <rung that ran, what was skipped, or why it did not run> |
+
 ## Reviewer notes
 - Draft findings pruned as false positives: <finding → reason>, or "none"
 - Related findings filed to other lenses: <ids>, or "none"
 - Areas not examined: <coverage gaps>
 ```
+
+## Apply log
+
+Only the mechanical, low-risk recs approved at the decision gate reach this
+table; architectural moves stay advisory (`agents/implementer.md`). One row per
+applied rec, suite green after each.
+
+| Code | Rec | Applied | Suite | Note |
+|---|---|---|---|---|
+| <clean-arch/major-1> | <short title> | <YYYY-MM-DD> | <n passed> | <commit or caveat> |
