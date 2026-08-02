@@ -29,18 +29,19 @@ class TranscriptSink:
     def render(self, measurement, thresholds) -> str:
         if not measurement.has_numbers:
             return f"{measurement.status}: {measurement.reason}"
-        if not measurement.functions:
-            return "measured the change: no functions touched"
 
-        lines = [f"measured {len(measurement.functions)} changed function(s):"]
-        for metric in _sorted_by_complexity(measurement.functions):
-            marker = (
-                "   <- worth a look" if _is_worth_a_look(metric, thresholds) else ""
-            )
-            lines.append(
-                f"  {metric.name}  CC {metric.cyclomatic_complexity}"
-                f"  {metric.length} lines{marker}"
-            )
+        if measurement.functions:
+            lines = [f"measured {len(measurement.functions)} changed function(s):"]
+            for metric in _sorted_by_complexity(measurement.functions):
+                marker = (
+                    "   <- worth a look" if _is_worth_a_look(metric, thresholds) else ""
+                )
+                lines.append(
+                    f"  {metric.name}  CC {metric.cyclomatic_complexity}"
+                    f"  {metric.length} lines{marker}"
+                )
+        else:
+            lines = ["measured the change: no functions touched"]
 
         if measurement.status != RAN:
             lines.append(f"  ({measurement.status}: {measurement.reason})")
@@ -85,22 +86,23 @@ class ReviewSink:
     def render(self, measurement, thresholds) -> str:
         if not measurement.has_numbers:
             return f"{measurement.status}: {measurement.reason}"
-        if not measurement.functions:
-            return "measured the chunk: no functions found"
 
-        lines = [f"measured {len(measurement.functions)} function(s):"]
-        for metric in _sorted_by_complexity(measurement.functions):
-            marker = (
-                "   <- outlier, worth a look"
-                if _is_worth_a_look(metric, thresholds)
-                else ""
-            )
-            lines.append(
-                f"  {metric.name}  ({metric.path}:{metric.start_line})"
-                f"  CC {metric.cyclomatic_complexity}"
-                f"  parameters {metric.parameter_count}"
-                f"  {metric.length} lines{marker}"
-            )
+        if measurement.functions:
+            lines = [f"measured {len(measurement.functions)} function(s):"]
+            for metric in _sorted_by_complexity(measurement.functions):
+                marker = (
+                    "   <- outlier, worth a look"
+                    if _is_worth_a_look(metric, thresholds)
+                    else ""
+                )
+                lines.append(
+                    f"  {metric.name}  ({metric.path}:{metric.start_line})"
+                    f"  CC {metric.cyclomatic_complexity}"
+                    f"  parameters {metric.parameter_count}"
+                    f"  {metric.length} lines{marker}"
+                )
+        else:
+            lines = ["measured the chunk: no functions found"]
 
         if measurement.status != RAN:
             lines.append(f"  ({measurement.status}: {measurement.reason})")
