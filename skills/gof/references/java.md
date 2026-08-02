@@ -51,12 +51,19 @@ mutable class carrying `@Data` it is redundant with the setters and hides that t
 is never actually immutable — grade C. Skip the `Director` unless the same multi-step
 sequence is reused across several call sites.
 
-**Prototype** — `Cloneable` and `clone()` are broken by design (Bloch Item 13): the
-contract is unenforceable, the shallow/deep decision is invisible at the call site, and
-`super.clone()` silently misses fields added later. Grade D for `implements Cloneable`
-and recommend a **copy constructor** or a static factory. For records, derive a new value
-by calling the canonical constructor with the changed component — there is no wither
-syntax in the language yet.
+**Prototype** — `Cloneable` and `clone()` are broken by design (Bloch Item 13, *"Override
+clone judiciously"*): the protocol is complex, unenforceable and thinly documented, it
+creates objects without calling a constructor, and it is **incompatible with `final`
+fields referring to mutable objects**. Grade D for `implements Cloneable` and recommend a
+**copy constructor** or a static factory.
+
+The "silently misses a new field" hazard belongs to the *deep*-copy case, not to
+`super.clone()` — `Object.clone()` copies every field the object has at runtime,
+including ones added later. What breaks silently is a hand-written copy that still
+compiles after you add a mutable reference field and now shares it between original and
+copy. For records, derive a new value by calling the canonical constructor with the
+changed component; there is no wither syntax in Java 25 (JEP 468 remains a Candidate and
+has never been previewed).
 
 ### Structural
 
@@ -86,17 +93,27 @@ deliberate narrowing.
 instances. Hand-rolling one is rarely worth it; recommend it only with a measurement.
 
 **Proxy** — the whole of Spring AOP. Two mechanisms with different constraints, and the
-difference explains a class of silent bugs worth checking for directly:
+failure *modes* differ enough that lumping them together produces bad findings:
 
 - **JDK dynamic proxies** need an interface; the bean is only proxyable through it.
-- **CGLIB** subclasses the class — Spring Boot's default — so it **cannot proxy `final`
-  classes or `final`/`private` methods**, which then silently lose their annotation's
-  behavior.
+- **CGLIB** subclasses the class — Spring Boot's default — so it cannot proxy certain
+  shapes. But only one of them is silent:
+  - a **`final` class** fails **loudly at startup** with `AopConfigException: Could not
+    generate CGLIB subclass … Common causes … using a final class`. You cannot ship it.
+  - a **`final` method** is **logged** — WARN since Spring Framework 6.2, and in 7.0 a
+    WARN for every `public final` method on a proxied bean.
+  - a **`private`** (or otherwise non-visible) **method** is **genuinely silent**: the
+    inspection loop skips private and static members, so nothing examines or reports it.
 - **Self-invocation bypasses the proxy entirely.** `this.doTransactionalWork()` called
   from another method of the same bean goes straight to the target, so `@Transactional`
   never applies. No warning, no exception — the transaction simply is not there.
 
-Any of the three is a Critical finding when it lands on `@Transactional`.
+Grade accordingly: the silent two — private methods and self-invocation — are Critical on
+`@Transactional`, because they ship. A `final` class is a startup crash and a `final`
+method is a build-log warning; report both, but do not describe either as silent.
+
+Spring Framework 7.0 adds `@Proxyable(INTERFACES | TARGET_CLASS)` for per-bean proxy
+selection, which is the modern answer where the mechanism actually needs pinning.
 
 ### Behavioral
 
@@ -120,8 +137,11 @@ mediator that only routes between beans is duplicating it.
 
 **Memento** — a `record` snapshot. Nothing else required.
 
-**Observer** — `java.util.Observable`/`Observer` have been **deprecated since Java 9**;
-an implementation using them is a finding on sight. Use Spring's event publisher, an
+**Observer** — `java.util.Observable`/`Observer` have been **deprecated since Java 9** and
+are still present in JDK 25 (not `forRemoval`, so code using them compiles with a warning
+and runs). Rest the finding on the javadoc's own rationale rather than implied removal:
+the notification order is unspecified and state changes have no 1:1 correspondence to
+notifications, so the model is too weak to build on. Use Spring's event publisher, an
 injected `List<Listener>` (the container collects every implementation), or the `Flow`
 API / a reactive library where back-pressure matters.
 
@@ -143,10 +163,17 @@ to Strategy-with-callback; do not cite them as examples of the classic form.
 
 **Visitor** — **superseded.** Visitor exists to get double dispatch over a closed
 hierarchy without editing it; a sealed interface plus a pattern-matching `switch` does
-the same job directly, with compiler-checked exhaustiveness and no `accept`/`visit`
+the same job directly, with compile-time-checked exhaustiveness and no `accept`/`visit`
 boilerplate. A Visitor newly written over a sealed hierarchy on Java 21+ is a finding —
 recommend the switch. An existing Visitor over a non-sealed, externally-extended
 hierarchy is still legitimate; say which case you are looking at.
+
+One caveat before recommending the swap across a module boundary: the exhaustiveness
+check is **compile-time**. A switch site not recompiled after a permitted subtype is
+added throws `MatchException` at runtime rather than failing the build, so adding to a
+sealed hierarchy is binary-incompatible in practice. Visitor has the same problem in a
+noisier form (a new `visit` overload), so this is not an argument against the swap — but
+it is the thing to say when the hierarchy is published to consumers you do not rebuild.
 
 ## Test suite detection
 

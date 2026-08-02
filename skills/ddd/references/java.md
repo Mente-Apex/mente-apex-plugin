@@ -3,6 +3,11 @@
 The tactical patterns from `ddd-core.md`, rendered in idiomatic Java (21+, this project
 targets 25). Other languages fall back to the core reference.
 
+**Spring baseline: Boot 4.x, Hibernate 6.2+.** Both matter here: Boot 4.0 removed
+`@MockBean`/`@SpyBean` and relocated the test-slice packages (see
+`tdd/references/java-junit5.md`), and the record-`@Embeddable` support discussed below
+landed in Hibernate 6.2 — auditing against an older assumption produces false findings.
+
 Java's DDD story is dominated by one thing the other language references do not have to
 deal with: **JPA actively fights the tactical patterns.** Read the "anemic model trap"
 section before writing any finding about a Spring project — most of what looks like a
@@ -83,18 +88,32 @@ abstract class, exactly as a `Protocol` carrying implementation is in Python.
 This is the single most common finding in a Spring codebase, and reporting it as
 "the developer wrote getters and setters" misses the cause. `@Entity` **requires**:
 
-- a public or protected **no-arg constructor** — so the object can exist in a state the
-  invariants forbid, and the compact-constructor validation above has no equivalent;
-- a **non-final class and non-final fields** — so it can be subclassed by a lazy proxy;
+- a **no-arg constructor** — so the object can exist in a state the invariants forbid,
+  and the compact-constructor validation above has no equivalent. Jakarta Persistence
+  requires it to be public or protected; **Hibernate is laxer** and accepts
+  package-private, needing only package visibility for runtime proxy generation. Prefer
+  package-private and know you have traded spec portability for encapsulation;
+- **non-final fields**, because with field access the provider writes state directly
+  after no-arg construction — this is about field access, not proxies;
+- a **non-final class** for lazy proxying. Hibernate does not *reject* a final entity
+  class; it degrades, losing proxy-based lazy fetching for associations to it. Flag it
+  as a performance-tuning constraint, not as a bar;
 - **records are not permitted as entities at all** — they are final and have no no-arg
-  constructor. (Hibernate 6 supports records as `@Embeddable` via a custom
-  `@EmbeddableInstantiator`, and as query projections — not as `@Entity`.)
+  constructor.
+
+Records *are* fine as `@Embeddable`, and this is where a stale claim does real damage:
+**Hibernate has supported record embeddables natively since 6.2** (2023). A custom
+`@EmbeddableInstantiator` is only needed for non-record classes that do not follow bean
+conventions. Auditing a plain `@Embeddable record Money(...)` as broken, or pushing an
+instantiator into code that does not need one, is a false finding.
 
 So annotating an aggregate `@Entity` forces you to surrender immutability, construction
-invariants, and the value-object idiom in the same stroke. Lazy loading compounds it:
-the "aggregate" is a proxy that only functions inside an open session, so it is not
-whole in memory and a method on it can throw `LazyInitializationException` in
-production and never in a test.
+invariants, and the value-object idiom in the same stroke. Lazy loading compounds it: the
+"aggregate" only functions with a stateful `Session` open, so it is not whole in memory
+and a method on it can throw `LazyInitializationException` in production and never in a
+test. That is not a proxy-only hazard — uninitialized collections raise it too, and with
+bytecode enhancement so do lazy basic attributes. The condition is an open session, not
+the presence of a proxy.
 
 Three resolutions, in order of how often they are right:
 
@@ -104,6 +123,16 @@ Three resolutions, in order of how often they are right:
    references as `AggregateReference` rather than an object graph. Where the team is
    still choosing, this is the recommendation — most of this section's problem simply
    does not arise.
+
+   Two costs to state rather than discover. **`save()` on an existing aggregate deletes
+   and reinserts its children**, so child-row identities are not stable across updates —
+   fine for a true aggregate, wrong if something outside holds references to those rows.
+   And **`isNew` detection defaults to "id is null or zero"**, which **collides directly
+   with the application-generated identity this file recommends above**: an `OrderId`
+   minted before persistence makes a genuinely new aggregate look existing, and `save()`
+   issues an UPDATE that affects zero rows. Resolve it deliberately — add `@Version`,
+   implement `Persistable`, or call `JdbcAggregateTemplate.insert()` explicitly. Do not
+   adopt both recommendations without picking one of those three.
 2. **Separate the persistence model.** Domain `Order` (record-shaped, validating) plus
    an `OrderEntity` in the adapter plus a mapper. Purest, and the most code; correct
    when the domain is rich enough to pay for it.
@@ -157,11 +186,19 @@ The adapter returns a fully-constituted `Order`, never a row or an entity. Keep
 ## Transactions are the unit of work
 
 Java's unit of work is `@Transactional`, and it belongs on the **application service** —
-not on the aggregate, which must not know that persistence exists, and not on the
-repository, where each call would commit independently and the aggregate boundary would
-stop meaning anything.
+not on the aggregate, which must not know that persistence exists.
 
-Domain events publish **after commit**, which Spring expresses directly:
+Not on the repository either, though the usual reason given for that is wrong. Spring
+Data repositories are *already* transactional (`SimpleJpaRepository`), and under the
+default `REQUIRED` propagation they **join** the caller's transaction rather than
+committing separately — all of it one physical transaction, committed once at the outer
+boundary. Spring's own reference endorses that layering. The real argument is about
+guarantees: with `@Transactional` only on the repository, each call becomes its own
+outermost transaction *when no service transaction exists*, so the aggregate boundary
+holds by accident rather than by declaration. Put it on the application service and the
+boundary is stated.
+
+Domain events **handle** after commit, which Spring expresses directly:
 
 ```java
 @Component
@@ -172,11 +209,26 @@ class OrderPlacedHandler {
 }
 ```
 
+`AFTER_COMMIT` is the default `TransactionPhase`, so stating it is documentation rather
+than configuration. Two traps that are not: **writes performed in an AFTER_COMMIT
+listener are silently discarded** unless the listener opens a new transaction
+(`REQUIRES_NEW`) — the original transactional resource is already committed — and with
+**no** active transaction the listener is not invoked *at all* unless
+`fallbackExecution = true`, which is how events vanish in tests that do not run
+transactionally.
+
 Spring Data's `AbstractAggregateRoot` automates the recording half: call
-`registerEvent(...)` inside the aggregate and the events are published when the
-repository saves it (`@DomainEvents` / `@AfterDomainEventPublication`). Convenient, at
-the cost of a domain base class that extends a Spring type — a Dependency-Rule
-violation the team may or may not accept. Flag it as a trade-off, not an error.
+`registerEvent(...)` inside the aggregate and the repository publishes on save
+(`@DomainEvents` / `@AfterDomainEventPublication`). **Publication happens
+synchronously inside `save()`, before the transaction commits** — only the *handling* is
+deferred, and only if the listener is `@TransactionalEventListener`. Do not read
+`AbstractAggregateRoot` as giving after-commit semantics by itself.
+
+Two more sharp edges: the publishing interceptor triggers on methods whose name **starts
+with `save`** (`save`, `saveAll`, `saveAndFlush`) plus the `delete` family, each taking
+exactly one parameter — so **`deleteById(...)` publishes nothing**. And the base class
+extends a Spring type, putting a framework dependency in the domain: a Dependency-Rule
+trade-off the team may accept, but flag it as one.
 
 ## Application service — orchestrates, holds no business rules
 
@@ -219,6 +271,11 @@ A closed set of domain states, exhaustively checked: a `switch` over it needs no
 `default`, and adding a fourth outcome produces a compile error at every site that must
 now handle it. This replaces both the "status enum plus nullable fields" shape and the
 Visitor pattern, and it is the strongest reason to be on a modern JDK for domain work.
+
+The guarantee is **compile-time only**, which matters across module boundaries: a switch
+site that is not recompiled after a permitted subtype is added throws `MatchException` at
+runtime instead of failing to build. Adding to a sealed hierarchy is binary-incompatible
+in practice — recompile every consumer, or treat the addition as a breaking change.
 
 ## Bounded contexts have two possible boundaries
 
