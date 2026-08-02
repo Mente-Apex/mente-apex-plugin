@@ -31,7 +31,7 @@ flood of near-duplicate rows -- worse for an operator than the silence it
 replaces, and not the "signal" this report exists to provide.
 """
 
-from mutation_gate import is_survivor
+from mutation_gate import is_survivor, unverified_reasons
 
 # The contract between this renderer and `references/report-template.md`. The
 # gate does not append its section, and does not own the file: it replaces
@@ -51,6 +51,12 @@ END_MARKER = "<!-- mutation-gate:end -->"
 _RUN_ERROR_HEAD_LINES = 15
 _RUN_ERROR_TAIL_LINES = 15
 _RUN_ERROR_LINE_MAX_CHARS = 300
+
+# A survivor's diff is bounded for the same reason a `run_errors` dump is, and
+# it was not: one survivor's diff is small, but a backend reporting hundreds of
+# them splices an arbitrarily large blob into the operator's report file. The
+# JSON payload still carries every diff in full.
+_DIFF_MAX_LINES = 20
 
 
 def _clip_line(line):
@@ -143,6 +149,26 @@ def splice_into_report(report_text, section):
     )
 
 
+def _mutants_executed_summary(result):
+    """How many mutants actually ran, per backend, on the headline line.
+
+    Printed next to "Files selected" because the two together are what tell an
+    operator whether an empty survivor list means anything: 12 files selected
+    and 0 mutants executed is a vacuous run, and read identically to a real
+    one until this number was on the page. A backend that does not report a
+    count says so rather than contributing a silent 0.
+    """
+    if not result.backend_runs:
+        return "0 (no backend ran)"
+    parts = []
+    for backend_run in result.backend_runs:
+        count = backend_run.mutants_executed
+        parts.append(
+            f"{backend_run.tool}: " + ("not reported" if count is None else str(count))
+        )
+    return ", ".join(parts)
+
+
 def as_report_payload(result, scope):
     """A JSON-serialisable view for the calling agent."""
     return {
@@ -176,14 +202,29 @@ def as_report_payload(result, scope):
         "run_errors": list(result.run_errors),
         "scope_notes": list(result.scope_notes),
         "selected": result.selected,
+        "backend_runs": [
+            {
+                "stack": backend_run.stack,
+                "tool": backend_run.tool,
+                "mutants_executed": backend_run.mutants_executed,
+            }
+            for backend_run in result.backend_runs
+        ],
+        # The analyzer agent reads this payload, not the markdown, so the
+        # verdict has to be here too -- otherwise the one consumer that acts
+        # on the result programmatically is the one that cannot tell a clean
+        # run from a run that never looked.
+        "unverified_reasons": list(unverified_reasons(result)),
     }
 
 
 def render_markdown(result, scope):
     """The Mutation-gate section body for the report."""
+    unverified = unverified_reasons(result)
     lines = [
         f"**Scope:** {scope}",
         f"**Files selected:** {result.selected}",
+        f"**Mutants executed:** {_mutants_executed_summary(result)}",
         "",
     ]
 
@@ -222,6 +263,22 @@ def render_markdown(result, scope):
             lines.append(f"- {note}")
         lines.append("")
 
+    if unverified:
+        # Its own block, printed BEFORE the survivor section and independent of
+        # it. Hanging these off the "no survivors" branch meant a run with both
+        # a survivor and an unverified scope printed neither the reasons nor
+        # any hint that the scope was incomplete -- while still exiting 2, and
+        # while the agent docs told the reviewer to go read the reasons.
+        lines.append(
+            "**This run did not verify its whole scope** — some of the files "
+            "below were never mutated, so an absence of findings among them "
+            "is an absence of data:"
+        )
+        lines.append("")
+        for reason in unverified:
+            lines.append(f"- {reason}")
+        lines.append("")
+
     survived = [s for s in result.survivors if is_survivor(s)]
     if survived:
         lines.append("**Survivors** — a mutant these tests failed to kill:")
@@ -237,20 +294,28 @@ def render_markdown(result, scope):
             if survivor.mutant_diff:
                 lines.append("")
                 lines.append("    ```diff")
-                for diff_line in survivor.mutant_diff.splitlines():
-                    lines.append(f"    {diff_line}")
+                diff_lines = survivor.mutant_diff.splitlines()
+                for diff_line in diff_lines[:_DIFF_MAX_LINES]:
+                    lines.append(f"    {_clip_line(diff_line)}")
+                if len(diff_lines) > _DIFF_MAX_LINES:
+                    omitted = len(diff_lines) - _DIFF_MAX_LINES
+                    lines.append(
+                        f"    ... [{omitted} more diff lines elided — full "
+                        "diff is in the JSON payload]"
+                    )
                 lines.append("    ```")
         lines.append("")
-    elif result.baseline_error or result.run_errors:
-        # Never "No survivors in scope." here. An empty survivor list under a
-        # broken baseline or a crashed backend is an ABSENCE OF DATA, and
-        # printing the clean-run sentence beneath the very banner explaining
-        # that nothing completed is how a failed run reads as a pass.
+    elif unverified:
+        # Never "No survivors in scope." here. An empty survivor list from a
+        # run that could not look is an ABSENCE OF DATA, and printing the
+        # clean-run sentence over it is how a failed run reads as a pass. The
+        # reasons themselves are already listed above, in their own block, so
+        # they reach the operator whether or not there were survivors too.
         lines.append(
-            "**No survivors reported, but this run did not complete** — see "
-            "the errors above. An empty survivor list here means the gate "
-            "could not look, not that it looked and found nothing; this is "
-            "not a clean result."
+            "**No survivors reported, and this run did not verify its "
+            "scope** — see the reasons above. An empty survivor list here "
+            "means the gate could not look, not that it looked and found "
+            "nothing; this is not a clean result."
         )
         lines.append("")
     elif not result.selected:

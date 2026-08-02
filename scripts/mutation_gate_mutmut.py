@@ -52,8 +52,51 @@ import warnings
 from pathlib import Path
 
 from mutation_gate import Survivor
+from mutation_gate_freshness import ReportFreshness
 
 RESULT_LINE = re.compile(r"^\s*(?P<mutant>\S+):\s*(?P<status>.+?)\s*$", re.MULTILINE)
+
+# Bounded like every other subprocess the gate starts: `mutmut run` drives the
+# audited repo's suite once per mutant, which is arbitrary code and may hang.
+RUN_TIMEOUT_SECONDS = 1800
+
+
+def _stats_path(repo_root):
+    """mutmut's baseline stats file, as a one-element candidate list.
+
+    Written during collection, before a single mutant executes, which is what
+    makes it the signal that a run got that far. Shaped as a sequence because
+    `ReportFreshness` takes a discovery strategy rather than a single path.
+    """
+    return (Path(repo_root) / "mutants" / "mutmut-stats.json",)
+
+
+def _scope_notes_for(repo_root, paths):
+    """Say so when this run will cover something other than the selection.
+
+    `_configure_source_paths` deliberately leaves a repo's own
+    `[tool.mutmut]` table alone, so mutmut then mutates that table's
+    `source_paths` rather than the paths the gate selected. The run completes
+    and its per-mutant results are real -- this is a scope caveat, not a run
+    error -- but staying silent about it let a survivor-free result over
+    somebody else's scope read exactly like a clean result over yours.
+    """
+    config_path = Path(repo_root) / "pyproject.toml"
+    if not config_path.is_file():
+        return ()
+    try:
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError, OSError:
+        return ()
+    if "mutmut" not in parsed.get("tool", {}):
+        return ()
+    return (
+        "mutmut ran under the repo's own [tool.mutmut] source_paths, so it "
+        f"mutated those rather than the {len(paths)} selected path(s); "
+        "results cover the repo's configured scope, not the selection",
+    )
+
+
 MUTANT_SUFFIX = re.compile(r"__mutmut_\d+$")
 
 KILLED_STATUS = "killed"
@@ -244,8 +287,14 @@ class MutmutBackend:
     stack = "python"
     tool = "mutmut"
 
-    def __init__(self):
+    def __init__(self, freshness=None):
         self._run_errors = ()
+        self._mutants_executed = None
+        self._scope_notes = ()
+        # Injected for the same reason StrykerBackend's is: the before/after
+        # freshness policy is shared, and a test substitutes a trivial
+        # discovery strategy rather than manipulating mtimes on disk.
+        self._freshness = freshness or ReportFreshness(_stats_path)
 
     def available(self, repo_root):
         return _mutmut_executable() is not None
@@ -262,6 +311,24 @@ class MutmutBackend:
         in `survivors()`'s return value as ordinary `Survivor`s instead.
         """
         return self._run_errors
+
+    def scope_notes(self, repo_root):
+        """What this run actually covered, when that is not the selection.
+
+        See `_scope_notes_for`. Implemented here for the same reason
+        `PitestBackend` implements it: a backend that silently runs a
+        different scope than the one it was handed is a Liskov break the gate
+        cannot detect, and this is the channel that makes it visible.
+        """
+        return self._scope_notes
+
+    def mutants_executed(self, repo_root):
+        """How many mutants the most recent `survivors()` call accounted for.
+
+        `None` when the run did not complete, so the gate reports the count as
+        unanswered rather than as a truthful zero.
+        """
+        return self._mutants_executed
 
     def survivors(self, repo_root, paths):
         """Run mutmut over `paths` in the (already-isolated) workspace.
@@ -287,24 +354,55 @@ class MutmutBackend:
         per-mutant statuses (including any genuine `not checked` outcome that
         can still occur even in a completed run) flow through
         `survivors_from_output` exactly as fix round 2 established.
+
+        The stats file's PRESENCE, though, is not the converse of its absence,
+        and treating it as such reopened the hole from the inside: `mutants/`
+        is gitignored, so `--scope working-tree` copies the operator's
+        previous run's cache into the workspace. A `mutmut run` that then
+        crashed during collection left a stale `mutmut-stats.json` sitting
+        exactly where `is_file()` looked, and `mutmut results` replayed the
+        previous run's cached statuses -- a prior all-killed cache rendering
+        as a clean pass. So the test is whether THIS run wrote the file, not
+        whether the file is there.
         """
+        self._scope_notes = _scope_notes_for(repo_root, paths)
         _configure_source_paths(repo_root, paths)
         executable = _mutmut_executable()
-        run_result = subprocess.run(
-            [executable, "run"], cwd=repo_root, capture_output=True, text=True
-        )
-        results_result = subprocess.run(
-            [executable, "results"], cwd=repo_root, capture_output=True, text=True
-        )
-        stats_path = Path(repo_root) / "mutants" / "mutmut-stats.json"
-        if not stats_path.is_file():
+        self._freshness.snapshot(repo_root)
+        try:
+            run_result = subprocess.run(
+                [executable, "run"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=RUN_TIMEOUT_SECONDS,
+            )
+            results_result = subprocess.run(
+                [executable, "results"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=RUN_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            self._mutants_executed = None
+            self._run_errors = (
+                f"mutmut did not finish within {RUN_TIMEOUT_SECONDS}s in "
+                f"{repo_root}, so no result from this partition can be trusted",
+            )
+            warnings.warn(self._run_errors[0], stacklevel=2)
+            return ()
+
+        if not self._freshness.written_since(repo_root):
             not_checked_count = len(RESULT_LINE.findall(results_result.stdout))
             summary = (
-                f"mutmut run did not complete in {repo_root} -- its baseline "
-                "stats collection never finished, so no per-mutant result "
-                f"below is real ({not_checked_count} mutant"
+                f"mutmut run did not complete in {repo_root} -- this run wrote "
+                f"no {_stats_path(repo_root)[0].name}, so its baseline stats "
+                "collection never finished and no per-mutant result below is "
+                f"real ({not_checked_count} mutant"
                 f"{'' if not_checked_count == 1 else 's'} not checked as a "
-                "consequence)"
+                "consequence). Any stats file already present is from an "
+                "earlier run and was NOT read"
             )
             # Real newlines, never repr(): this string is the analyzer's full-
             # detail channel (surfaced verbatim in the JSON payload), but a
@@ -322,9 +420,14 @@ class MutmutBackend:
                 f"{results_output}",
             )
             warnings.warn(self._run_errors[0], stacklevel=2)
+            self._mutants_executed = None
             return ()
         self._run_errors = ()
-        stats = json.loads(stats_path.read_text(encoding="utf-8"))
+        stats = json.loads(_stats_path(repo_root)[0].read_text(encoding="utf-8"))
+        # Every result line mutmut printed is one mutant it accounted for,
+        # whatever its status -- the number that tells "all fifty killed" apart
+        # from "zero generated", which an empty survivor list cannot.
+        self._mutants_executed = len(RESULT_LINE.findall(results_result.stdout))
         return survivors_from_output(
             results_result.stdout, stats, diffs={}, source_paths=paths
         )

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +17,73 @@ from typing import Protocol, runtime_checkable
 
 MANIFEST_NAME = "bundle-manifest.json"
 BUNDLE_KINDS = {"skill": "skills", "agent": "agents"}  # kind -> ~/.claude subdir
+
+
+def _clear_conflicting_type(target) -> None:
+    """Make room at `target` when what is there is the wrong KIND of thing.
+
+    A bundle can legitimately turn `docs/` into a file named `docs`, or the
+    reverse. `write_bytes` onto an existing directory raises
+    `IsADirectoryError`, and `mkdir(parents=True)` through an existing file
+    raises `NotADirectoryError` -- both escaping `_install` AFTER the stale
+    sweep has already unlinked things, leaving the destination half-applied.
+    The old `rmtree(destination)` never hit this because it deleted everything
+    first; removing that safety net is what exposed the case.
+
+    Only the exact conflicting path is removed, never a wider tree.
+    """
+    import shutil
+
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target)
+        return
+    for ancestor in list(target.parents):
+        if ancestor.is_file():
+            ancestor.unlink()
+            return
+
+
+def _prune_directories_emptied_by(root, removed_relative_paths) -> None:
+    """Remove directories the stale-file sweep emptied, and only those.
+
+    Walks UP from each file the sweep removed, never down from `root`. The
+    previous `root.rglob("*")` scan was catastrophically wider than its own
+    docstring claimed: it recursed INTO `.git` and `.venv` and rmdir'd every
+    empty directory it found there, so `.git/refs/heads`, `.git/objects/pack`
+    and `site-packages` were destroyed and `git status` in the skill returned
+    "fatal: not a git repository". It also deleted empty directories the user
+    had created deliberately, and crashed with `NotADirectoryError` on a
+    symlink to an empty directory (`is_dir()` follows the link, `rmdir` does
+    not).
+
+    Restricting the walk to the parents of files this sweep actually unlinked
+    makes all three impossible by construction: nothing inside an excluded
+    tree is ever removed, so nothing inside one is ever a candidate.
+    """
+    for relative_path in removed_relative_paths:
+        directory = (root / relative_path).parent
+        while directory != root and directory.is_dir():
+            if any(directory.iterdir()):
+                break
+            try:
+                directory.rmdir()
+            except OSError:
+                # A symlink, a race, a permission problem: leaving a directory
+                # in place is always safe, so none of them is worth failing an
+                # install that has already written its payload.
+                break
+            directory = directory.parent
+
+
+# Deleting everything you previously exported stops rather than propagating.
+# Below this many bundles the "whole set" is small enough that a deliberate
+# clear-out is as likely as a failed scan, and the guard would be noise.
+MASS_DELETE_THRESHOLD = 2
+MASS_DELETE_OVERRIDE = "CONFIG_SYNC_ALLOW_MASS_DELETE"
+
+# Module-level so a test can substitute it, matching how config_sync exposes
+# its own HOME/ENVIRON seams rather than reading os.environ inline.
+ENVIRON = os.environ
 
 # SnapshotPropagator owns only mergeable config — skills/agents are bundles now.
 SNAPSHOT_CONFIG_FILES = ["CLAUDE.md", "settings.json", "keybindings.json"]
@@ -415,6 +483,71 @@ class ContentBundlePropagator:
                     continue
                 yield kind, entry
 
+    def _scanned_kinds(self, context: SyncContext) -> set:
+        """The bundle kinds whose source directory actually exists right now.
+
+        `_sources` yields nothing for a kind whose root is absent, which is
+        indistinguishable from a kind whose root is present and empty -- and
+        the deletion pass read that silence as "the user deleted all of these".
+        A `~/.claude/skills` symlinked to an unmounted external volume, or
+        renamed mid-migration, therefore tombstoned and `rmtree`d every skill
+        bundle in the repo and proposed the deletion to every other machine.
+
+        Only a kind that was actually scanned can contribute deletions.
+        """
+        return {
+            kind
+            for kind, subdir in BUNDLE_KINDS.items()
+            if (context.claude_dir / subdir).exists()
+        }
+
+    @staticmethod
+    def _guard_mass_deletion(candidates: set, previously_exported: set, result) -> set:
+        """Refuse to tombstone an entire KIND's previous export in one run.
+
+        Deleting every skill you have is a real thing an operator may do, but
+        it is far likelier to be a scan that went wrong in a way
+        `_scanned_kinds` does not cover -- a permission error part-way through,
+        a directory emptied by a failed move. The blast radius is the whole
+        network: every other machine is then offered the same deletion.
+
+        Per kind, because comparing against the whole previous export meant a
+        single surviving bundle of ANY kind disarmed the guard: five skills
+        emptied by a failed move went through untouched as long as one agent
+        remained. Each kind is judged against its own previous export, and a
+        refusal for one kind does not block deletions in another.
+
+        A partial deletion within a kind (the ordinary case) is unaffected.
+        """
+        if not candidates:
+            return candidates
+        if ENVIRON.get(MASS_DELETE_OVERRIDE) == "1":
+            return candidates
+
+        allowed = set()
+        for kind in sorted(BUNDLE_KINDS):
+            prefix = f"{kind}/"
+            previous_of_kind = {
+                key for key in previously_exported if key.startswith(prefix)
+            }
+            candidates_of_kind = {key for key in candidates if key.startswith(prefix)}
+            if not candidates_of_kind:
+                continue
+            wipes_the_kind = candidates_of_kind == previous_of_kind
+            if wipes_the_kind and len(previous_of_kind) >= MASS_DELETE_THRESHOLD:
+                result.warnings.append(
+                    f"REFUSED to tombstone all {len(candidates_of_kind)} "
+                    f"previously-exported {BUNDLE_KINDS[kind]} at once: a "
+                    "whole-set disappearance is far more often a failed scan "
+                    "than a deliberate deletion, and this would propose the "
+                    "same deletion to every other machine. Nothing of this "
+                    "kind was deleted. If you really did remove them all, "
+                    f"re-run with {MASS_DELETE_OVERRIDE}=1."
+                )
+                continue
+            allowed |= candidates_of_kind
+        return allowed
+
     def export(self, context: SyncContext) -> ExportResult:
         result = ExportResult(self.name)
         machine_id = _machine_id(context)
@@ -427,7 +560,24 @@ class ContentBundlePropagator:
         # Deletions: bundles this machine used to have and no longer does.
         import shutil
 
-        for deleted_key in sorted(previously_exported - current):
+        scanned_kinds = self._scanned_kinds(context)
+        candidates = set()
+        for deleted_key in previously_exported - current:
+            deleted_kind = deleted_key.split("/", 1)[0]
+            if deleted_kind not in scanned_kinds:
+                result.warnings.append(
+                    f"{deleted_key}: NOT tombstoned — the "
+                    f"{BUNDLE_KINDS.get(deleted_kind, deleted_kind)} directory "
+                    "does not exist on this machine, so its absence is not "
+                    "evidence of a deletion (an unmounted volume or a "
+                    "half-finished move looks identical)"
+                )
+                continue
+            candidates.add(deleted_key)
+
+        candidates = self._guard_mass_deletion(candidates, previously_exported, result)
+
+        for deleted_key in sorted(candidates):
             deleted_kind, deleted_name = deleted_key.split("/", 1)
             self._ledger.tombstone(
                 context.repo_dir, deleted_kind, deleted_name, machine_id, deleted_at
@@ -451,20 +601,33 @@ class ContentBundlePropagator:
             existing_tombstone = self._ledger.tombstone_for(
                 context.repo_dir, kind, name
             )
-            if (
-                existing_tombstone is not None
-                and existing_tombstone.deleted_at < deleted_at
-            ):
-                self._ledger.clear_tombstone(context.repo_dir, kind, name)
             payload = _payload_files(entry, self._export_filter)
             if not _is_exportable_payload(kind, payload):
                 # Empty or entrypoint-less source: leave the last-good bundle intact
                 # and do NOT tombstone it — there is simply nothing valid to export.
+                #
+                # And do NOT clear an existing tombstone either, which is why
+                # the clear now happens BELOW this gate rather than above it.
+                # Clearing first silently reverted another machine's deliberate
+                # deletion: the tombstone went, no bundle was written in its
+                # place, and a third machine that had not yet applied saw
+                # neither -- so it never proposed the deletion, re-published
+                # the bundle on its next export, and the deletion was undone
+                # with nobody consenting to it. The documented "keep" path
+                # requires a user decision; this path took it without asking.
                 result.warnings.append(
                     f"{kind}/{name}: skipped — empty or missing entrypoint "
                     f"({_REQUIRED_ENTRYPOINT.get(kind, 'content')}); last-good bundle preserved"
                 )
                 continue
+            # A locally-present, EXPORTABLE bundle supersedes a tombstone for
+            # it (a deliberate re-add), but only one that predates this run --
+            # see the comment above the tombstone read.
+            if (
+                existing_tombstone is not None
+                and existing_tombstone.deleted_at < deleted_at
+            ):
+                self._ledger.clear_tombstone(context.repo_dir, kind, name)
             local_hash = _content_hash(payload)
             bundle_dir = context.repo_dir / "bundles" / BUNDLE_KINDS[kind] / name
             if _read_manifest(bundle_dir).get("content_hash") == local_hash:
@@ -475,7 +638,14 @@ class ContentBundlePropagator:
             )
             result.written.append(f"{kind}/{name}")
 
-        self._ledger.record_export(context.repo_dir, machine_id, current)
+        # Anything this run declined to tombstone stays in the index. Recording
+        # the reduced `current` made the refusal one-shot: the guard warned
+        # once, the machine then forgot it had ever exported those bundles, and
+        # the very override the warning tells the operator to use had nothing
+        # left to act on. The same amnesia silently disarmed `_scanned_kinds`
+        # -- an unmounted volume warned on the first run and never again.
+        retained = previously_exported - set(result.tombstoned)
+        self._ledger.record_export(context.repo_dir, machine_id, current | retained)
         return result
 
     def _write_bundle(
@@ -588,19 +758,42 @@ class ContentBundlePropagator:
         return result
 
     def _install(self, bundle_dir, destination, manifest):
-        import shutil
+        """Write a bundle's payload into `destination`.
 
+        Replaces only what the bundle is entitled to replace. The old
+        `rmtree(destination)` deleted everything and repopulated from a payload
+        that, by the export filter's design, never contains `.git`, `.venv`,
+        `node_modules` or `__pycache__` -- so resolving a conflict in the
+        repo's favour destroyed the local skill's own git checkout and
+        virtualenv, unrecoverably. The filter's contract is "this content does
+        not travel", not "this content may be deleted".
+
+        So: files the bundle carries are written, files the destination has
+        that the bundle does not are removed ONLY when the filter says they
+        would have travelled, and everything the filter excludes is left
+        exactly where it is.
+        """
         payload = _payload_files(bundle_dir)
-        if manifest.get("is_dir", True):
-            if destination.exists():
-                shutil.rmtree(destination)
-            for relative_path, content in payload.items():
-                target = destination / relative_path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(content)
-        else:
+        if not manifest.get("is_dir", True):
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(next(iter(payload.values())))
+            return
+
+        # Stale payload files: present locally, exportable, and absent from the
+        # bundle. Computed through the same filter the export used, so the two
+        # sides agree on what "the bundle's content" means.
+        existing_exportable = set(_payload_files(destination, self._export_filter))
+        removed = sorted(existing_exportable - set(payload))
+        for relative_path in removed:
+            (destination / relative_path).unlink(missing_ok=True)
+
+        for relative_path, content in payload.items():
+            target = destination / relative_path
+            _clear_conflicting_type(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+
+        _prune_directories_emptied_by(destination, removed)
 
     def resolve_conflict(
         self, context: SyncContext, kind: str, name: str, winner: str
@@ -687,9 +880,11 @@ class SnapshotPropagator:
         consolidated = context.repo_dir / "consolidated" / "snapshot.json"
         if not consolidated.exists():
             return result
-        files = config_sync.json.loads(consolidated.read_text(encoding="utf-8")).get(
-            "files", {}
-        )
+        snapshot = config_sync.json.loads(consolidated.read_text(encoding="utf-8"))
+        files = snapshot.get("files", {})
+        # Which `${...}` in a hook command config-sync itself minted. Absent on
+        # an older snapshot, which correctly means none are known to be ours.
+        minted_tokens = snapshot.get("root_tokens", ())
         for relative_path, content in files.items():
             if relative_path.startswith(_SKIP_APPLY_PREFIXES):
                 result.skipped.append(relative_path)
@@ -699,7 +894,7 @@ class SnapshotPropagator:
                 result.skipped.append(relative_path)
                 continue
             outcome = config_sync._apply_snapshot_file(
-                destination, relative_path, content
+                destination, relative_path, content, minted_tokens
             )
             (result.applied if outcome == "applied" else result.skipped).append(
                 relative_path

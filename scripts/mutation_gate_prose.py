@@ -19,6 +19,17 @@ from pathlib import Path, PurePosixPath
 
 from mutation_gate import Survivor
 
+# pytest's own exit codes. Only these two answer "did the guard notice?" --
+# every other code (2 interrupted, 3 internal error, 4 usage error, 5 no tests
+# collected) means pytest never got as far as an answer. See
+# `_pytest_still_green`.
+PYTEST_ALL_PASSED = 0
+PYTEST_TESTS_FAILED = 1
+
+# Bounded like every other subprocess the gate starts: this runs one test from
+# the audited repo per mutant, and a mutated slice can hang it outright.
+TEST_TIMEOUT_SECONDS = 600
+
 INVERSIONS = (
     ("MUST NOT", "MUST"),
     ("MUST", "MUST NOT"),
@@ -170,9 +181,33 @@ def prose_survivors(repo_root, declarations, run_test):
     survivors = []
     for node_id, artifact_path, section in declarations:
         artifact = Path(repo_root) / artifact_path
-        original = artifact.read_text(encoding="utf-8")
-        for operator in OPERATORS:
-            mutated = mutate(original, section, operator=operator)
+        try:
+            original = artifact.read_text(encoding="utf-8")
+            mutants = [
+                (operator, mutate(original, section, operator=operator))
+                for operator in OPERATORS
+            ]
+        except Exception:  # noqa: BLE001 -- one bad declaration degrades
+            # Reading the artifact and locating the declared slice both sat
+            # OUTSIDE the try that guards collection, so a single stale
+            # `@pytest.mark.covers("docs/x.md", "Old Heading")` left behind
+            # after a rename raised straight out of `run_gate` -- discarding
+            # the mutmut, Stryker and PIT survivors already collected. This is
+            # one declaration's problem, so it degrades to one inconclusive
+            # row naming it, and every other declaration still runs.
+            survivors.append(
+                Survivor(
+                    artifact=artifact_path,
+                    location=f"{artifact_path} § {section}",
+                    mutant="(declaration could not be resolved)",
+                    associated_tests=(node_id,),
+                    backend="prose",
+                    granularity="section",
+                    status="declaration_error",
+                )
+            )
+            continue
+        for operator, mutated in mutants:
             if mutated == original:
                 survivors.append(
                     Survivor(
@@ -191,7 +226,24 @@ def prose_survivors(repo_root, declarations, run_test):
                 still_green = run_test(node_id)
             finally:
                 artifact.write_text(original, encoding="utf-8")
-            if still_green:
+            if still_green is None:
+                # `run_test` could not determine an outcome -- pytest exited
+                # for a reason that is not "the test passed" or "the test
+                # failed". Counting that as a kill (what `returncode == 0`
+                # did by omission) manufactured a silent clean result out of
+                # a run that never tested the mutant.
+                survivors.append(
+                    Survivor(
+                        artifact=artifact_path,
+                        location=f"{artifact_path} § {section}",
+                        mutant=operator,
+                        associated_tests=(node_id,),
+                        backend="prose",
+                        granularity="section",
+                        status="runtime_error",
+                    )
+                )
+            elif still_green:
                 survivors.append(
                     Survivor(
                         artifact=artifact_path,
@@ -208,6 +260,25 @@ def prose_survivors(repo_root, declarations, run_test):
                     )
                 )
     return tuple(survivors)
+
+
+def mutants_executed_for(declarations, survivors):
+    """How many mutants were actually applied and tested.
+
+    Derived rather than counted inside `prose_survivors` so that function's
+    signature stays a plain survivor list. It is exact: this backend generates
+    one candidate mutant per (declaration, operator) pair, and the only two
+    ways a candidate never runs both leave a row behind -- a declaration that
+    could not be resolved (`declaration_error`, which costs all its operators)
+    and an operator that left the slice byte-identical (`no_op_mutant`, which
+    costs one).
+    """
+    failed_declarations = sum(
+        1 for survivor in survivors if survivor.status == "declaration_error"
+    )
+    no_ops = sum(1 for survivor in survivors if survivor.status == "no_op_mutant")
+    resolved = len(declarations) - failed_declarations
+    return resolved * len(OPERATORS) - no_ops
 
 
 COVERS_PLUGIN = "mutation_gate_covers_plugin"
@@ -276,13 +347,30 @@ def collect_declarations(repo_root):
     with tempfile.TemporaryDirectory() as scratch_dir:
         manifest_path = Path(scratch_dir) / "covers-manifest.json"
         argv, env = _collect_command(manifest_path)
-        result = subprocess.run(
-            argv,
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
+        try:
+            result = subprocess.run(
+                argv,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=TEST_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # Bounded like every other subprocess the gate starts, and this one
+            # was missed: collection imports the audited repo's conftest, which
+            # is arbitrary code and can block forever.
+            raise RuntimeError(
+                f"pytest collection did not finish within "
+                f"{TEST_TIMEOUT_SECONDS}s in {repo_root}"
+            ) from exc
+        except OSError as exc:
+            # `uv` absent is the reproduced case -- the very reason
+            # bin/mente-python exists. Raising RuntimeError keeps it on the
+            # documented path (caught by `survivors`, reported as a run error)
+            # instead of escaping `run_gate` and discarding every survivor the
+            # other backends had already collected.
+            raise RuntimeError(f"pytest collection could not start: {exc}") from exc
         if result.returncode != 0:
             raise RuntimeError(
                 f"pytest collection failed (exit {result.returncode}):\n"
@@ -328,6 +416,7 @@ class ProseBackend:
         self._collect = collect or collect_declarations
         self._run_test = run_test or _pytest_still_green
         self._run_errors = ()
+        self._mutants_executed = None
 
     def available(self, repo_root):
         return True
@@ -357,6 +446,11 @@ class ProseBackend:
         result), it just no longer takes the run down with it.
         """
         normalized_selection = {_normalize_repo_path(path) for path in paths}
+        # Reset FIRST, so a failed run cannot leave the previous run's count
+        # standing. Every other backend sets None on each failure path; this
+        # one returned a stale positive count after a crash, which reads as
+        # "that many mutants ran" when none did.
+        self._mutants_executed = None
         try:
             collected = self._collect(repo_root)
         except Exception as exc:  # noqa: BLE001 -- any collection failure degrades
@@ -374,15 +468,37 @@ class ProseBackend:
             if _normalize_repo_path(declaration[1]) in normalized_selection
         ]
 
-        return prose_survivors(
+        survivors = prose_survivors(
             repo_root,
             declarations,
             run_test=lambda node_id: self._run_test(repo_root, node_id),
         )
+        self._mutants_executed = mutants_executed_for(declarations, survivors)
+        return survivors
+
+    def mutants_executed(self, repo_root):
+        """How many mutants the most recent `survivors()` call applied and ran.
+
+        `None` when collection failed, so the gate reports the count as
+        unanswered rather than as a truthful zero.
+        """
+        return self._mutants_executed
 
 
 def _pytest_still_green(repo_root, node_id):
-    """True when the single declared test still passes under the mutant.
+    """True when the declared test still passes, False when it failed, None
+    when pytest could not answer the question at all.
+
+    Tri-state, deliberately. `return result.returncode == 0` treated EVERY
+    nonzero exit as "the guard killed the mutant", but pytest exits nonzero
+    for reasons that are not a test failure: 2 interrupted, 3 internal error,
+    4 usage error, 5 no tests collected. A `delete` mutant that removes a
+    section a conftest parses at collection time, or a declared node id that
+    no longer resolves after mutation, exits 4 or 5 -- and scored as a kill,
+    producing no survivor and no run error. The rest of this backend already
+    refuses that conflation (`collect_declarations` raises on any nonzero,
+    `_pytest_run_suite` restricts to {0, 1}); this was the one place that did
+    not.
 
     `repo_root` here is always the isolated workspace `ProseBackend.survivors`
     was invoked over -- never the operator's real tree, regardless of the
@@ -395,10 +511,23 @@ def _pytest_still_green(repo_root, node_id):
     already passes -- an isolation breach that also makes the backend measure
     nothing at all.
     """
-    result = subprocess.run(
-        ["uv", "run", "pytest", node_id, "-q"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            ["uv", "run", "pytest", node_id, "-q"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=TEST_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    except OSError:
+        # `uv` missing, or not executable. "Could not answer" is exactly what
+        # that is; letting it escape `run_gate` discarded every survivor the
+        # other backends had already produced.
+        return None
+    if result.returncode == PYTEST_ALL_PASSED:
+        return True
+    if result.returncode == PYTEST_TESTS_FAILED:
+        return False
+    return None

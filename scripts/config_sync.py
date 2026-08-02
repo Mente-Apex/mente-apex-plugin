@@ -35,6 +35,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -122,15 +123,86 @@ def _read(path: Path) -> str:
 
 
 def _write(path: Path, content: str) -> None:
+    """Write `content` to `path` atomically.
+
+    Temp file in the same directory, then `os.replace`, which is atomic on
+    every platform this runs on. A plain `write_text` truncates first, so a
+    crash or a full disk between truncate and write leaves a half-written
+    file -- and the files this function writes are `settings.json`, the
+    machine registry and the consolidated snapshot, where "half-written" means
+    the whole network's desired config is gone rather than merely stale.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    # Through a symlink, never onto it. `os.replace` on the link path detaches
+    # it and leaves a regular file where the link was -- and a dotfiles layout
+    # that symlinks `~/.claude/CLAUDE.md` into a repo is exactly the shape
+    # `_is_within` was widened to support, so silently breaking it here would
+    # contradict that. Resolving first keeps the swap atomic AND keeps the
+    # link, because the temp file then lands beside the real target.
+    target = Path(os.path.realpath(path)) if path.is_symlink() else path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.tmp-{os.getpid()}")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        # A fresh temp file is 0600-ish by umask; carrying the existing mode
+        # over stops a 0600 settings.json quietly becoming world-readable, and
+        # stops an executable hook script losing its bit.
+        if target.exists():
+            os.chmod(temporary, stat.S_IMODE(target.stat().st_mode))
+        os.replace(temporary, target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _is_within(path: Path, root: Path) -> bool:
-    """True if `path` resolves to `root` itself or somewhere beneath it."""
+    """True if `path` names a location at or beneath `root`.
+
+    Compared WITHOUT resolving symlinks, then again after resolving. A
+    dotfiles layout that symlinks `~/.claude/skills` to `~/repos/my-skills` is
+    ordinary, and resolving both sides made every path under it "escape"
+    `~/.claude` -- so import refused every skill, silently, while reporting
+    success. Yet resolving is exactly what catches a `../` traversal in a
+    hand-edited snapshot, which is why the check exists at all.
+
+    Both, therefore, with the lexical check bounded: the RESOLVED check is
+    tried first and accepts anything genuinely beneath the real root. The
+    lexical fallback then accepts a path that only leaves the root by
+    traversing a symlink the operator themselves put inside `~/.claude` --
+    every component of which must exist and be one they created.
+
+    An unbounded lexical check was too permissive: `~/.claude/skills`
+    symlinked anywhere let a snapshot write to any location on disk, which is
+    a wider door than the traversal guard this function exists to be. Requiring
+    the escape to happen through an operator-created symlink INSIDE the config
+    directory keeps the dotfiles layout working while leaving `../` and
+    absolute-path escapes refused, since neither involves such a link.
+    """
     resolved = path.resolve()
     root_resolved = root.resolve()
-    return resolved == root_resolved or resolved.is_relative_to(root_resolved)
+    if resolved == root_resolved or resolved.is_relative_to(root_resolved):
+        return True
+
+    lexical = os.path.normpath(str(path))
+    lexical_root = os.path.normpath(str(root))
+    if not lexical.startswith(lexical_root + os.sep):
+        return False
+    return _leaves_root_through_a_symlink(Path(lexical), root)
+
+
+def _leaves_root_through_a_symlink(path: Path, root: Path) -> bool:
+    """True when the only reason `path` escapes `root` is a symlink under it.
+
+    Walks the components between `root` and `path` looking for a link. A
+    traversal (`../`) normalises away before this is reached and so finds
+    none, which is what keeps it refused.
+    """
+    current = root
+    for part in path.relative_to(os.path.normpath(str(root))).parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
 
 
 def _safe_dest(rel: str):
@@ -264,11 +336,23 @@ def _prune_stale_plugin_cache(installed: set) -> list:
 
 
 def _clean_settings(raw: str) -> dict:
-    """Parse settings JSON and strip any env vars or secret-looking values."""
+    """Parse settings JSON and strip any env vars or secret-looking values.
+
+    A file that does not parse is refused, not read as `{}`. This is the same
+    defect `ClaudeSettingsHost.read_settings` had, on the write-out side:
+    export/push/backup on a machine with a corrupt settings.json wrote
+    `"settings.json": "{}"` into the snapshot -- and into the backup that was
+    supposed to be the way back -- publishing "this machine has no settings"
+    to the whole network.
+    """
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
+    except json.JSONDecodeError as exc:
+        raise config_sync_hooks.CorruptSettingsError(
+            f"settings.json is not valid JSON ({exc}); refusing to export it "
+            "as empty, because that would publish 'this machine has no "
+            "settings' to every other machine. Fix the syntax and retry"
+        ) from exc
 
     def _scrub(obj, depth=0):
         if depth > 10:
@@ -298,10 +382,117 @@ def _merge_import_settings(incoming_scrubbed: dict, existing_local: dict) -> dic
     export deliberately omits — are never deleted. Incoming non-secret fields win
     (they are the merged network truth). Consistent with the union-only contract:
     import adds/updates, never deletes.
+
+    RECURSIVELY, which is what makes that last sentence true. A top-level
+    `merged[key] = value` overlay replaced whole subtrees: a local
+    `hooks` block with `PreToolUse` and `SessionStart` entries, overlaid by a
+    snapshot carrying only `PreToolUse`, lost `SessionStart` outright -- and
+    `permissions.allow` lost every entry this machine had added since its last
+    push. That is the ordinary pull path, it runs through `_apply_snapshot_file`
+    so `propagate-apply` hits it too, and it did the exact opposite of what
+    this docstring promised.
     """
-    merged = dict(existing_local)
-    for key, value in incoming_scrubbed.items():
-        merged[key] = value
+    return _deep_merge(incoming_scrubbed, existing_local)
+
+
+def _deep_merge(incoming, existing):
+    """Union `incoming` onto `existing` without dropping anything from either.
+
+    Three shapes, three rules:
+
+    - dict + dict: merge key by key, recursing. A key only `existing` has
+      survives; a key only `incoming` has is added.
+    - list + list: `existing` order first, then `incoming` entries not already
+      present. Settings lists are sets-with-order in practice
+      (`permissions.allow`, `hooks[].hooks`), so a union is what "never
+      deletes" means for them; de-duplicated by their JSON encoding, since a
+      list of dicts has no hashable identity.
+    - anything else: `incoming` wins. A scalar contradiction is a real
+      decision, and the network's merged value is the one to take.
+
+    Mismatched types (a key that is a dict locally and a scalar incoming) also
+    take `incoming`: there is no union of those, and the snapshot is the more
+    recently reconciled of the two.
+    """
+    if isinstance(incoming, dict) and isinstance(existing, dict):
+        merged = dict(existing)
+        for key, value in incoming.items():
+            merged[key] = (
+                _deep_merge(value, existing[key]) if key in existing else value
+            )
+        return merged
+    if isinstance(incoming, list) and isinstance(existing, list):
+        return _merge_lists(incoming, existing)
+    return incoming
+
+
+# A list entry that carries one of these is a KEYED RECORD, not an opaque
+# value: two entries sharing the key are two versions of one thing and must be
+# merged into each other, while a plain scalar or an unkeyed dict is only ever
+# itself. `matcher` is the hook block's key -- Claude Code groups hooks by it,
+# so `{Bash: [protect]}` and `{Bash: [protect, audit]}` are the same group
+# gaining a hook. Fingerprinting whole entries made them two groups, both kept,
+# and `protect` then ran twice on every matching call.
+_LIST_ENTRY_KEYS = ("matcher",)
+
+
+def _entry_key(entry):
+    """The identity of a list entry, or None when it has none."""
+    if not isinstance(entry, dict):
+        return None
+    for key in _LIST_ENTRY_KEYS:
+        if key in entry:
+            return (key, json.dumps(entry[key], sort_keys=True))
+    return None
+
+
+def _fingerprint(entry):
+    """A value-identity for an unkeyed entry, or None when it has no stable one.
+
+    `json.dumps` raises on anything it cannot serialise (a set, a custom
+    object), and letting that escape would abort the entire settings merge over
+    one odd entry in one list. None means "cannot compare", and an
+    incomparable entry is simply appended rather than deduplicated.
+    """
+    try:
+        return json.dumps(entry, sort_keys=True)
+    except TypeError:
+        return None
+
+
+def _merge_lists(incoming, existing):
+    """Union two lists, merging entries that share an identity key.
+
+    Order is `existing` first, then whatever `incoming` adds -- so a machine's
+    own ordering is preserved and the result is stable across repeated pulls.
+    """
+    merged = list(existing)
+    positions = {}
+    seen = set()
+    for index, entry in enumerate(existing):
+        key = _entry_key(entry)
+        if key is not None:
+            positions.setdefault(key, index)
+        else:
+            fingerprint = _fingerprint(entry)
+            if fingerprint is not None:
+                seen.add(fingerprint)
+
+    for entry in incoming:
+        key = _entry_key(entry)
+        if key is not None:
+            if key in positions:
+                index = positions[key]
+                merged[index] = _deep_merge(entry, merged[index])
+            else:
+                positions[key] = len(merged)
+                merged.append(entry)
+            continue
+        fingerprint = _fingerprint(entry)
+        if fingerprint is None or fingerprint not in seen:
+            if fingerprint is not None:
+                seen.add(fingerprint)
+            merged.append(entry)
     return merged
 
 
@@ -357,6 +548,12 @@ def cmd_export():
         "hostname": platform.node(),
         "platform": platform.system(),
         "timestamp": datetime.now(UTC).isoformat(),
+        # The token names this machine could have minted while portabilizing.
+        # The exporting machine is the only party that knows which `${...}` in
+        # a hook command it put there; without this record the importing side
+        # cannot tell a config-sync root sentinel from `${CLAUDE_PROJECT_DIR}`
+        # or a plain shell variable. See `RootRegistry.unresolved_tokens`.
+        "root_tokens": _root_registry().token_names(),
         "files": files,
     }
     print(json.dumps(snapshot, indent=2, ensure_ascii=False))
@@ -392,7 +589,82 @@ def cmd_reconcile():
     )
 
 
-def _apply_snapshot_file(dest: Path, relative_path: str, content: str) -> str:
+def _warn_unresolvable_hook(description: str) -> None:
+    """Tell the operator a hook was dropped, on stderr.
+
+    stderr, not stdout: every command in this module prints a JSON payload the
+    skill parses, and a warning mixed into it would break that parse.
+    """
+    print(f"config-sync: {description}", file=sys.stderr)
+
+
+def _drop_unresolvable_hooks(settings: dict, registry, minted_tokens=()) -> tuple:
+    """Remove hooks carrying a config-sync root token this machine lacks.
+
+    Returns `(settings, dropped_descriptions)`. The settings dict is rebuilt
+    rather than mutated, so a caller's copy is untouched, and a matcher group
+    left with no hooks is removed along with its now-empty event list -- an
+    empty group is not a neutral leftover, Claude Code reads it as a declared
+    matcher that never fires.
+
+    `minted_tokens` comes from the snapshot's `root_tokens`; only a token the
+    exporting machine says it minted is treated as ours. A snapshot written
+    before that field existed carries none, so nothing is dropped and the
+    behaviour degrades to "write it and warn" -- the safe direction, since the
+    alternative is deleting a hook that was working.
+
+    Every level is shape-checked. A hand-edited or corrupted snapshot is the
+    stated threat model for `_safe_dest`, and this function used to meet one
+    with `AttributeError: 'str' object has no attribute 'get'`, aborting the
+    whole import on a traceback.
+    """
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return settings, []
+
+    result = dict(settings)
+    surviving_events = {}
+    dropped = []
+    for event, matcher_groups in hooks.items():
+        if not isinstance(matcher_groups, list):
+            surviving_events[event] = matcher_groups
+            continue
+        surviving_groups = []
+        for matcher_group in matcher_groups:
+            if not isinstance(matcher_group, dict):
+                surviving_groups.append(matcher_group)
+                continue
+            group_hooks = matcher_group.get("hooks")
+            if not isinstance(group_hooks, list):
+                surviving_groups.append(matcher_group)
+                continue
+            surviving_hooks = []
+            for hook in group_hooks:
+                command = hook.get("command") if isinstance(hook, dict) else None
+                unresolved = (
+                    registry.unresolved_tokens(command, minted_tokens)
+                    if isinstance(command, str)
+                    else []
+                )
+                if unresolved:
+                    dropped.append(
+                        f"dropped {event} hook {command!r}: this machine "
+                        f"declares no root for {', '.join(unresolved)} "
+                        f"(set CONFIG_SYNC_ROOT_{unresolved[0]}=<path>)"
+                    )
+                else:
+                    surviving_hooks.append(hook)
+            if surviving_hooks:
+                surviving_groups.append({**matcher_group, "hooks": surviving_hooks})
+        if surviving_groups:
+            surviving_events[event] = surviving_groups
+    result["hooks"] = surviving_events
+    return result, dropped
+
+
+def _apply_snapshot_file(
+    dest: Path, relative_path: str, content: str, minted_tokens=()
+) -> str:
     """Apply one snapshot file to `dest`; return "applied" or "skipped".
 
     settings.json is JSON-merged with the local copy (env/secret keys are already
@@ -404,9 +676,18 @@ def _apply_snapshot_file(dest: Path, relative_path: str, content: str) -> str:
     """
     if relative_path == "settings.json":
         incoming = json.loads(content) if content.strip() else {}
-        incoming = _root_registry().localize_settings(
-            incoming
-        )  # portable -> local hook paths
+        registry = _root_registry()
+        incoming = registry.localize_settings(incoming)  # portable -> local paths
+        # A hook command still carrying a `${TOKEN}` this machine cannot expand
+        # is dropped rather than written. The shell expands an undefined
+        # variable to nothing, so writing it installs a hook that runs
+        # `python3 /hooks/protect.py` and fails on every matching tool call --
+        # and the import reported it as `applied`. Dropping it leaves the hook
+        # simply absent (visible to `hooks-doctor`) instead of present and
+        # broken.
+        incoming, dropped = _drop_unresolvable_hooks(incoming, registry, minted_tokens)
+        for description in dropped:
+            _warn_unresolvable_hook(description)
         local_raw = _read(dest)
         existing_local = json.loads(local_raw) if local_raw.strip() else {}
         merged = json.dumps(
@@ -429,6 +710,9 @@ def cmd_import(snapshot_path: str):
     raw = Path(snapshot_path).read_text(encoding="utf-8")
     snapshot = json.loads(raw)
     files = snapshot.get("files", {})
+    # Absent on a snapshot written before the field existed, which correctly
+    # means "nothing is known to be ours", so no hook is dropped.
+    minted_tokens = snapshot.get("root_tokens", ())
     applied, skipped = [], []
 
     for rel, content in files.items():
@@ -439,7 +723,7 @@ def cmd_import(snapshot_path: str):
         if dest is None:
             skipped.append(rel)
             continue
-        outcome = _apply_snapshot_file(dest, rel, content)
+        outcome = _apply_snapshot_file(dest, rel, content, minted_tokens)
         (applied if outcome == "applied" else skipped).append(rel)
 
     print(json.dumps({"applied": applied, "skipped": skipped}))
@@ -561,8 +845,14 @@ def cmd_merge(path_a: str, path_b: str):
         snap_a.get("files", {}), snap_b.get("files", {})
     )
 
+    # `.get`, like `cmd_consolidate` uses throughout: a snapshot without a
+    # `machine_id` raised `KeyError` here AFTER the merge had already
+    # succeeded, throwing away completed work over a missing label.
     result = {
-        "machine_id": f"merged-{snap_a['machine_id']}-{snap_b['machine_id']}",
+        "machine_id": (
+            f"merged-{snap_a.get('machine_id', 'unknown')}"
+            f"-{snap_b.get('machine_id', 'unknown')}"
+        ),
         "hostname": "merged",
         "platform": platform.system(),
         "timestamp": datetime.now(UTC).isoformat(),
@@ -604,20 +894,46 @@ def cmd_consolidate(repo_path: str):
         )
         merge_log.extend(log)
 
+    # `merge_log` is carried into the snapshot AND reported on stdout. It was
+    # accumulated and then dropped from both, so a genuine contradiction
+    # between two machines got `<<<<<<< Machine A` markers embedded into a live
+    # CLAUDE.md by the next apply with no prompt and no warning anywhere. The
+    # skill's conflict UX keys off this output; `cmd_merge` already returned it
+    # and only `consolidate` -- the command the pull flow actually runs -- did
+    # not.
+    conflicts = [entry for entry in merge_log if _is_conflict(entry)]
     result = {
         "machine_id": "consolidated",
         "hostname": "consolidated",
         "platform": platform.system(),
         "timestamp": datetime.now(UTC).isoformat(),
         "files": base_files,
+        "merge_log": merge_log,
     }
-    consolidated_path.parent.mkdir(parents=True, exist_ok=True)
-    consolidated_path.write_text(
-        json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    _write(consolidated_path, json.dumps(result, indent=2, ensure_ascii=False))
     print(
-        json.dumps({"consolidated": str(consolidated_path), "machines": len(snapshots)})
+        json.dumps(
+            {
+                "consolidated": str(consolidated_path),
+                "machines": len(snapshots),
+                "merge_log": merge_log,
+                "conflicts": conflicts,
+            }
+        )
     )
+
+
+# A merged file carries conflict markers when the section union could not
+# reconcile two contradictory lines. Detected by the marker the union writes,
+# so "was there a conflict?" has one answer rather than one per caller.
+CONFLICT_MARKER = "<<<<<<< Machine A"
+
+
+def _is_conflict(entry) -> bool:
+    """True when this merge-log entry records an unresolved contradiction."""
+    if isinstance(entry, dict):
+        return bool(entry.get("conflict")) or CONFLICT_MARKER in json.dumps(entry)
+    return CONFLICT_MARKER in str(entry)
 
 
 def cmd_backup():
@@ -1302,7 +1618,22 @@ def main():
         )
         sys.exit(1)
 
-    fn(*args[1:])
+    # Deferred, like every other use of this module here: importing it at
+    # module scope reintroduces a circular import.
+    import config_sync_plugins
+
+    try:
+        fn(*args[1:])
+    except (
+        config_sync_hooks.CorruptSettingsError,
+        config_sync_plugins.CorruptPluginStateError,
+    ) as exc:
+        # A named refusal, not a traceback: the operator's settings.json does
+        # not parse, and the actionable half of that is the message, not the
+        # stack. Exit 2 so a caller can tell "refused to act" from an ordinary
+        # failure.
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

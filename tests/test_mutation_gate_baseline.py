@@ -162,9 +162,10 @@ def test_pytest_run_suite_invokes_uv_run_pytest(tmp_path, monkeypatch):
     toolchain is uv-managed."""
     captured = {}
 
-    def fake_run(argv, cwd, capture_output, text):
+    def fake_run(argv, cwd, capture_output, text, timeout):
         captured["argv"] = argv
         captured["cwd"] = cwd
+        captured["timeout"] = timeout
         return subprocess.CompletedProcess(argv, returncode=0, stdout="ok\n", stderr="")
 
     monkeypatch.setattr(mutation_gate.subprocess, "run", fake_run)
@@ -174,6 +175,81 @@ def test_pytest_run_suite_invokes_uv_run_pytest(tmp_path, monkeypatch):
     assert captured["argv"][:3] == ["uv", "run", "pytest"]
     assert captured["cwd"] == tmp_path
     assert output == "ok\n"
+    # Bounded: the audited repo's suite is arbitrary code and may never return.
+    assert captured["timeout"] == mutation_gate.SUITE_TIMEOUT_SECONDS
+
+
+def test_pytest_run_suite_asks_for_the_error_summary_not_only_failures(
+    tmp_path, monkeypatch
+):
+    """`-rf` reports FAILED tests only. A test that ERRORS -- a broken fixture,
+    a module-level import blowing up -- is summarised under ERROR and exits 1,
+    which is indistinguishable from an ordinary failing test by exit code. With
+    `-rf` alone the baseline recorded it as clean, and every mutant whose
+    covering test errored again under mutation scored as killed."""
+    captured = {}
+
+    def fake_run(argv, cwd, capture_output, text, timeout):
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mutation_gate.subprocess, "run", fake_run)
+
+    mutation_gate._pytest_run_suite(tmp_path)
+
+    assert "-rfE" in captured["argv"]
+
+
+def test_a_hung_suite_becomes_a_broken_baseline_rather_than_hanging_the_gate(
+    tmp_path, monkeypatch
+):
+    """One test blocking on a socket would otherwise hang the gate forever,
+    inside a scratch workspace still registered as a worktree against the
+    operator's repo, with no report ever written."""
+
+    def fake_run(argv, cwd, capture_output, text, timeout):
+        raise subprocess.TimeoutExpired(argv, timeout)
+
+    monkeypatch.setattr(mutation_gate.subprocess, "run", fake_run)
+
+    with pytest.raises(mutation_gate.BaselineRunFailedError, match="did not finish"):
+        mutation_gate._pytest_run_suite(tmp_path)
+
+
+def test_an_errored_test_is_recorded_as_already_red(tmp_path):
+    """The phantom kill this whole module exists to prevent, via ERROR rather
+    than FAILED."""
+    output = (
+        "ERROR tests/test_a.py::test_broken_fixture - RuntimeError: boom\n"
+        "FAILED tests/test_b.py::test_red - assert 1 == 2\n"
+    )
+
+    assert mutation_gate._failed_node_ids(output) == (
+        "tests/test_a.py::test_broken_fixture",
+        "tests/test_b.py::test_red",
+    )
+
+
+def test_a_collection_error_marks_every_test_in_that_file_already_red(tmp_path):
+    """A collection error names the FILE -- pytest has no node to blame when
+    the module never imported -- and every test in it is equally red."""
+    survivor = Survivor(
+        artifact="a.py",
+        location="a.py:1",
+        mutant="x -> y",
+        associated_tests=("tests/test_a.py::test_one",),
+        backend="mutmut",
+        granularity="line",
+    )
+
+    result = run_gate(
+        tmp_path,
+        ["a.py"],
+        [FakeBackend(survivors=(survivor,))],
+        baseline_failures=("tests/test_a.py",),
+    )
+
+    assert result.survivors[0].status == "unreliable_baseline"
 
 
 def test_pytest_run_suite_raises_rather_than_silently_reporting_a_clean_baseline_on_a_broken_run(
@@ -189,7 +265,7 @@ def test_pytest_run_suite_raises_rather_than_silently_reporting_a_clean_baseline
     Raising instead forces the caller to make that failure a first-class,
     operator-visible part of the result."""
 
-    def fake_run(argv, cwd, capture_output, text):
+    def fake_run(argv, cwd, capture_output, text, timeout):
         return subprocess.CompletedProcess(
             argv, returncode=4, stdout="", stderr="usage error: bad args"
         )

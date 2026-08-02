@@ -9,7 +9,8 @@ import subprocess
 
 import pytest
 
-from mutation_gate_scope import changed_paths
+import mutation_gate_scope
+from mutation_gate_scope import _parse_status_z, changed_paths
 
 
 def test_merge_base_is_the_default_scope():
@@ -108,3 +109,46 @@ def test_a_git_failure_names_the_cause_not_just_an_exit_code(tmp_path):
     """
     with pytest.raises(RuntimeError, match="not a git repository"):
         changed_paths(tmp_path, scope="merge-base")
+
+
+class TestADeletedFileIsNeverSelected:
+    """A path that no longer exists cannot be mutated, and handing one to a
+    backend as though it could poisons the run for every other file in the
+    same partition: it becomes a `source_paths` entry naming a file absent
+    from the workspace, and mutmut's loader breaks on it.
+    """
+
+    def test_a_working_tree_deletion_is_dropped(self):
+        # `git rm b.py` stages a deletion: status "D " in the first column.
+        assert _parse_status_z("D  b.py\0") == []
+
+    def test_an_unstaged_deletion_is_dropped(self):
+        # Deleted in the worktree but not staged: " D" in the second column.
+        assert _parse_status_z(" D b.py\0") == []
+
+    def test_an_ordinary_modification_is_still_selected(self):
+        assert _parse_status_z(" M a.py\0") == ["a.py"]
+
+    def test_a_rename_still_yields_the_new_path_only(self):
+        # The old path is a second NUL-terminated field and no longer exists.
+        assert _parse_status_z("R  new.py\0old.py\0") == ["new.py"]
+
+    def test_the_merge_base_scope_asks_git_to_exclude_deletions(self, monkeypatch):
+        """`--diff-filter=d` (lowercase: exclude) rather than filtering after
+        the fact -- git already knows which paths the diff deleted."""
+        captured = {}
+
+        def fake_git(repo_root, *args, check=True):
+            captured.setdefault("calls", []).append(args)
+            if args[0] == "branch":
+                return "main\n"
+            if args[0] == "merge-base":
+                return "abc123\n"
+            return "a.py\0"
+
+        monkeypatch.setattr(mutation_gate_scope, "_git", fake_git)
+
+        mutation_gate_scope.changed_paths("/repo", scope="merge-base")
+
+        diff_call = next(call for call in captured["calls"] if call[0] == "diff")
+        assert "--diff-filter=d" in diff_call

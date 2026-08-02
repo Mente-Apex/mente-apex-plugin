@@ -15,6 +15,11 @@ over the refactored test:
 
     uv run python scripts/mutation_gate.py --repo-root . --scope working-tree
 
+Exit `0` = looked, found nothing. `1` = survivors. `2` = could not verify the scope
+(tool missing, backend crashed, baseline broken, zero mutants generated) — treat a `2`
+as "the gate proved nothing", never as a pass, and say so rather than recording the
+refactor as safe on the strength of it.
+
 If the test under audit appears in a survivor's `associated_tests`, the refactor
 hollowed it out — a mutant it should have killed is still alive. Revert the
 refactor and report it. Record the gate result in the safety clause of the

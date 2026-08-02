@@ -57,6 +57,49 @@ import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
 from mutation_gate import Survivor
+from mutation_gate_freshness import ReportFreshness
+
+# Bounded like every other subprocess the gate starts: a PIT run drives a whole
+# Maven or Gradle build plus the suite once per mutant, and may hang outright.
+RUN_TIMEOUT_SECONDS = 1800
+
+
+def mutant_identities(report_xml):
+    """Every mutant this report accounts for, as a set of stable identities.
+
+    A SET, not a count, because reading several reports from one run can see
+    the same mutant twice: `_report_paths` matches any `mutations.xml` under a
+    `pit-reports` path component, and a reactor configured with
+    `pitest-aggregator` writes a root report aggregating the per-module ones
+    that are also freshly written. Counting both inflated `mutants_executed`
+    and reported the same survivor twice.
+
+    The tuple is PIT's own coordinates for a mutant -- class, method,
+    descriptor, line, mutator and index -- which together identify it exactly,
+    so the same mutant seen in a module report and in the aggregate collapses
+    to one entry while two genuinely different mutants never do.
+    """
+    root = ElementTree.fromstring(report_xml)
+    return {
+        (
+            (mutation.findtext("sourceFile") or "").strip(),
+            (mutation.findtext("mutatedClass") or "").strip(),
+            (mutation.findtext("mutatedMethod") or "").strip(),
+            (mutation.findtext("methodDescription") or "").strip(),
+            (mutation.findtext("lineNumber") or "").strip(),
+            (mutation.findtext("mutator") or "").strip(),
+            (mutation.findtext("index") or "").strip(),
+        )
+        for mutation in root.findall("mutation")
+    }
+
+
+def mutants_in_report(report_xml):
+    """How many distinct mutants this report accounts for, whatever their
+    status. A survivor list cannot distinguish "all killed" from "none
+    generated"; this is the number that does."""
+    return len(mutant_identities(report_xml))
+
 
 KILLED_STATUS = "KILLED"
 
@@ -424,9 +467,23 @@ class PitestBackend:
     stack = "java"
     tool = "pitest"
 
-    def __init__(self):
+    def __init__(self, freshness=None):
         self._run_errors = ()
         self._scope_notes = ()
+        self._mutants_executed = None
+        # The before/after freshness policy this backend pioneered, now shared
+        # with the Stryker and mutmut backends that lacked it. Injected so a
+        # test can substitute a trivial discovery strategy.
+        self._freshness = freshness or ReportFreshness(_report_paths)
+
+    def mutants_executed(self, repo_root):
+        """How many mutants the most recent `survivors()` call ran, across
+        every module report that run wrote.
+
+        `None` when the run did not complete, so the gate reports the count as
+        unanswered rather than as a truthful zero.
+        """
+        return self._mutants_executed
 
     def available(self, repo_root):
         """True only when this backend can ACTUALLY run, not merely be invoked.
@@ -490,10 +547,27 @@ class PitestBackend:
             warnings.warn(self._run_errors[0], stacklevel=2)
             return ()
         self._scope_notes = self._describe_scope(repo_root, target_classes, unresolved)
-        snapshot = _report_snapshot(repo_root)
-        run_result = subprocess.run(argv, cwd=repo_root, capture_output=True, text=True)
-        report_path = _report_written_since(repo_root, snapshot)
-        if report_path is None:
+        self._freshness.snapshot(repo_root)
+        try:
+            run_result = subprocess.run(
+                argv,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=RUN_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            self._mutants_executed = None
+            self._run_errors = (
+                f"pitest did not finish within {RUN_TIMEOUT_SECONDS}s in "
+                f"{repo_root}, so no result from this partition can be trusted",
+            )
+            warnings.warn(self._run_errors[0], stacklevel=2)
+            return ()
+
+        report_paths = self._freshness.written_since(repo_root)
+        if not report_paths:
+            self._mutants_executed = None
             self._run_errors = (
                 f"pitest did not complete in {repo_root} -- the run exited "
                 f"{run_result.returncode} and wrote no {_REPORT_NAME} "
@@ -503,7 +577,31 @@ class PitestBackend:
             )
             warnings.warn(self._run_errors[0], stacklevel=2)
             return ()
-        return survivors_from_report(report_path.read_text(encoding="utf-8"))
+
+        # EVERY report this run wrote, not just the newest. `_report_paths`
+        # rglobs precisely because a Maven reactor writes one report per
+        # module; taking `max(written)` read whichever module finished last
+        # and silently discarded every other module's survivors -- a reactor
+        # where `billing` had three survivors and `shipping` finished clean
+        # reported clean.
+        # Deduplicated across reports. A reactor with `pitest-aggregator`
+        # writes a root report covering the same mutants as the per-module
+        # ones, all freshly written by this run, so summing them counted every
+        # mutant twice and reported each survivor twice.
+        survivors = []
+        seen_survivors = set()
+        executed = set()
+        for report_path in report_paths:
+            report_text = report_path.read_text(encoding="utf-8")
+            executed |= mutant_identities(report_text)
+            for survivor in survivors_from_report(report_text):
+                fingerprint = (survivor.artifact, survivor.location, survivor.mutant)
+                if fingerprint in seen_survivors:
+                    continue
+                seen_survivors.add(fingerprint)
+                survivors.append(survivor)
+        self._mutants_executed = len(executed)
+        return tuple(survivors)
 
     @staticmethod
     def _describe_scope(repo_root, target_classes, unresolved):

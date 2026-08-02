@@ -6,6 +6,12 @@ a git question, not a mutation-dispatch one, so it lives apart from the gate.
 
 import subprocess
 
+# Bounded, like every other subprocess the gate starts. These are plumbing
+# queries against a local repo, so they are quick or they are stuck -- a git
+# call waiting on a lock held by a crashed process would otherwise hang the
+# gate before it had resolved a single path.
+GIT_TIMEOUT_SECONDS = 120
+
 
 def _git(repo_root, *args, check=True):
     """Run git and return stdout.
@@ -15,11 +21,22 @@ def _git(repo_root, *args, check=True):
     reproduce the command by hand to find out whether it was an unborn
     branch, a shallow clone, or something else entirely. Re-raising with
     stderr attached names the actual cause in the message the operator
-    already sees.
+    already sees. A timeout is raised the same way rather than left to
+    surface as a bare `TimeoutExpired` with no indication of which call hung.
     """
-    result = subprocess.run(
-        ["git", *args], cwd=repo_root, capture_output=True, text=True
-    )
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"git {' '.join(args)} did not finish within "
+            f"{GIT_TIMEOUT_SECONDS}s in {repo_root}"
+        ) from exc
     if check and result.returncode != 0:
         raise RuntimeError(
             f"git {' '.join(args)} failed in {repo_root} "
@@ -79,6 +96,13 @@ def _parse_status_z(output):
     quote characters in the string. A rename or copy record supplies the new
     path followed by the old path as a second NUL-terminated field; the old
     path no longer exists on disk, so only the new path is kept.
+
+    A deleted path is dropped for the same reason, and was not: `git rm a.py`
+    put `a.py` into the selection, where it became a `source_paths` entry
+    naming a file absent from the workspace and broke the whole Python
+    partition over a change that had nothing to mutate. Deletion shows in
+    either status column -- `D ` staged, ` D` in the worktree -- so both are
+    checked.
     """
     tokens = output.split("\0")
     paths = []
@@ -89,8 +113,10 @@ def _parse_status_z(output):
             index += 1
             continue
         status, path = token[:2], token[3:]
-        paths.append(path)
-        index += 2 if status[0] in ("R", "C") else 1
+        renamed_or_copied = status[0] in ("R", "C")
+        if "D" not in status:
+            paths.append(path)
+        index += 2 if renamed_or_copied else 1
     return paths
 
 
@@ -106,11 +132,25 @@ def changed_paths(repo_root, scope="merge-base"):
     up as "old -> new" and a path containing a space gets shell-quoted, and
     naive line-splitting turned both into a bogus string that resolves to no
     file on disk.
+
+    A deleted file is never selected. `--diff-filter=d` (lowercase: exclude
+    deletions) drops it here, and `_parse_status_z` drops it for the
+    working-tree scope. A path that no longer exists cannot be mutated, and
+    handing one to a backend as though it could poisons the run for every
+    other file in the same partition.
     """
     if scope == "merge-base":
         base = _default_branch(repo_root)
         fork_point = _git(repo_root, "merge-base", base, "HEAD").strip()
-        output = _git(repo_root, "diff", "--name-only", "-z", fork_point, "HEAD")
+        output = _git(
+            repo_root,
+            "diff",
+            "--name-only",
+            "--diff-filter=d",
+            "-z",
+            fork_point,
+            "HEAD",
+        )
         paths = [path for path in output.split("\0") if path]
     elif scope == "working-tree":
         output = _git(repo_root, "status", "--porcelain", "-z", "--untracked-files=all")

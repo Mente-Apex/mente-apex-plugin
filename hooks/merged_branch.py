@@ -164,6 +164,14 @@ def resolve_default(
         cwd, "symbolic-ref", f"refs/remotes/{remote}/HEAD", deadline=deadline
     )
     if code == 0 and output:
+        # Strip the `refs/remotes/<remote>/` PREFIX, never `rsplit("/")`. The
+        # ref is `refs/remotes/origin/release/2.0` for a default branch with a
+        # slash in its name, and taking the last segment yielded `2.0` — a
+        # branch that does not exist, so `tracking` never verified and this
+        # hook went permanently silent on every such repo.
+        prefix = f"refs/remotes/{remote}/"
+        if output.startswith(prefix):
+            return output[len(prefix) :]
         return output.rsplit("/", 1)[-1]
     # 2. Ask the remote directly — a round-trip, always authoritative.
     code, output = git(
@@ -214,19 +222,96 @@ def is_merged(
 ) -> bool:
     """True when `revision` has landed on `tracking`.
 
-    The tip comparison is not redundant with the ancestor check: a branch
-    created a second ago and never committed to is an ancestor of the remote
-    default because it *is* the remote default, and announcing that as a merge
-    would fire on every branch /ship opens.
+    Being an ancestor of tracking is necessary but not sufficient: a branch
+    created a second ago and never committed to is an ancestor too, because it
+    still points at a commit tracking already had. Announcing that would fire
+    on every branch /ship opens.
+
+    Content alone cannot separate the two — once a branch is merged, it has no
+    unique commits either — so two cheap facts stand in, in order:
+
+    1. Does the branch exist on the remote? Then it was published, and an
+       ancestor of tracking means it landed. This is what makes the ordinary
+       multi-machine flow work: a branch obtained by clone or fetch has no
+       local history at all, and asking its reflog anything is meaningless.
+    2. Otherwise, has the branch moved since it was created here? Its reflog
+       answers that directly. Created-and-never-moved contributed nothing.
+
+    The previous guard was `tip == tracking_tip`, which holds only for as long
+    as the remote default has not moved. This hook fetches immediately before
+    checking, so the moment a teammate pushed anything, a freshly created
+    branch stopped equalling the tip, passed the ancestor check, and was
+    announced as merged and listed as safe to delete — the branch the user was
+    standing on. It was also wrong in the other direction: a branch merged
+    fast-forward with nothing pushed since DID equal the tip, and a real merge
+    went unreported.
+
+    The replacement attempt — "does the reflog contain a `commit:` entry" —
+    was wrong in both directions too, and is what step 2 below corrects. A
+    fetched branch reads `branch: Created from refs/remotes/origin/X`, so every
+    merge on a second machine was silently suppressed; and `reset:`,
+    `cherry-pick:`, `merge X:` and `am:` are all ways a branch legitimately
+    acquires commits without any subject beginning "commit". Asking whether the
+    branch MOVED, rather than how, is indifferent to which of those happened.
     """
-    code_revision, tip = git(cwd, "rev-parse", revision, deadline=deadline)
-    code_tracking, tracking_tip = git(cwd, "rev-parse", tracking, deadline=deadline)
-    if code_revision != 0 or code_tracking != 0 or tip == tracking_tip:
+    code_revision, _ = git(cwd, "rev-parse", revision, deadline=deadline)
+    code_tracking, _ = git(cwd, "rev-parse", tracking, deadline=deadline)
+    if code_revision != 0 or code_tracking != 0:
         return False
     code, _ = git(
         cwd, "merge-base", "--is-ancestor", revision, tracking, deadline=deadline
     )
+    if code != 0:
+        return False
+    remote = tracking.split("/", 1)[0]
+    if _exists_on_remote(cwd, revision, remote, deadline=deadline):
+        return True
+    return not _created_and_never_moved(cwd, revision, deadline=deadline)
+
+
+def _exists_on_remote(
+    cwd: str | Path, revision: str, remote: str, *, deadline: Deadline | None = None
+) -> bool:
+    """Does `remote` carry a branch of this name?
+
+    A published branch was shared deliberately, so an ancestor of tracking is a
+    branch that landed — no local history needed, which is exactly the case the
+    reflog cannot speak to.
+    """
+    code, _ = git(
+        cwd,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        f"refs/remotes/{remote}/{revision}",
+        deadline=deadline,
+    )
     return code == 0
+
+
+def _created_and_never_moved(
+    cwd: str | Path, revision: str, *, deadline: Deadline | None = None
+) -> bool:
+    """True only when this branch was created here and has not moved since.
+
+    Exactly one reflog entry, and that entry a creation. Every way a branch
+    acquires commits — commit, amend, reset, cherry-pick, merge, am, rebase —
+    appends an entry, so "one entry, and it is the creation" is the one shape
+    that means "contributed nothing", without this function needing to know the
+    vocabulary of subjects git might write.
+
+    False when there is no reflog to read (expired, or a ref that never had
+    one): the question cannot be answered, and staying silent about a real
+    merge is the failure this hook exists to prevent, so the unanswerable case
+    does not suppress.
+    """
+    code, output = git(
+        cwd, "reflog", "show", "--format=%gs", revision, deadline=deadline
+    )
+    if code != 0 or not output:
+        return False
+    entries = output.splitlines()
+    return len(entries) == 1 and entries[0].startswith("branch: Created from")
 
 
 def behind_count(
@@ -244,18 +329,34 @@ def behind_count(
 
 
 def merged_local_branches(
-    cwd: str | Path, default: str, tracking: str, *, deadline: Deadline | None = None
+    cwd: str | Path,
+    default: str,
+    tracking: str,
+    *,
+    exclude: tuple = (),
+    deadline: Deadline | None = None,
 ) -> list[str]:
     """Local branches that have landed on the remote default and are still
-    sitting in refs/heads. Independent of HEAD on purpose: the branches that
-    actually pile up are the ones you already switched away from.
+    sitting in refs/heads. The branches that actually pile up are the ones you
+    already switched away from.
 
     Two subprocesses regardless of how many branches the repo has. Asking
     `is_merged` per branch was 2N+1 of them, which on a branch-heavy repo ate
     the budget the whole hook shares. `--merged` is the same ancestor test
-    `merge-base --is-ancestor` performs, and printing the object name alongside
-    the name preserves `is_merged`'s other half: a branch sitting exactly on the
-    tracking tip has not been merged, it *is* the tip.
+    `merge-base --is-ancestor` performs.
+
+    `exclude` names branches the caller has already judged more carefully than
+    this batched test can. The `objectname == tracking_tip` guard below is the
+    same one `is_merged` had to abandon — it stops holding as soon as the
+    remote default advances — so a branch created a moment ago and never
+    committed to was listed here as merged and deletable, which is the original
+    false positive arriving by a second route. Rather than spend a reflog
+    subprocess per branch and lose the batching this function exists for,
+    `report` passes the one branch it has already checked properly.
+
+    A non-current branch with no commits of its own may still be listed, and
+    that is honest: everything it points at is already on the default, so
+    deleting it loses nothing.
     """
     code, tracking_tip = git(cwd, "rev-parse", tracking, deadline=deadline)
     if code != 0:
@@ -274,7 +375,9 @@ def merged_local_branches(
     lingering = []
     for line in output.splitlines():
         objectname, _, branch = line.partition(" ")
-        if not branch or branch == default or objectname == tracking_tip:
+        if not branch or branch == default or branch in exclude:
+            continue
+        if objectname == tracking_tip:
             continue
         lingering.append(branch)
     return lingering
@@ -328,13 +431,32 @@ def report(cwd: str | Path, *, budget: float = TOTAL_BUDGET_SECONDS) -> list[str
         return []
 
     lines = []
-    if branch != default and is_merged(cwd, "HEAD", tracking, deadline=deadline):
+    # The branch by name, not "HEAD". They resolve to the same commit while it
+    # is checked out, but only the branch has a reflog of its own -- HEAD's is
+    # the whole session's checkout history, which says nothing about this
+    # branch. See `_created_and_never_moved`.
+    current_is_merged = branch != default and is_merged(
+        cwd, branch, tracking, deadline=deadline
+    )
+    if current_is_merged:
         lines.append(f"Branch {branch} has been merged into {default}.")
     behind = behind_count(cwd, default, tracking, deadline=deadline)
     if behind:
         plural = "" if behind == 1 else "s"
         lines.append(f"Local {default} is {behind} commit{plural} behind {tracking}.")
-    lingering = merged_local_branches(cwd, default, tracking, deadline=deadline)
+    # The checked-out branch is withheld from the deletion list ONLY when the
+    # careful check above says it is not merged. `merged_local_branches` uses a
+    # cheap batched ancestor test that cannot tell a freshly created branch
+    # from a landed one, and that gap was the original false positive arriving
+    # by a second route. A current branch that genuinely IS merged still
+    # appears, which is what the existing behaviour promises.
+    lingering = merged_local_branches(
+        cwd,
+        default,
+        tracking,
+        exclude=() if current_is_merged else (branch,),
+        deadline=deadline,
+    )
     if lingering:
         lines.append(
             "Merged branches still present locally: " + ", ".join(lingering) + "."

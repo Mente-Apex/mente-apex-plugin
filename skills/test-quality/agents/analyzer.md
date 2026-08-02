@@ -56,6 +56,14 @@ Before drafting findings, run the mutation gate over the audit scope:
 
     uv run python scripts/mutation_gate.py --repo-root <path> --scope merge-base
 
+**Read the exit code — it is not a crash indicator.** `0` means the gate looked and
+found nothing. `1` means it found survivors. `2` means it could not verify the scope
+at all: a mutation tool that was not installed, a backend whose run crashed, a broken
+baseline, or a run that generated zero mutants. A `2` is **not** a clean sweep and must
+never be reported as one — the `unverified_reasons` array in the JSON payload names
+exactly what went wrong, and the `Mutants executed` line says how many mutants actually
+ran. Zero mutants executed over a non-empty scope means nothing was tested.
+
 Default scope is the **merge-base** diff, so the sweep does not change its answer
 as the operator commits mid-audit; `--scope full` exists and is slow enough that
 it is never the default. The run happens in a **scratch** workspace, so this stays

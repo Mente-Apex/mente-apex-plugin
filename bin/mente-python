@@ -25,24 +25,59 @@ set -eu
 MINIMUM_VERSION="3.14"
 UV_INSTALL_URL="https://docs.astral.sh/uv/getting-started/installation/"
 
+# Why the uv path was not taken, so the fallback notice states the real reason
+# rather than a guess. "uv not found" printed on a machine that has uv (and
+# merely resolved an interpreter below the floor) sends the operator to install
+# something they already have.
+uv_skip_reason="uv not found"
+
 # The floor is interpolated rather than repeated as a literal tuple: two copies
 # of "3.14" in one file is one copy too many, and the stale one would be the
 # check rather than the message.
-meets_minimum() {
-    "$1" -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= tuple(
-        int(part) for part in '$MINIMUM_VERSION'.split('.')) else 1)" \
-        >/dev/null 2>&1
+version_check_source() {
+    printf '%s' "import sys; raise SystemExit(0 if sys.version_info[:2] >= tuple(
+        int(part) for part in '$MINIMUM_VERSION'.split('.')) else 1)"
 }
 
+meets_minimum() {
+    "$1" -c "$(version_check_source)" >/dev/null 2>&1
+}
+
+uv_meets_minimum() {
+    uv run --no-project python -c "$(version_check_source)" >/dev/null 2>&1
+}
+
+# uv is preferred, but only when what it resolves actually clears the floor.
+# `uv run --no-project python` honours the operator's pin, and a repo pinned
+# below the floor by its own .python-version is ordinary -- this plugin's hooks
+# run inside whatever repo the operator happens to be in. Exec'ing blind there
+# handed PEP 758 source to an interpreter that cannot parse it, so every
+# session start in such a repo printed a SyntaxError traceback: precisely the
+# failure step 3 exists to replace with a diagnosis.
+#
+# The check runs through `uv run --no-project python` itself rather than
+# `uv python find`, so what is tested is the exact resolution the exec below
+# will use -- not a second query that could disagree with it. If it clears,
+# exec uv as before. If not, fall through: the loop below may still find a
+# system interpreter that does, and failing that the operator gets the
+# diagnosis instead of a traceback.
 if command -v uv >/dev/null 2>&1; then
-    exec uv run --no-project python "$@"
+    if uv_meets_minimum; then
+        exec uv run --no-project python "$@"
+    fi
+    uv_skip_reason="uv resolves an interpreter older than $MINIMUM_VERSION here"
+    printf '%s\n' \
+        "mente-apex: $uv_skip_reason." \
+        "  A .python-version in this directory pins it below what this plugin parses." \
+        "  Run 'uv python pin $MINIMUM_VERSION' here, or install a newer system Python." \
+        >&2
 fi
 
 for candidate in python3.14 python3 python; do
     command -v "$candidate" >/dev/null 2>&1 || continue
     meets_minimum "$candidate" || continue
     printf '%s\n' \
-        "mente-apex: uv not found; falling back to $candidate." \
+        "mente-apex: $uv_skip_reason; falling back to $candidate." \
         "  Install uv so this plugin runs on your pinned interpreter: $UV_INSTALL_URL" \
         >&2
     exec "$candidate" "$@"

@@ -30,6 +30,7 @@ from mutation_gate_pitest import (
     _argv,
     _build_file_text,
     _wrapper_or_bare,
+    mutants_in_report,
     survivors_from_report,
     target_classes_for,
 )
@@ -562,3 +563,150 @@ class TestScopeNotesReachTheReport:
             backend.survivors(tmp_path, ["src/main/java/com/example/A.java"])
 
         assert backend.scope_notes(tmp_path) == ()
+
+
+class TestEveryReactorModuleReportIsRead:
+    """`_report_paths` rglobs precisely because a Maven reactor writes one
+    report per module. Taking `max(written)` read whichever module finished
+    last and silently discarded every other module's survivors -- a reactor
+    where `billing` had survivors and `shipping` finished clean reported clean.
+    """
+
+    @staticmethod
+    def write_report(root, relative, body):
+        path = Path(root) / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+    def test_survivors_from_both_modules_are_reported(self, tmp_path, monkeypatch):
+        maven_repo(tmp_path)
+        backend = PitestBackend()
+        fixture = load_report()
+        clean = '<?xml version="1.0" encoding="UTF-8"?>\n<mutations/>\n'
+
+        def write_two_module_reports(*args, **kwargs):
+            # billing first, shipping last: under `max(written)` the clean
+            # shipping report won and billing's seven survivors vanished.
+            self.write_report(
+                tmp_path, "billing/target/pit-reports/mutations.xml", fixture
+            )
+            self.write_report(
+                tmp_path, "shipping/target/pit-reports/mutations.xml", clean
+            )
+
+            class Completed:
+                returncode = 0
+                stderr = ""
+                stdout = ""
+
+            return Completed()
+
+        monkeypatch.setattr(
+            "mutation_gate_pitest.subprocess.run", write_two_module_reports
+        )
+        result = backend.survivors(tmp_path, ["src/main/java/com/example/A.java"])
+
+        assert len(result) == 7
+        assert backend.run_errors(tmp_path) == ()
+
+    def test_the_mutant_count_sums_across_modules(self, tmp_path, monkeypatch):
+        maven_repo(tmp_path)
+        backend = PitestBackend()
+        fixture = load_report()
+        # Distinct classes, so these are genuinely different mutants. Writing
+        # the same fixture twice would be one module's mutants seen twice, and
+        # deduplication correctly collapses that -- see
+        # TestAnAggregatedReportDoesNotDoubleCount.
+        other = fixture.replace("com.example", "com.other")
+
+        def write_two_module_reports(*args, **kwargs):
+            self.write_report(
+                tmp_path, "billing/target/pit-reports/mutations.xml", fixture
+            )
+            self.write_report(
+                tmp_path, "shipping/target/pit-reports/mutations.xml", other
+            )
+
+            class Completed:
+                returncode = 0
+                stderr = ""
+                stdout = ""
+
+            return Completed()
+
+        monkeypatch.setattr(
+            "mutation_gate_pitest.subprocess.run", write_two_module_reports
+        )
+        backend.survivors(tmp_path, ["src/main/java/com/example/A.java"])
+
+        one_module = mutants_in_report(load_report())
+        assert backend.mutants_executed(tmp_path) == one_module * 2
+
+
+class TestAnAggregatedReportDoesNotDoubleCount:
+    """`_report_paths` matches any `mutations.xml` under a `pit-reports` path
+    component. A reactor configured with `pitest-aggregator` writes a root
+    report covering the same mutants as the per-module ones, all freshly
+    written by the same run -- so summing them counted every mutant twice and
+    reported each survivor twice.
+    """
+
+    @staticmethod
+    def write_report(root, relative, body):
+        path = Path(root) / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+    def test_the_same_mutant_seen_twice_is_reported_once(self, tmp_path, monkeypatch):
+        maven_repo(tmp_path)
+        backend = PitestBackend()
+        fixture = load_report()
+
+        def write_module_and_aggregate(*args, **kwargs):
+            self.write_report(
+                tmp_path, "billing/target/pit-reports/mutations.xml", fixture
+            )
+            self.write_report(tmp_path, "target/pit-reports/mutations.xml", fixture)
+
+            class Completed:
+                returncode = 0
+                stderr = ""
+                stdout = ""
+
+            return Completed()
+
+        monkeypatch.setattr(
+            "mutation_gate_pitest.subprocess.run", write_module_and_aggregate
+        )
+        result = backend.survivors(tmp_path, ["src/main/java/com/example/A.java"])
+
+        assert len(result) == 7
+        assert backend.mutants_executed(tmp_path) == mutants_in_report(load_report())
+
+    def test_two_genuinely_different_modules_still_add_up(self, tmp_path, monkeypatch):
+        """The control: dedup must not collapse distinct mutants."""
+        maven_repo(tmp_path)
+        backend = PitestBackend()
+        fixture = load_report()
+        other = fixture.replace("com.example", "com.other")
+
+        def write_two_modules(*args, **kwargs):
+            self.write_report(
+                tmp_path, "billing/target/pit-reports/mutations.xml", fixture
+            )
+            self.write_report(
+                tmp_path, "shipping/target/pit-reports/mutations.xml", other
+            )
+
+            class Completed:
+                returncode = 0
+                stderr = ""
+                stdout = ""
+
+            return Completed()
+
+        monkeypatch.setattr("mutation_gate_pitest.subprocess.run", write_two_modules)
+        result = backend.survivors(tmp_path, ["src/main/java/com/example/A.java"])
+
+        assert len(result) == 14
+        assert backend.mutants_executed(tmp_path) == mutants_in_report(fixture) * 2
