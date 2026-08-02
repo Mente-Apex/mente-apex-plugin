@@ -106,6 +106,14 @@ class TestReadingWhatTheRepoDeclares:
         thresholds = EslintThresholds().thresholds_for(tmp_path)
         assert thresholds.cyclomatic_complexity == 11
 
+    def test_eslint_numeric_severity_is_read(self, tmp_path):
+        # ESLint's numeric severity form: 0 off, 1 warn, 2 error
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [{ rules: { complexity: [2, 10] } }];\n"
+        )
+        thresholds = EslintThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 10
+
     def test_pmd_cyclomatic_complexity_is_read_from_classReportLevel(self, tmp_path):
         (tmp_path / "pmd-ruleset.xml").write_text(
             '<?xml version="1.0"?>\n'
@@ -299,6 +307,53 @@ class TestAbsence:
         )
         result = EslintThresholds().thresholds_for(tmp_path)
         assert result.cyclomatic_complexity == 14
+
+    def test_eslint_variable_severity_yields_nothing(self, tmp_path):
+        # A severity that is an identifier cannot be read statically, so the
+        # array cannot be trusted to mean what it looks like
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [{ rules: { complexity: [errorLevel, 10] } }];\n"
+        )
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_eslint_spread_severity_yields_nothing(self, tmp_path):
+        # A spread can contribute any number of elements, so the 10 is not
+        # provably the maximum
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [{ rules: { complexity: [...baseRule, 10] } }];\n"
+        )
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_eslint_template_literal_severity_yields_nothing(self, tmp_path):
+        # A template literal may interpolate; it is not a literal severity
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [{ rules: { complexity: [`error`, 10] } }];\n"
+        )
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_eslint_regex_literal_containing_a_quote_does_not_hide_the_rule(
+        self, tmp_path
+    ):
+        # Regression: a lone quote inside a regex character class must not
+        # open a phantom string that swallows the rest of the file
+        (tmp_path / "eslint.config.js").write_text(
+            "const pattern = /[\"']/;\n"
+            'export default [{ rules: { complexity: ["error", 13] } }];\n'
+        )
+        thresholds = EslintThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 13
+
+    def test_eslint_division_is_not_mistaken_for_a_regex_literal(self, tmp_path):
+        # The regex heuristic must not overreach: a `/` after a value divides,
+        # and blanking from there would swallow the rule sharing its line
+        (tmp_path / "eslint.config.js").write_text(
+            "const budget = 24;\n"
+            "export default [\n"
+            '  { rules: { "max-lines": budget / 2, complexity: ["error", 8] } },\n'
+            "];\n"
+        )
+        thresholds = EslintThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 8
 
     def test_the_null_source_always_yields_nothing(self, tmp_path):
         assert NullThresholds().thresholds_for(tmp_path) is None
