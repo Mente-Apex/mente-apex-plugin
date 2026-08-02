@@ -15,6 +15,23 @@ exactly the silence spec §2.3 forbids. So this file is also the only place
 that catches a scope failure and turns it into an `unverified` measurement
 carrying the cause — never letting the exception itself reach the user, and
 never discarding the reason.
+
+`--gate` here is a reporter, not a blocker, and that is deliberate rather than
+an oversight. `CycleGate.evaluate` only blocks when the measurement it is
+handed is `None` *and* the probe was available — i.e. when whatever called it
+never even attempted a measurement. This CLI process always attempts one: it
+either produces a real `Measurement` from the probe or synthesizes an
+`unverified` one from a caught scope failure (see above), so `measurement` is
+never `None` by the time `CycleGate.evaluate` is called and `verdict.blocks`
+can never be true here — confirmed even with the probe made unavailable.
+That is not a bug in this file's wiring; it is what "silence" *means* for
+spec §2.3: the agent never ran the probe at all, and a self-contained CLI
+invocation cannot observe its own non-invocation. The blocking branch stays in
+`main()` because it is the correct guard for the contract — it simply cannot
+fire from this entry point. It exists for a caller that genuinely can observe
+silence from the outside, such as a hook reading whether this probe's
+transcript output appears at all in a cycle's record. Do not read the
+unreachable branch here as dead code to delete.
 """
 
 import argparse
@@ -44,7 +61,8 @@ def build_parser():
     parser.add_argument(
         "--gate",
         action="store_true",
-        help="apply the cycle-gate verdict; exit 1 only on silence",
+        help="apply the cycle-gate verdict and report it (see module docstring: "
+        "this entry point cannot itself observe silence, so it cannot block)",
     )
     parser.add_argument(
         "--sink",
