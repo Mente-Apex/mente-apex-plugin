@@ -273,13 +273,77 @@ is missing:
    (`CONFIG_SYNC_ROOT_*`) for `hooks/hooks.json` files and lists the hook
    registrations missing from `~/.claude/settings.json`.
 2. If `actions` is empty, say so and move on.
-3. Otherwise show the user each hook it would register (event, matcher, command)
-   and ask once for confirmation — this is the single consent gate.
-4. On yes, run `py "$ENGINE" hooks-apply`. It writes each
-   registration in portable `${TOKEN}` form, tagged `# config-sync:<id>` so it is
-   never confused with a hand-added hook. Re-running is a safe no-op.
+3. Otherwise show the user each action and ask once for confirmation — this is
+   the single consent gate. An action's `verb` says what will happen:
+   - `register` — a new hook, appended.
+   - `update` — a hook config-sync already wired whose declaration moved (a new
+     interpreter, a relocated script). It is rewritten **in place**, at the
+     `location` shown, rather than appended alongside its predecessor.
+4. On yes, run `py "$ENGINE" hooks-apply`. It writes each registration in
+   portable `${TOKEN}` form, tagged `# config-sync:<id>` so it is never confused
+   with a hand-added hook. Re-running is a safe no-op.
 
 Never run `hooks-apply` without the user's confirmation.
+
+Hook identity keys on the **script**, not the whole command string, so changing
+the interpreter in front of it resolves to the same registration. Ids marked by
+older versions were hashed over the full command; they are re-found by script
+name and re-marked in place (one `update` per hook, then quiet forever).
+
+A declaration whose script is **not on this machine** is skipped rather than
+wired — otherwise apply would register it, prune would delete it as a dead
+target, and the next apply would register it again. The skip reason says so. If
+you see one, the repo is probably not checked out where its root points.
+
+Two limits worth knowing:
+- Editing a hook's **event or matcher** still orphans its previous registration —
+  both are inside the identity. Pin an `"id"` in `hooks.json` to survive that.
+- Two hooks declared for the same event and matcher that resolve to the same
+  script are **both skipped** as ambiguous, with a message saying so. Give each
+  an `"id"` to tell them apart.
+
+## Step 4d — Check the wired hooks are still healthy
+
+Wiring only ever adds. Over time a target moves or a second copy of the same
+guard gets wired from another install location, and once a path disappears the
+dead hook prints an error on every tool call in every project.
+
+1. Run `py "$ENGINE" hooks-doctor` — read-only, never writes. It reports every
+   hook in `~/.claude/settings.json`, not just config-sync's.
+
+   **Definitive** (a deletion may be justified — the evidence does not depend on
+   this machine's environment):
+   - `missing-target` — an **absolute** path in the command is not on disk.
+   - `duplicate-command` — another entry runs the same argv, for the same event
+     and matcher, with absolute paths resolved.
+
+   **Advisory** (reported, never acted on):
+   - `duplicate-script` — a same-named script from a *different* install
+     location. Two files with one basename may both be wanted.
+   - `missing-on-path` — a bare program name this process could not find. The
+     hook runs in a different shell, with a different PATH.
+   - `unresolvable` — a relative path or a glob. Hooks run with cwd set to the
+     project directory; the doctor cannot know it.
+   - `opaque` — a shell fragment, or any command containing `$`. Counted as
+     `unchecked` in the summary, never reported as broken.
+
+2. Gate on `summary.prunable_by_default`, **not** `summary.repairable` —
+   `repairable` counts hand-added entries that the default run will skip. If it
+   is 0, say so and move on.
+3. Otherwise show the findings and ask once. On yes, run
+   `py "$ENGINE" hooks-prune`. It removes only entries with a **definitive**
+   finding, and only ones config-sync wired. It writes
+   `~/.claude/settings.json.pre-prune-<timestamp>` before its first deletion and
+   returns the path as `backup` — tell the user where it is.
+4. Only if the user explicitly asks to clean up hand-added hooks too, run
+   `py "$ENGINE" hooks-prune --include-unmanaged`. Confirm separately: this
+   deletes hooks config-sync did not create.
+
+Never run `hooks-prune` without the user's confirmation. Advisory findings are
+never pruned automatically — report them and let the user decide.
+
+If an entry reports `ok: false`, settings.json changed between the diagnosis and
+the write; nothing was removed for it. Re-run `hooks-doctor`.
 
 ## Step 5 — Commit the updated consolidated snapshot and push
 
