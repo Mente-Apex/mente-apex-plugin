@@ -128,51 +128,71 @@ Full suite green, then per the git convention **offer** (never auto) commit + PR
 via `mente-apex:ship`. Finally, **offer** (never silently) to capture durable
 domain decisions — bounded-context names, core invariants, key ubiquitous-
 language terms — wherever the project persists knowledge: the Mente Apex brain via
-the `/memory` protocol when present, else a short `docs/domain/` note in the repo.
+the `/mente` skill when present, else a short `docs/domain/` note in the repo.
 Never assume an external memory system exists.
 
 ## Mode: analyze (report-only)
 
-Mirrors `solid`'s pipeline minus the apply phase. **This mode's own run never edits
-code** — that constrains the run, not the finding: a finding merged by the code-quality
-umbrella (or explicitly opted into by a user) is applicable through the shared engine.
-
-### Phase 0 — Inventory & baseline
-Scope the target tree (skip vendored/generated dirs). Detect and record the test
-command; note whether the suite is green (context for later refactors — this mode
-runs none). Create `docs/reports/ddd/` in the target project and add it to
-`.gitignore` if the repo doesn't already ignore it.
+Follows [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md)
+Phases 0–2 verbatim — including the structural-graph detection + verdict, the
+test-suite single run, the stale-draft pre-clear, and the git-exclude via
+`.git/info/exclude` for `docs/reports/ddd/`. Its lens is
+`references/ddd-core.md` (+ `references/strategic.md` for >1-context
+domains) + `references/report-template.md`, with `references/<language>.md`
+loaded for each language Phase 0 detects, per the detect-and-load convention.
+**This mode's own run never edits code** — that constrains the run, not the
+finding: a finding merged by the code-quality umbrella (or explicitly opted
+into by a user) is applicable through the shared engine.
 
 ### Phase 1 — Analyzer
-Spawn the analyzer (Agent tool, `general-purpose`), telling it to read
-`agents/analyzer.md` + `references/ddd-core.md` (and `strategic.md` if multiple
-contexts appear). It writes `docs/reports/ddd/draft-findings.md` — read-only over the code it audits,
-not over its own draft.
+Spawn the analyzer (Agent tool, `general-purpose`) per the shared Phase 1,
+telling it to read `agents/analyzer.md` — ddd's own analyzer role, not the
+shared `docs/refactor-agents/analyzer.md` — plus `references/ddd-core.md`
+(and `strategic.md` if multiple contexts appear) and, per the detect-and-load
+convention, `references/<language>.md` for each detected language. It writes
+`docs/reports/ddd/draft-findings.md` — read-only over the code it audits, not
+over its own draft.
 
 ### Phase 2 — Reviewer
-Spawn the reviewer with the draft path, `agents/reviewer.md`,
-`references/ddd-core.md`, and `references/report-template.md`. It re-verifies
-every finding against the real code, prunes false positives, tiers survivors
-Critical/Major/Minor, cross-references the SOLID lens, and writes
-`docs/reports/ddd/DDD-REPORT-<YYYY-MM-DD>.md` using the template **exactly**. It also
-**reverse-engineers the implicit model** into proposed `docs/domain/` artifacts
-(`GLOSSARY.md`, `model.md`, `context-map.md` if >1 context) — marked as
-reverse-engineered proposals.
+Spawn the reviewer per the shared Phase 2, with the draft path,
+`agents/reviewer.md` (again ddd's own role), `references/ddd-core.md`,
+`references/report-template.md`, and any detected `references/<language>.md`.
+It re-verifies every finding against the real code, prunes false positives,
+tiers survivors Critical/Major/Minor, and cross-references
+[../../docs/lens-overlap.md](../../docs/lens-overlap.md) — both the SOLID
+overlap and the `clean-architecture` carve (hub, clean-architecture ↔ the
+others): ddd asks *"is the domain modelled well?"*, clean-architecture asks
+*"is the dependency structure sound, regardless of domain richness?"* — a
+codebase can pass one and fail the other, so name the other lens's finding
+rather than duplicate it. It writes
+`docs/reports/ddd/DDD-REPORT-<YYYY-MM-DD>.md` using the template **exactly**,
+then reaps the draft per the shared Phase 2. It also **reverse-engineers the
+implicit model** into proposed `docs/domain/` artifacts (`GLOSSARY.md`,
+`model.md`, `context-map.md` if >1 context) — marked as reverse-engineered
+proposals and written alongside (never over) any pre-existing `docs/domain/`
+files from an earlier `design` or `analyze` run (`agents/reviewer.md`).
 
-### Phase 3 — 🚦 MODEL REVIEW GATE (keep or discard)
+### 🚦 MODEL REVIEW GATE (keep or discard)
 Present the proposed ubiquitous language + bounded context(s) + aggregates for
 human review (the same three decisions gated in `design`). On approval they are
 **kept** (and can seed a later `/ddd design`); if decided against they are
-**discarded** (delete the files). Nothing here is auto-committed.
+**discarded** (delete the proposal files). Nothing here is auto-committed.
+**Overwrite risk:** if `docs/domain/` already held real files from an earlier
+run, the proposal was written beside them, not over them — say so explicitly
+before "keep" replaces the pre-existing files, so a prior run's real
+decisions are never silently clobbered. This gate is ddd's own — distinct
+from the shared workflow's Phase 3 (the apply-decision gate): ddd's own run
+never applies findings, so there is no apply decision to make here, only the
+domain-model keep/discard call.
 
-### Phase 4 — Stop
+### Stop
 Present a compact summary: findings by tier, top 2–3 wins, anything High-impact.
 **No code changes in this lens's own run** — findings remain applicable through the
 shared engine when merged by the umbrella or opted into directly. Offer next steps: `/ddd design` on
 a new context, hand specific findings to `/tdd`, or `/solid` for the pure-SOLID cut.
 **Offer** to
 capture key findings (and any kept domain decisions) wherever the project keeps
-durable knowledge — the memory brain when present, else a short repo `docs/domain/` note.
+durable knowledge — the memory brain (via `/mente`) when present, else a short repo `docs/domain/` note.
 
 ## Interplay contract (stable)
 

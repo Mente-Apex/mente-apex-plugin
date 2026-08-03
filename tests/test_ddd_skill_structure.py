@@ -64,6 +64,72 @@ def test_skill_md_covers_both_modes_and_both_gates():
     assert not missing, f"SKILL.md missing required content: {missing}"
 
 
+def test_analyze_mode_links_shared_workflow_instead_of_restating_it():
+    """WS-5 (5.1/5.2/5.3/5.4): analyze mode must link docs/refactor-workflow.md
+    like every other refactor lens, not restate its phases in ddd's own prose —
+    and the report-dir exclusion goes through .git/info/exclude (a "no code
+    changes" mode must not edit a committed .gitignore)."""
+    body = parse_frontmatter(read_skill_file("SKILL.md"))["_body"]
+    assert (
+        "docs/refactor-workflow.md" in body
+    ), "analyze mode must link the shared workflow rather than restate it"
+    assert (
+        "docs/lens-overlap.md" in body
+    ), "the reviewer must be pointed at the lens-overlap hub, not just the SOLID cross-ref"
+    assert (
+        "clean-architecture" in body
+    ), "lens-overlap cross-ref must reach the clean-architecture carve, not just SOLID"
+    assert (
+        ".gitignore" not in body
+    ), "report-dir exclusion must use .git/info/exclude, never a committed .gitignore edit"
+    assert ".git/info/exclude" in body
+
+
+def test_analyze_mode_phase_numbers_dont_collide_with_the_shared_workflow():
+    """WS-5 (5.5): ddd's own gates (model keep/discard, stop) are not the shared
+    workflow's Phase 3 (decision gate) or Phase 4 (apply) — so they must not be
+    labelled "Phase 3"/"Phase 4" in ddd's own prose. Phase 1/Phase 2 do line up
+    with the shared workflow's Phase 1/Phase 2 and keep those numbers."""
+    body = parse_frontmatter(read_skill_file("SKILL.md"))["_body"]
+    assert (
+        "Phase 3 —" not in body
+    ), "ddd's model-review gate collides with the shared Phase 3"
+    assert (
+        "Phase 4 —" not in body
+    ), "ddd's stop step collides with the shared Phase 4 (apply)"
+    assert "Phase 1 — Analyzer" in body
+    assert "Phase 2 — Reviewer" in body
+    assert (
+        "MODEL REVIEW GATE" in body
+    ), "ddd's own gate must still exist, just unnumbered"
+
+
+def test_memory_capture_points_at_the_mente_skill():
+    """WS-5 (5.6): the durable-knowledge capture step invokes /mente, not the
+    stale /memory name."""
+    body = parse_frontmatter(read_skill_file("SKILL.md"))["_body"]
+    assert "/memory" not in body
+    assert "/mente" in body
+
+
+def test_model_review_gate_flags_the_docs_domain_overwrite_risk():
+    """WS-5 (5.6): keep-or-discard must warn before clobbering pre-existing
+    docs/domain/ files from an earlier run."""
+    body = parse_frontmatter(read_skill_file("SKILL.md"))["_body"]
+    assert "overwrite" in body.lower()
+    assert "docs/domain" in body
+
+    reviewer = read_skill_file("agents/reviewer.md")
+    assert "pre-existing" in reviewer.lower() or "overwrite" in reviewer.lower()
+
+
+def test_python_reference_has_no_stale_issue_reference():
+    """WS-5 (5.6): drop the dangling repo-issue citation."""
+    text = read_skill_file("references/python.md")
+    assert "issue #55" not in text
+    assert "repository issue" not in text.lower()
+
+
 def test_ddd_core_covers_the_tactical_spine():
     text = read_skill_file("references/ddd-core.md")
     required_concepts = [
