@@ -50,3 +50,75 @@ def hook_address_at_tier(site, tier: int) -> str | None:
     raise ValueError(
         f"unknown hook identity tier {tier!r}; expected one of {HOOK_TIERS}"
     )
+
+
+class AmbiguousHookRejectionError(RuntimeError):
+    """A hook registration cannot be told apart from another at any usable tier.
+
+    Named rather than swallowed so the operator learns which registrations
+    collided, instead of a rejection silently attaching to the wrong one.
+    """
+
+
+class HookRegistrationAddressor:
+    """One hook registration, addressed at the most stable tier that is unambiguous.
+
+    Resolution walks the tiers most-stable-first and falls DOWNWARD on ambiguity,
+    to the more specific tier. That is not a compromise: when two registrations
+    share an event, a matcher and a script basename, the operator rejected one
+    specific copy, so brittleness at tier 3 is the correct behaviour.
+
+    `registrations_by_script` is deliberately NOT reused. It iterates
+    `registered_hooks`, which yields only config-sync's own marked registrations,
+    and hand-added unmarked hooks are exactly the ones that need addressing. This
+    scans every site and reuses only the pure helpers.
+    """
+
+    kind = "hook-registration"
+
+    def identify(self, site, all_sites) -> tuple:
+        """The `(address, tier)` for `site`, resolved against `all_sites`.
+
+        `all_sites` is every entry in the settings hooks block, from
+        `config_sync_hooks.hook_sites`. It is a parameter rather than something
+        this class reads, so the addressor stays pure and testable.
+        """
+        sites = list(all_sites)
+        if not any(_same_site(site, candidate) for candidate in sites):
+            raise ValueError(
+                "site is not among the sites given; identify resolves ambiguity "
+                "against the whole hooks block and cannot do so for a stranger"
+            )
+
+        for tier in HOOK_TIERS:
+            address = hook_address_at_tier(site, tier)
+            if address is None:
+                continue
+            sharing = [
+                candidate
+                for candidate in sites
+                if hook_address_at_tier(candidate, tier) == address
+            ]
+            if len(sharing) == 1:
+                return address, tier
+            if tier == HOOK_TIER_EXACT:
+                # Byte-identical under one event and matcher: indistinguishable,
+                # and an exact duplicate is precisely what one wants gone. They
+                # share the address and are rejected together.
+                return address, tier
+            # Ambiguous at this tier — fall downward to the more specific one.
+
+        raise AmbiguousHookRejectionError(
+            f"cannot address the hook at {site.event}/{site.matcher!r} "
+            f"(index {site.group_index}/{site.hook_index}) at any tier"
+        )
+
+
+def _same_site(left, right) -> bool:
+    """Identity by position in the hooks block, not by command — two entries can
+    carry the same command and still be different registrations."""
+    return (
+        left.event == right.event
+        and left.group_index == right.group_index
+        and left.hook_index == right.hook_index
+    )
