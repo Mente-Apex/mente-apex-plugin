@@ -206,7 +206,14 @@ for inner checks, full suite as the job's end gate). A declared grouped change i
 workflow); ungrouped recs apply per-rec. **Apply in the order the report's Findings index
 already computed** — it is dependency-aware, not just Critical → Major → Minor, so it *is*
 the apply plan; don't re-derive it. Each merged finding keeps its lens origin, so the
-implementer applies it with the fix idiom that lens intended. One working branch
+implementer applies it with the fix idiom that lens intended — **and dispatches through
+that lens's implementer**: dispatch the owning lens's `agents/implementer.md` when the
+lens ships one; otherwise the shared `docs/refactor-agents/implementer.md`. A
+`test-quality` rec merged into this report is no exception — it runs through
+`skills/test-quality/agents/implementer.md`, never the shared implementer, so its
+mutation gate and coverage-non-regression gate stay wired under the umbrella exactly as
+they would under a direct `/test-quality` apply. Model-tiering by Risk (above) is
+orthogonal to this dispatch and unchanged by it. One working branch
 (`code-quality/<slug>`).
 
 At Phase 5, verify the suite yourself, then **write the `## Outcome` section into the

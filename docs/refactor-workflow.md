@@ -259,7 +259,18 @@ have:
 **Each approved rec is applied by dispatching a TDD refactor job** — the
 shared engine at
 [skills/tdd/references/refactor-jobs.md](../skills/tdd/references/refactor-jobs.md).
-The implementer/TDD-coordinator role (`docs/refactor-agents/implementer.md`)
+
+**Dispatch rule for the implementer role:** dispatch the owning lens's
+`agents/implementer.md` when the lens ships one; otherwise the shared `docs/refactor-agents/implementer.md`.
+This holds for every caller, including
+the `code-quality` umbrella fanning a rec back out to its lens of origin — a
+`test-quality` rec always runs through `skills/test-quality/agents/implementer.md`,
+never silently through the shared implementer, so its mutation gate and
+coverage-non-regression gate stay wired regardless of which caller dispatched
+it. The model-tiering above is orthogonal to this dispatch: the model still
+varies by the job's Risk, independent of which implementer file is running.
+
+Whichever file the rule selects, that implementer/TDD-coordinator role
 translates a rec into that engine's calling contract (`targets`, `change`,
 `test_command` + `baseline_status`, `coverage`) and then **runs** that
 procedure itself — it is a subagent, so it writes the edits in its own

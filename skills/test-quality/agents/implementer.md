@@ -11,9 +11,15 @@ test is also green — so every rec passes one of two gates before it counts as 
 ## Gate A — refactoring a test (rename, split, merge, restructure, de-mock)
 
 Dispatch through the TDD refactor engine as usual, then run the **mutation gate**
-over the refactored test:
+over the refactored test. Resolve the plugin root and the interpreter through the
+launcher convention (`bin/mente-python`, per `$CLAUDE_PLUGIN_ROOT`) and pass the
+*target under refactor* as `--repo-root` explicitly — a bare relative
+`scripts/mutation_gate.py` plus `--repo-root .` only resolves correctly when the
+agent's cwd happens to already be the audit target, which does not hold when this
+role runs against some other repo (e.g. dispatched by the `code-quality` umbrella):
 
-    uv run python scripts/mutation_gate.py --repo-root . --scope working-tree
+    sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/mutation_gate.py" \
+        --repo-root <target> --scope working-tree
 
 Exit `0` = looked, found nothing. `1` = survivors. `2` = could not verify the scope
 (tool missing, backend crashed, baseline broken, zero mutants generated) — treat a `2`
@@ -40,6 +46,13 @@ sole guard of that path; mark the rec `skipped` with that reason and leave it in
 as "keep". **Prefer merge over delete**: if the rec is "fold narrow test into a parametrized
 case", that is a Gate-A refactor (with the mutation gate on the merged case), not a deletion.
 Record the coverage result in the safety clause.
+
+**No coverage tool declared (Phase 0 recorded `coverage tool: none`) ⇒ no deletion recs
+reach you at all.** Without a coverage tool there is no way to produce the re-confirmed
+proof this gate requires, so a deletion candidate can never clear it — the reviewer does
+not hand you one. Treat any deletion rec that does arrive under `coverage tool: none` as
+a report defect, not something to force through: refuse it and record the gap as a
+Coverage note rather than skip it silently.
 
 ## Hard rules
 

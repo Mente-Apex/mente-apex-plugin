@@ -90,6 +90,12 @@ the opt-in [agents/implementer.md](agents/implementer.md) never trusts green alo
   test was the sole guard of that path — keep it. **Prefer merge over delete** (fold a
   narrow test into a parametrized case) so intent is preserved. Dead tests that fail to
   import are the one clear-cut delete — still surfaced for sign-off.
+  **No coverage tool (Phase 0 recorded `coverage tool: none`) ⇒ no deletion recs at
+  all** — made explicit rather than left implicit: the gate's proof is a coverage
+  measurement, so without a coverage tool the reviewer cannot produce one and must not
+  nominate a deletion; record the gap as a Coverage note instead (a dead test that
+  fails to import is still the one exception, since its "proof" is the missing symbol,
+  not a coverage run).
 
 ## Guardrails
 

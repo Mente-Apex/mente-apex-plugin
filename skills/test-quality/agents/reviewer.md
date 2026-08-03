@@ -36,9 +36,13 @@ no code and no tests** — you write the report only.
    `<!-- mutation-gate:end -->` marker pair intact** — the gate replaces the span between
    them and refuses to guess where its section belongs when they are missing.
 6. **Fill the Mutation-gate section by running the gate against the report you just
-   wrote.** You never transcribe survivors by hand:
+   wrote.** You never transcribe survivors by hand. As in the analyzer's sweep,
+   resolve the plugin root and the interpreter through the launcher convention
+   (`bin/mente-python`, per `$CLAUDE_PLUGIN_ROOT`) rather than a bare relative path —
+   the target under review is not always this plugin's own repo:
 
-       uv run python scripts/mutation_gate.py --repo-root <path> --scope merge-base \
+       sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/mutation_gate.py" \
+           --repo-root <target> --scope merge-base \
            --report docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md
 
    The exit code is a verdict, not a crash signal: `0` clean, `1` survivors found, `2`
