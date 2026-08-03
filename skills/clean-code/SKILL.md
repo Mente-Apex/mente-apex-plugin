@@ -81,10 +81,14 @@ problem, name it and hand it up the altitude ladder rather than solving it here:
 
 ## Apply — opt-in only
 
-Review stops at findings. Code-level nits are cheap to fix by hand and riskiest to
-mass-apply, so apply only when the user asks — then reuse the shared
-implementer/TDD path (`../../docs/refactor-workflow.md` Phases 4–5), which already
-cleans to this same standard.
+This lens's own run stops at findings — Phases 0–3 only; that constrains the run, not
+the finding. Code-level nits are cheap to fix by hand and riskiest to mass-apply, so
+apply only when the user asks — then reuse the shared implementer/TDD path
+(`../../docs/refactor-workflow.md` Phases 4–5), which already cleans to this same
+standard. That path applies rec IDs, so only a **deep**-gear report
+(`references/report-template.md`) is applicable through the shared engine — the
+**quick** gear's inline findings carry no rec ID to apply; rerun deep first if apply
+is wanted.
 
 ## Guardrails
 

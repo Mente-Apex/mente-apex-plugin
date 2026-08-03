@@ -2,7 +2,9 @@
 
 Shared orchestration for the plugin's refactor lenses (`solid`, `gof`,
 `clean-architecture`, `test-quality`, and the `code-quality` umbrella that fans them out;
-the analyze-only lenses `ddd` and `clean-code` use Phases 0–3 and stop before apply).
+the analyze-only lenses `ddd` and `clean-code` use Phases 0–3 in their own run — their
+findings' applicability is a property of the report fields, not the lens, so a finding
+merged by the umbrella or opted into directly is applicable through the shared engine).
 `test-quality` applies through this engine too but adds its own two safety gates on top —
 a mutation gate for test refactors, a coverage-non-regression gate for deletions — since
 "suite still green" cannot vouch for a changed or deleted test. Each
@@ -411,8 +413,11 @@ If a report has an `## Outcome` heading but predates the coverage-source apply-l
 clause, keep appending in the newer form — the older lines stay valid; the vocabulary
 only ever grows.
 
-Analyze-only reports (`ddd`, `clean-code`) have no apply phase, so `Status:
-pending` there just records that a finding is unactioned and there is no Apply log.
+Analyze-only lenses' own runs (`ddd`, `clean-code`) never reach Phase 4–5, so `Status:
+pending` there just records that a finding is unactioned by this run — that constrains
+the run, not the finding: once merged by the umbrella or opted into directly, the same
+finding is applicable through the shared engine and gets an Apply-log line like any
+other rec.
 
 ## Guardrails
 
