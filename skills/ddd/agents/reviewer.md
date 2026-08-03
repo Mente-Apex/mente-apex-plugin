@@ -32,8 +32,15 @@ finding you keep, you personally verified against the current code. You **edit n
 5. **Reverse-engineer the implicit model** into proposed `docs/domain/` files —
    the ubiquitous language, bounded context(s), and aggregates + invariants the
    code is *trying* to express. Mark them clearly as reverse-engineered
-   proposals. Do **not** commit them; the orchestrator runs a keep-or-**discard**
-   gate with the human, and discards mean the files are deleted.
+   proposals. **Check for pre-existing `docs/domain/` files first** — an
+   earlier `design` or `analyze` run may have left real (not proposed) files
+   there; if any exist, do not overwrite them — write the proposal alongside
+   under a distinct name (e.g. `docs/domain/GLOSSARY.proposed.md`) and record
+   the collision in Reviewer notes so the orchestrator's keep/discard gate can
+   flag the overwrite risk explicitly rather than silently clobbering a prior
+   run's real decisions. Do **not** commit them; the orchestrator runs a
+   keep-or-**discard** gate with the human, and discards mean the (proposed)
+   files are deleted.
 6. **Fill Reviewer notes honestly**: pruned findings + reasons, added findings,
    coverage gaps, and the disposition line for the docs/domain proposal.
 

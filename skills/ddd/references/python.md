@@ -114,7 +114,7 @@ class AggregateRoot(ABC):
     def __hash__(self) -> int:
         return hash(self._id)
 ```
-The `Specification` base (repository issue #55) is the same story: it needs the
+The `Specification` base is the same story: it needs the
 `&` / `|` / `~` combinator *implementations*, so it is an ABC, not a Protocol.
 
 When a port genuinely needs a little shared code, combine both rather than
