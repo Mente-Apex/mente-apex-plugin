@@ -27,7 +27,7 @@ finding you keep, you personally verified against the current code. You **edit n
    Reviewer notes even when it adds nothing.
 3. **Tier with the rubric** (when in doubt, tier down). Order findings within a
    tier by impact.
-4. **Write the report** using `report-template.md` exactly (`C*/M*/N*` ids,
+4. **Write the report** using `report-template.md` exactly (`<lens>/<tier>-<n>` ids — see the lens's report template / docs/report-contract.md,
    verbatim field names). Include the **Target architecture sketch**.
 5. **Reverse-engineer the implicit model** into proposed `docs/domain/` files —
    the ubiquitous language, bounded context(s), and aggregates + invariants the

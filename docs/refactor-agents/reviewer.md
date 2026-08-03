@@ -67,7 +67,7 @@ report template, and output path.
    recs get individual human confirmation, so an understated risk bypasses a
    human check. When in doubt on risk, rate **up**.
 5. **Write the report** using this lens's report template exactly — field
-   names and ID scheme (`C*/M*/N*`) are parsed downstream. Order recs within
+   names and ID scheme (`<lens>/<tier>-<n>` — see the lens's report template / docs/report-contract.md) are parsed downstream. Order recs within
    each tier by reader impact. Every rec's Proposed change must be concrete
    enough that an implementer who has read none of this conversation can
    execute it.
