@@ -423,7 +423,9 @@ class TestAbsence:
         )
         reading = PmdThresholds().thresholds_for(tmp_path)
         assert reading.cyclomatic_complexity is None
-        assert "pmd-ruleset.xml" in reading.source
+        assert any(
+            "pmd-ruleset.xml" in diagnostic for diagnostic in reading.diagnostics
+        )
 
     def test_pmd_non_numeric_report_level_is_absence(self, tmp_path):
         (tmp_path / "pmd-ruleset.xml").write_text(
@@ -436,7 +438,7 @@ class TestAbsence:
         )
         reading = PmdThresholds().thresholds_for(tmp_path)
         assert reading.cyclomatic_complexity is None
-        assert "ten" in reading.source
+        assert any("ten" in diagnostic for diagnostic in reading.diagnostics)
 
 
 class TestDiscoveryOrder:
@@ -557,8 +559,7 @@ class TestAMalformedConfigIsAbsenceNeverACrash:
         )
         reading = RuffThresholds().thresholds_for(tmp_path)
         assert reading.cyclomatic_complexity is None
-        assert "ten" in reading.source
-        assert reading.diagnostics
+        assert any("ten" in diagnostic for diagnostic in reading.diagnostics)
 
     def test_ruff_falls_through_a_broken_table_to_the_legacy_one(self, tmp_path):
         """An unreadable value in the current table is absence *for that
@@ -588,8 +589,10 @@ class TestAMalformedConfigIsAbsenceNeverACrash:
         finally:
             config_path.chmod(0o600)
         assert reading.cyclomatic_complexity is None
-        assert "pyproject.toml" in reading.source
-        assert "PermissionError" in reading.source
+        assert any(
+            "pyproject.toml" in diagnostic and "PermissionError" in diagnostic
+            for diagnostic in reading.diagnostics
+        )
 
     def test_eslint_legacy_json_root_that_is_not_an_object_says_why(self, tmp_path):
         """`[1,2,3]` is valid JSON and not an ESLint config. Asking a list for
@@ -597,13 +600,13 @@ class TestAMalformedConfigIsAbsenceNeverACrash:
         (tmp_path / ".eslintrc.json").write_text("[1,2,3]\n")
         reading = EslintThresholds().thresholds_for(tmp_path)
         assert reading.cyclomatic_complexity is None
-        assert ".eslintrc.json" in reading.source
+        assert any(".eslintrc.json" in diagnostic for diagnostic in reading.diagnostics)
 
     def test_eslint_legacy_rules_that_is_not_an_object_says_why(self, tmp_path):
         (tmp_path / ".eslintrc.json").write_text('{"rules": "all of them"}\n')
         reading = EslintThresholds().thresholds_for(tmp_path)
         assert reading.cyclomatic_complexity is None
-        assert "rules" in reading.source
+        assert any("rules" in diagnostic for diagnostic in reading.diagnostics)
 
     def test_eslint_legacy_non_integer_limit_says_why(self, tmp_path):
         """The object form is a declared limit this reader cannot use. Silently
@@ -630,8 +633,7 @@ class TestAMalformedConfigIsAbsenceNeverACrash:
         )
         reading = CheckstyleThresholds().thresholds_for(tmp_path)
         assert reading.cyclomatic_complexity is None
-        assert "checkstyle.xml" in reading.source
-        assert reading.diagnostics
+        assert any("checkstyle.xml" in diagnostic for diagnostic in reading.diagnostics)
 
     def test_checkstyle_non_numeric_max_is_absence_that_says_why(self, tmp_path):
         (tmp_path / "checkstyle.xml").write_text(
@@ -673,7 +675,9 @@ class TestAMalformedConfigIsAbsenceNeverACrash:
         finally:
             config_path.chmod(0o600)
         assert reading.cyclomatic_complexity is None
-        assert "eslint.config.js" in reading.source
+        assert any(
+            "eslint.config.js" in diagnostic for diagnostic in reading.diagnostics
+        )
 
     def test_eslint_flat_config_with_no_rule_at_all_is_plain_absence(self, tmp_path):
         """The control. Flat config is JavaScript and most of them set no
@@ -694,18 +698,24 @@ class TestAMalformedConfigIsAbsenceNeverACrash:
         finally:
             config_path.chmod(0o600)
         assert reading.cyclomatic_complexity is None
-        assert "PermissionError" in reading.source
+        assert any(
+            "PermissionError" in diagnostic for diagnostic in reading.diagnostics
+        )
 
 
 class TestDiscoveryTellsTheTwoAbsencesApart:
-    """`thresholds.source` is the only place a user learns which limit is in
-    force. "none declared" and "your config has a typo so nothing is" used to
-    read identically there, so a repo whose declared threshold was being
+    """ "This repo declares no limit" and "your config has a typo so nothing is"
+    used to read identically, so a repo whose declared threshold was being
     ignored got no signal at all — the same silence the probe exists to catch,
-    inside the module whose whole job is reading declared limits."""
+    inside the module whose whole job is reading declared limits.
+
+    `diagnostics` is what tells them apart. `source` does not: it names where
+    the limit in force came from, which in both of these cases is nowhere."""
 
     def test_a_repo_with_no_config_at_all_still_reads_none_declared(self, tmp_path):
-        assert discover_thresholds(tmp_path).source == "none declared"
+        thresholds = discover_thresholds(tmp_path)
+        assert thresholds.source == "none declared"
+        assert thresholds.diagnostics == ()
 
     def test_a_typo_is_not_reported_as_declaring_nothing(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text(
@@ -713,8 +723,20 @@ class TestDiscoveryTellsTheTwoAbsencesApart:
         )
         thresholds = discover_thresholds(tmp_path)
         assert thresholds.cyclomatic_complexity is None
-        assert thresholds.source != "none declared"
-        assert "ten" in thresholds.source
+        assert any("ten" in diagnostic for diagnostic in thresholds.diagnostics)
+
+    def test_source_never_restates_a_diagnostic(self, tmp_path):
+        """`source` used to be `"none readable — " + "; ".join(diagnostics)`,
+        so it meant one of two things depending on the field beside it and a
+        reader had to check `cyclomatic_complexity` to know which. Absence has
+        one wording now, whatever caused it."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.ruff.lint.mccabe]\nmax-complexity = "ten"\n'
+        )
+        thresholds = discover_thresholds(tmp_path)
+        assert thresholds.source == "none declared"
+        assert thresholds.diagnostics
+        assert "ten" not in thresholds.source
 
     def test_an_unreadable_config_does_not_hide_a_later_declared_limit(self, tmp_path):
         """A broken ruff table must not cost the repo its ESLint limit. The
@@ -759,8 +781,12 @@ class TestDiscoveryTellsTheTwoAbsencesApart:
         (tmp_path / ".eslintrc.json").write_text("[1,2,3]\n")
         thresholds = discover_thresholds(tmp_path)
         assert len(thresholds.diagnostics) == 2
-        assert "pyproject.toml" in thresholds.source
-        assert ".eslintrc.json" in thresholds.source
+        assert any(
+            "pyproject.toml" in diagnostic for diagnostic in thresholds.diagnostics
+        )
+        assert any(
+            ".eslintrc.json" in diagnostic for diagnostic in thresholds.diagnostics
+        )
 
 
 class TestADisabledRuleDeclaresNoLimit:

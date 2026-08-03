@@ -266,9 +266,13 @@ class TestABadConfigFileNeverCrashesTheRun:
         assert payload["status"] == "ran"
         assert payload["thresholds"]["cyclomatic_complexity"] is None
         # …and the typo is named rather than reported as "this repo declares
-        # no limit", which is what a repo with no config at all gets.
-        assert payload["thresholds"]["source"] != "none declared"
-        assert payload["thresholds"]["diagnostics"]
+        # no limit", which is what a repo with no config at all gets. The
+        # difference is `diagnostics`: `source` says "none declared" either
+        # way, because in both cases no limit came from anywhere.
+        assert payload["thresholds"]["source"] == "none declared"
+        assert any(
+            "ten" in diagnostic for diagnostic in payload["thresholds"]["diagnostics"]
+        )
         assert "ten" in captured.err
 
     def test_an_unreadable_pyproject_still_measures(self, tmp_path, capsys):
@@ -352,8 +356,11 @@ class TestABadConfigFileNeverCrashesTheRun:
         assert exit_code == 0
         assert payload["status"] == "ran"
         assert payload["thresholds"]["cyclomatic_complexity"] is None
-        assert "a source nobody guarded" in payload["thresholds"]["source"]
-        # The two human sinks never render the threshold source, so the cause
+        assert any(
+            "a source nobody guarded" in diagnostic
+            for diagnostic in payload["thresholds"]["diagnostics"]
+        )
+        # The two human sinks never render threshold state at all, so the cause
         # is announced on stderr too — where it cannot corrupt the JSON.
         assert "a source nobody guarded" in captured.err
 
