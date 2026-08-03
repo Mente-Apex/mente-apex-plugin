@@ -168,6 +168,16 @@ invocation of this script can observe about itself. In transcript/review mode
 a `verdict` object (`status`, `message`) inside the same payload so stdout
 stays one parseable document.
 
+Every run states what it measured — the scope's own description of the target,
+so `File.py:3-4` selecting no function is distinguishable from a file that has
+none. A range names one function, so it must name a file: `some/dir:1-2` is
+refused as `unverified` rather than answered by applying lines 1-2 to every
+file under the tree.
+
 Thresholds come from what your repo already declares (Checkstyle, PMD, ruff's
-`mccabe`, ESLint's `complexity`). The plugin ships none of its own. Statuses
-follow [`docs/status-vocabulary.md`](docs/status-vocabulary.md).
+`mccabe`, ESLint's `complexity`). The plugin ships none of its own. A config it
+finds but cannot read is reported as absence *with the cause* — on stderr, and
+as `thresholds.diagnostics` in the JSON payload — because "this repo declares
+no limit" and "your declared limit has a typo in it and is being ignored" are
+different facts. Statuses follow
+[`docs/status-vocabulary.md`](docs/status-vocabulary.md).

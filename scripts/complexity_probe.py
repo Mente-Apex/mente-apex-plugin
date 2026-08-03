@@ -42,7 +42,7 @@ from dataclasses import replace
 from complexity_probe_gate import CycleGate
 from complexity_probe_lizard import LizardProbe
 from complexity_probe_measurement import UNVERIFIED, Measurement
-from complexity_probe_scope import resolve_scope
+from complexity_probe_scope import ScopeSelection, resolve_scope
 from complexity_probe_sinks import ArtifactSink, ReviewSink, TranscriptSink
 from complexity_probe_thresholds import discover_thresholds, no_thresholds_because
 
@@ -74,8 +74,8 @@ def build_parser():
     return parser
 
 
-def _target_to_measure(arguments):
-    """Turn the parsed arguments into (paths, line_range) for a probe.
+def _selection_to_measure(arguments) -> ScopeSelection:
+    """Turn the parsed arguments into the selection a probe is asked for.
 
     A single positional argument is routed through `resolve_scope` so a range
     like "OrderService.java:40-120" still works. Two or more positional
@@ -87,17 +87,18 @@ def _target_to_measure(arguments):
     bare invocation, or `--scope`, resolves through the same vocabulary
     scripts/mutation_gate.py uses.
 
-    The line range comes back alongside the paths because a probe measures a
-    file, not a slice of one: narrowing to the requested lines is this
-    composition root's job, not the probe's.
+    The whole `ScopeSelection` comes back, not just its paths. The line range
+    is here because a probe measures a file, not a slice of one: narrowing to
+    the requested lines is this composition root's job, not the probe's. The
+    description is here because "no functions" is otherwise two different
+    facts wearing the same words — an empty file, and a range that selected
+    nothing — and only the selection knows which one happened.
     """
     if len(arguments.paths) == 1:
-        selection = resolve_scope(arguments.paths[0], repo_root=arguments.repo_root)
-        return selection.paths, selection.line_range
+        return resolve_scope(arguments.paths[0], repo_root=arguments.repo_root)
     if arguments.paths:
-        return tuple(arguments.paths), None
-    selection = resolve_scope(arguments.scope, repo_root=arguments.repo_root)
-    return selection.paths, selection.line_range
+        return ScopeSelection.of_literal_paths(arguments.paths)
+    return resolve_scope(arguments.scope, repo_root=arguments.repo_root)
 
 
 def _overlaps_line_range(metric, line_range) -> bool:
@@ -148,15 +149,21 @@ def main(argv=None) -> int:
         thresholds = no_thresholds_because(
             f"threshold discovery failed: {type(error).__name__}: {error}"
         )
-        # Neither human sink renders the threshold source, so without this the
-        # cause would survive only in --json. stderr keeps stdout a single
-        # valid JSON document.
-        print(f"thresholds: {thresholds.source}", file=sys.stderr)
+
+    # Neither human sink renders threshold state, so without this a config the
+    # repo declared but nobody could read would go unmentioned — indis-
+    # tinguishable from a repo that declares no limit at all. Printed from the
+    # diagnostics rather than from `source`, because when some *other* source
+    # did declare a usable limit `source` names that winning config and the
+    # cause would vanish exactly when the run looks healthiest. stderr keeps
+    # stdout a single valid JSON document.
+    for diagnostic in thresholds.diagnostics:
+        print(f"thresholds: {diagnostic}", file=sys.stderr)
 
     probe = LizardProbe()
 
     try:
-        paths, line_range = _target_to_measure(arguments)
+        selection = _selection_to_measure(arguments)
     except (ValueError, RuntimeError) as error:
         # A failure to determine scope is itself an unverified outcome: report
         # it as data, with the cause attached, rather than let it crash the
@@ -165,8 +172,12 @@ def main(argv=None) -> int:
         measurement = Measurement(
             status=UNVERIFIED, reason=f"scope could not be resolved: {error}"
         )
+        scope_description = None
     else:
-        measurement = _narrowed_to_line_range(probe.measure(paths), line_range)
+        measurement = _narrowed_to_line_range(
+            probe.measure(selection.paths), selection.line_range
+        )
+        scope_description = selection.description
 
     # Evaluate the verdict if --gate is passed, before rendering so JSON can include it.
     verdict = None
@@ -174,14 +185,14 @@ def main(argv=None) -> int:
         verdict = CycleGate().evaluate(measurement, probe.is_available())
 
     if arguments.json:
-        artifact = ArtifactSink().render(measurement, thresholds)
+        artifact = ArtifactSink().render(measurement, thresholds, scope_description)
         # In JSON mode, include the verdict in the payload so the entire output is valid JSON.
         if verdict:
             artifact["verdict"] = {"status": verdict.status, "message": verdict.message}
         print(json.dumps(artifact, indent=2))
     else:
         sink = TranscriptSink() if arguments.sink == "transcript" else ReviewSink()
-        print(sink.render(measurement, thresholds))
+        print(sink.render(measurement, thresholds, scope_description))
         # In transcript/review mode, print the verdict separately to stdout.
         if verdict:
             if verdict.blocks:
