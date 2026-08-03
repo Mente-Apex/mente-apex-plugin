@@ -894,8 +894,17 @@ class SnapshotPropagator:
 
         import config_sync_rejections as rejections_module
 
+        # The empty string, NOT `snapshot["timestamp"]` — exactly as
+        # `cmd_consolidate` passes "" for `base_files`, and for the same reason.
+        # The consolidated snapshot's timestamp is its *generation* time:
+        # `cmd_consolidate` stamps `datetime.now(UTC)` on every run, so it is
+        # always strictly newer than any recorded rejection and every rejection
+        # would read as stale intent — making `--scope local` inert. Content
+        # provenance is decided at the consolidate layer, where the contributing
+        # machine snapshot's own timestamp is still known; a local veto here is
+        # undone with `unreject`, never by the clock. Do not restore the field.
         files, removed_addresses = rejections_module.filter_snapshot_files(
-            files, self._policy, snapshot.get("timestamp", "")
+            files, self._policy, ""
         )
         result.rejection_removals.extend(removed_addresses)
         # Which `${...}` in a hook command config-sync itself minted. Absent on
