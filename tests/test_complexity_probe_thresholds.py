@@ -1,6 +1,10 @@
 """Thresholds come from the target repo or they do not exist. The plugin
 ships no numbers of its own (spec §4.2)."""
 
+import os
+
+import pytest
+
 from complexity_probe_thresholds import (
     CheckstyleThresholds,
     EslintThresholds,
@@ -114,17 +118,44 @@ class TestReadingWhatTheRepoDeclares:
         thresholds = EslintThresholds().thresholds_for(tmp_path)
         assert thresholds.cyclomatic_complexity == 10
 
-    def test_pmd_cyclomatic_complexity_is_read_from_classReportLevel(self, tmp_path):
+    def test_pmd_prefers_the_method_limit_over_the_class_limit(self, tmp_path):
+        """A realistic ruleset declares both, class-level first. Reading the
+        first textual match returned 80 — a per-class number compared against
+        a per-function measurement, so the "worth a look" marker could never
+        fire for any PMD repo while the artifact recorded 80 as the limit."""
         (tmp_path / "pmd-ruleset.xml").write_text(
             '<?xml version="1.0"?>\n'
             '<ruleset name="Custom" xmlns="http://pmd.sf.net/ruleset/1.0.0">\n'
             '  <rule ref="category/java/design.xml/CyclomaticComplexity">\n'
-            '    <property name="classReportLevel" value="10"/>\n'
+            "    <properties>\n"
+            '      <property name="classReportLevel" value="80"/>\n'
+            '      <property name="methodReportLevel" value="10"/>\n'
+            "    </properties>\n"
             "  </rule>\n"
             "</ruleset>\n"
         )
         thresholds = PmdThresholds().thresholds_for(tmp_path)
         assert thresholds.cyclomatic_complexity == 10
+
+    def test_pmd_reads_the_method_limit_from_the_rule_that_owns_it(self, tmp_path):
+        """An earlier, unrelated rule must not lend its numbers to this one."""
+        (tmp_path / "pmd-ruleset.xml").write_text(
+            '<?xml version="1.0"?>\n'
+            '<ruleset name="Custom" xmlns="http://pmd.sf.net/ruleset/1.0.0">\n'
+            '  <rule ref="category/java/design.xml/NPathComplexity">\n'
+            "    <properties>\n"
+            '      <property name="methodReportLevel" value="200"/>\n'
+            "    </properties>\n"
+            "  </rule>\n"
+            '  <rule ref="category/java/design.xml/CyclomaticComplexity">\n'
+            "    <properties>\n"
+            '      <property name="methodReportLevel" value="11"/>\n'
+            "    </properties>\n"
+            "  </rule>\n"
+            "</ruleset>\n"
+        )
+        thresholds = PmdThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 11
 
     def test_pmd_cyclomatic_complexity_is_read_from_methodReportLevel(self, tmp_path):
         (tmp_path / "pmd-ruleset.xml").write_text(
@@ -367,6 +398,40 @@ class TestAbsence:
         )
         assert PmdThresholds().thresholds_for(tmp_path) is None
 
+    def test_pmd_class_report_level_alone_is_not_a_per_function_limit(self, tmp_path):
+        """A ruleset declaring only the class-level limit declares no limit a
+        function can breach. Returning the class number would be an invented
+        per-function threshold, and a wrong number costs more than an absent
+        one."""
+        (tmp_path / "pmd-ruleset.xml").write_text(
+            '<?xml version="1.0"?>\n'
+            '<ruleset name="Custom" xmlns="http://pmd.sf.net/ruleset/1.0.0">\n'
+            '  <rule ref="category/java/design.xml/CyclomaticComplexity">\n'
+            "    <properties>\n"
+            '      <property name="classReportLevel" value="80"/>\n'
+            "    </properties>\n"
+            "  </rule>\n"
+            "</ruleset>\n"
+        )
+        assert PmdThresholds().thresholds_for(tmp_path) is None
+
+    def test_pmd_malformed_xml_is_absence_not_a_crash(self, tmp_path):
+        (tmp_path / "pmd-ruleset.xml").write_text(
+            '<?xml version="1.0"?>\n<ruleset><rule ref="CyclomaticComplexity">\n'
+        )
+        assert PmdThresholds().thresholds_for(tmp_path) is None
+
+    def test_pmd_non_numeric_report_level_is_absence(self, tmp_path):
+        (tmp_path / "pmd-ruleset.xml").write_text(
+            '<?xml version="1.0"?>\n'
+            "<ruleset>\n"
+            '  <rule ref="category/java/design.xml/CyclomaticComplexity">\n'
+            '    <property name="methodReportLevel" value="ten"/>\n'
+            "  </rule>\n"
+            "</ruleset>\n"
+        )
+        assert PmdThresholds().thresholds_for(tmp_path) is None
+
 
 class TestDiscoveryOrder:
     def test_the_first_source_that_declares_a_number_wins(self, tmp_path):
@@ -466,3 +531,137 @@ class TestDiscoveryOrder:
         )
         thresholds = discover_thresholds(tmp_path)
         assert thresholds.cyclomatic_complexity == 7
+
+
+class TestAMalformedConfigIsAbsenceNeverACrash:
+    """Every source reads a file some other tool owns, so a repo with a typo in
+    that file is still owed a measurement. Before this, three shapes escaped as
+    tracebacks and took exit 1 — the code this branch reserves for a blocking
+    gate verdict — turning "the gate is a reporter, not a blocker" into a claim
+    a config typo could falsify."""
+
+    def test_ruff_non_integer_max_complexity_is_absence(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.ruff.lint.mccabe]\nmax-complexity = "ten"\n'
+        )
+        assert RuffThresholds().thresholds_for(tmp_path) is None
+
+    def test_ruff_falls_through_a_broken_table_to_the_legacy_one(self, tmp_path):
+        """An unreadable value in the current table is absence *for that
+        table*, not for the file: a repo that still declares a usable legacy
+        limit gets it."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.ruff.lint.mccabe]\nmax-complexity = "ten"\n'
+            "[tool.ruff.mccabe]\nmax-complexity = 7\n"
+        )
+        thresholds = RuffThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 7
+
+    def test_ruff_unexpected_table_shape_is_absence(self, tmp_path):
+        """`tool.ruff` is a string here, so the old `.get()` chain would raise
+        AttributeError on a perfectly valid TOML document."""
+        (tmp_path / "pyproject.toml").write_text('[tool]\nruff = "please"\n')
+        assert RuffThresholds().thresholds_for(tmp_path) is None
+
+    def test_ruff_unreadable_pyproject_is_absence(self, tmp_path):
+        if os.geteuid() == 0:
+            pytest.skip("running as root: file mode 000 is still readable")
+        config_path = tmp_path / "pyproject.toml"
+        config_path.write_text("[tool.ruff.lint.mccabe]\nmax-complexity = 8\n")
+        config_path.chmod(0o000)
+        try:
+            assert RuffThresholds().thresholds_for(tmp_path) is None
+        finally:
+            config_path.chmod(0o600)
+
+    def test_eslint_legacy_json_root_that_is_not_an_object_is_absence(self, tmp_path):
+        """`[1,2,3]` is valid JSON and not an ESLint config. Asking a list for
+        `rules` was an AttributeError all the way to the user."""
+        (tmp_path / ".eslintrc.json").write_text("[1,2,3]\n")
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_eslint_legacy_rules_that_is_not_an_object_is_absence(self, tmp_path):
+        (tmp_path / ".eslintrc.json").write_text('{"rules": "all of them"}\n')
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_eslint_legacy_non_integer_limit_is_absence(self, tmp_path):
+        (tmp_path / ".eslintrc.json").write_text(
+            '{"rules": {"complexity": ["error", {"max": 10}]}}\n'
+        )
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_eslint_unreadable_legacy_config_is_absence(self, tmp_path):
+        if os.geteuid() == 0:
+            pytest.skip("running as root: file mode 000 is still readable")
+        config_path = tmp_path / ".eslintrc.json"
+        config_path.write_text('{"rules": {"complexity": ["error", 10]}}')
+        config_path.chmod(0o000)
+        try:
+            assert EslintThresholds().thresholds_for(tmp_path) is None
+        finally:
+            config_path.chmod(0o600)
+
+
+class TestADisabledRuleDeclaresNoLimit:
+    """`["off", 10]` is a repo saying "do not run this rule". The 10 beside it
+    is a leftover, not a declared limit — reporting it made the probe point at
+    breaches of a threshold the project had switched off. The flat and legacy
+    paths have always agreed on what a severity means and must keep agreeing,
+    so both are pinned here."""
+
+    def test_flat_config_off_severity_yields_nothing(self, tmp_path):
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n" "  { rules: { complexity: ['off', 10] } },\n" "];\n"
+        )
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_flat_config_zero_severity_yields_nothing(self, tmp_path):
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n  { rules: { complexity: [0, 10] } },\n];\n"
+        )
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_legacy_config_off_severity_yields_nothing(self, tmp_path):
+        (tmp_path / ".eslintrc.json").write_text(
+            '{"rules": {"complexity": ["off", 10]}}'
+        )
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_legacy_config_zero_severity_yields_nothing(self, tmp_path):
+        (tmp_path / ".eslintrc.json").write_text('{"rules": {"complexity": [0, 10]}}')
+        assert EslintThresholds().thresholds_for(tmp_path) is None
+
+    def test_an_enabled_rule_beside_a_disabled_one_is_still_read(self, tmp_path):
+        """Skipping a disabled rule must not also discard the live one."""
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n"
+            "  { rules: { complexity: ['off', 10] } },\n"
+            "  { files: ['src/**'], rules: { complexity: ['error', 12] } },\n"
+            "];\n"
+        )
+        thresholds = EslintThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 12
+
+
+class TestArrowFunctionsBeforeTheRule:
+    def test_a_regex_literal_after_an_arrow_does_not_swallow_the_rule(self, tmp_path):
+        """`=>` ends with `>`, which was missing from the regex-literal
+        preceders — so `/["']/` read as division and its quote characters
+        opened a string that swallowed the rest of the file, including the
+        real rule. Arrow functions are near-universal in eslint.config.js."""
+        (tmp_path / "eslint.config.js").write_text(
+            "const hasQuote = (value) => /[\"']/.test(value);\n"
+            "export default [\n"
+            "  { rules: { complexity: ['error', 12] } },\n"
+            "];\n"
+        )
+        thresholds = EslintThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 12
+
+    def test_the_same_file_without_the_arrow_already_worked(self, tmp_path):
+        """The control: the defect was the arrow, not the regex literal."""
+        (tmp_path / "eslint.config.js").write_text(
+            "export default [\n" "  { rules: { complexity: ['error', 12] } },\n" "];\n"
+        )
+        thresholds = EslintThresholds().thresholds_for(tmp_path)
+        assert thresholds.cyclomatic_complexity == 12
