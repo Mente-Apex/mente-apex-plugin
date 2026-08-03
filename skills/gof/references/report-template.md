@@ -2,6 +2,10 @@
 
 The reviewer writes `docs/reports/gof/GOF-REPORT-<YYYY-MM-DD>.md` in exactly this
 shape. Rec IDs, `Risk`, and `Status` are load-bearing (parsed by the apply phase).
+Field names, the ID scheme, and the anchor rule are the canonical finding schema
+defined once in [docs/report-contract.md](../../../docs/report-contract.md) —
+`Problem now` and `Expected benefit` are this lens's declared alias pair for the
+canonical `Reader impact` field (see that doc's alias table).
 
 Rec IDs are self-describing: `gof/<tier>-<n>`, where `<tier>` ∈ `critical | major
 | minor` — so `gof/major-1` reads as "the first Major finding from the GoF lens"
@@ -47,6 +51,8 @@ auto-generated heading anchors don't handle the `/`).
 
 - **Pattern:** <one of the 23>
 - **Location:** `file:line` <all sites>
+- **Evidence:** <the structural elements/method names that show the smell — quote
+  the key lines. No evidence, no finding.>
 - **Problem now:** <the concrete pain: duplicated/forced/missing structure>
 - **Proposed change:** <behavior-preserving steps; name new classes/protocols>
 - **Expected benefit:** <what becomes easier/safer>
@@ -71,9 +77,9 @@ auto-generated heading anchors don't handle the `/`).
 
 ## Coverage & method
 
-Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
-`unverified`, one line each, and **every `unverified` states its reason**. Absence
-is data, never silence.
+Per the plugin's status vocabulary — `ran` / `degraded` / `unverified`, one
+line each, and **every `unverified` states its reason**. Absence is data,
+never silence.
 
 | What | Status | Note |
 |---|---|---|
@@ -85,6 +91,13 @@ is data, never silence.
 - Findings added by the reviewer: <IDs>, or "none"
 - Areas not examined: <anything skipped, so the human knows the coverage>
 - Cross-lens references: <solid rec IDs this analysis references, or "none">
+
+## Outcome
+
+<!-- Written by the orchestrator at Phase 5, once an apply phase has run — the
+     persisted run synthesis (applied/deferred/failed ids, suite before/after,
+     net diffstat, verification method, residuals). Omit this whole section
+     entirely on an audit-only run; format per refactor-workflow.md. -->
 
 ## Apply log
 

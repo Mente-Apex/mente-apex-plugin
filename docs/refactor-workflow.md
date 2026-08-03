@@ -366,7 +366,9 @@ Every apply-capable report ends with the same mechanics. The report templates la
 the *skeleton* (the `Status:` line on each rec, an `## Apply log` heading, and — where
 present — an `## Outcome` heading); this section is the single definition of what fills
 them, so the templates point here instead of each restating it — if the vocabulary ever
-grows, it grows in one place.
+grows, it grows in one place. The finding *shape* itself — the field set, the ID/anchor/
+filename rules, and the lens-flavoured field aliases — is defined once in
+[report-contract.md](report-contract.md), not here.
 
 - **Status values** — each rec's `Status:` line moves through
   `pending` → `applied` | `failed (reverted)` | `skipped (not approved)` |
