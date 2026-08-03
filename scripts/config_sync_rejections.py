@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -54,6 +55,17 @@ def rejection_id_of(kind: str, address: str) -> str:
     """
     payload = "\0".join([kind, address]).encode("utf-8")
     return hashlib.sha1(payload).hexdigest()[:12]
+
+
+@runtime_checkable
+class SuppressionRule(Protocol):
+    """Whether a rejection still applies to content arriving now.
+
+    The seam `CompositeRejectionPolicy` depends on, so "what counts as fresh
+    intent" can change without touching the policy. One reason to change.
+    """
+
+    def suppresses(self, record: RejectionRecord, source_timestamp: str) -> bool: ...
 
 
 class TimestampedRejectionRule:
@@ -109,9 +121,26 @@ def _read_ledger(path: Path) -> list[RejectionRecord]:
 
 
 def _write_ledger(path: Path, records: list[RejectionRecord]) -> None:
+    """Write atomically: temp file in the same directory, then `os.replace`.
+
+    Reads are deliberately fail-closed (`CorruptRejectionLedgerError`), so a
+    write interrupted midway — Ctrl-C, a full disk, a crash — would leave a
+    truncated ledger that aborts both `consolidate` and `apply` on every
+    subsequent run until someone repairs it by hand. `os.replace` is atomic
+    within a filesystem, and the temp file is created beside the target
+    precisely to keep it on that filesystem.
+
+    The temp name ends in `.tmp`, not `.json`, so a crash between write and
+    replace cannot leave a file that `SharedRejectionStore.all()`'s `*.json`
+    glob would pick up as a real ledger.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"rejections": [vars(record) for record in records]}
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    temp_path = path.with_name(path.name + ".tmp")
+    temp_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    os.replace(temp_path, path)
 
 
 def _replacing(records: list[RejectionRecord], incoming: RejectionRecord) -> list:
@@ -216,7 +245,7 @@ class CompositeRejectionPolicy:
     docs/superpowers/specs/2026-08-03-config-sync-rejection-ledger-design.md:115.
     """
 
-    def __init__(self, stores: list, rule=None):
+    def __init__(self, stores: list, rule: SuppressionRule | None = None):
         self._stores = stores
         self._rule = rule if rule is not None else TimestampedRejectionRule()
 
@@ -240,10 +269,15 @@ class CompositeRejectionPolicy:
             store.forget(rejection_id)
 
     def is_rejected(self, target: RejectionTarget, source_timestamp: str) -> bool:
+        # Bound ONCE. `all()` re-reads every ledger file on the shared store, and
+        # `cmd_consolidate` asks this question per file and per section, per
+        # machine — two calls here meant hundreds of redundant file reads per
+        # fold.
+        records = self.all()
         target_id = rejection_id_of(target.kind, target.address)
         rejections = [
             found
-            for found in self.all()
+            for found in records
             if found.revives is None and found.id == target_id
         ]
         if not rejections:
@@ -251,7 +285,7 @@ class CompositeRejectionPolicy:
         newest = max(rejections, key=lambda found: found.rejected_at)
         revivals = [
             found
-            for found in self.all()
+            for found in records
             if found.revives == target_id and found.rejected_at > newest.rejected_at
         ]
         if revivals:

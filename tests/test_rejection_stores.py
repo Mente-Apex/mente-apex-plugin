@@ -123,3 +123,23 @@ def test_local_store_payload_is_a_plain_list_of_records(tmp_path):
         (tmp_path / "config-sync-rejections.json").read_text(encoding="utf-8")
     )
     assert payload["rejections"][0]["address"] == "rules/a.md"
+
+
+def test_a_write_leaves_no_temporary_file_behind(store, tmp_path):
+    """The atomic write stages through `<name>.tmp` + `os.replace`. A leftover
+    temp file would mean the replace never happened."""
+    store.record(_record(scope=store.scope))
+    assert list(tmp_path.rglob("*.tmp")) == []
+
+
+def test_an_interrupted_write_cannot_be_mistaken_for_a_ledger(tmp_path):
+    """`SharedRejectionStore.all()` globs `*.json`. Were the staging file named
+    `<machine>.json.partial`-style with a `.json` suffix, a crash between write
+    and replace would leave a half-written file the next read would parse as a
+    real ledger — and fail-closed reads would then abort every consolidate and
+    apply until someone found it."""
+    store = _shared(tmp_path)
+    store.record(_record(scope="network"))
+    stray = tmp_path / "repo" / "rejections" / "machine-a.json.tmp"
+    stray.write_text("{not json", encoding="utf-8")
+    assert len(store.all()) == 1
