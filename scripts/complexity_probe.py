@@ -37,13 +37,14 @@ unreachable branch here as dead code to delete.
 import argparse
 import json
 import sys
+from dataclasses import replace
 
 from complexity_probe_gate import CycleGate
 from complexity_probe_lizard import LizardProbe
 from complexity_probe_measurement import UNVERIFIED, Measurement
 from complexity_probe_scope import resolve_scope
 from complexity_probe_sinks import ArtifactSink, ReviewSink, TranscriptSink
-from complexity_probe_thresholds import discover_thresholds
+from complexity_probe_thresholds import discover_thresholds, no_thresholds_because
 
 
 def build_parser():
@@ -73,8 +74,8 @@ def build_parser():
     return parser
 
 
-def _paths_to_measure(arguments):
-    """Turn the parsed arguments into the paths a probe should measure.
+def _target_to_measure(arguments):
+    """Turn the parsed arguments into (paths, line_range) for a probe.
 
     A single positional argument is routed through `resolve_scope` so a range
     like "OrderService.java:40-120" still works. Two or more positional
@@ -85,21 +86,77 @@ def _paths_to_measure(arguments):
     failure aborting a request that never needed git in the first place. A
     bare invocation, or `--scope`, resolves through the same vocabulary
     scripts/mutation_gate.py uses.
+
+    The line range comes back alongside the paths because a probe measures a
+    file, not a slice of one: narrowing to the requested lines is this
+    composition root's job, not the probe's.
     """
     if len(arguments.paths) == 1:
-        return resolve_scope(arguments.paths[0], repo_root=arguments.repo_root).paths
+        selection = resolve_scope(arguments.paths[0], repo_root=arguments.repo_root)
+        return selection.paths, selection.line_range
     if arguments.paths:
-        return tuple(arguments.paths)
-    return resolve_scope(arguments.scope, repo_root=arguments.repo_root).paths
+        return tuple(arguments.paths), None
+    selection = resolve_scope(arguments.scope, repo_root=arguments.repo_root)
+    return selection.paths, selection.line_range
+
+
+def _overlaps_line_range(metric, line_range) -> bool:
+    """Whether a measured function intersects the requested line range.
+
+    Overlap, deliberately, not containment. A function that straddles the
+    boundary of the requested chunk is part of that chunk — it is very often
+    the function the reviewer's cursor is sitting in — and dropping it would
+    reproduce the failure this scoping exists to fix, only in the other
+    direction: a confident report that omits the target.
+    """
+    requested_start, requested_end = line_range
+    return metric.start_line <= requested_end and metric.end_line >= requested_start
+
+
+def _narrowed_to_line_range(measurement, line_range):
+    """The same measurement carrying only the functions inside `line_range`.
+
+    Without this, `File.py:1-2` reported every function in File.py — the
+    caller's scope parsed, echoed and then discarded, which is a confident
+    number attributed to the wrong target. Three shipped surfaces advertise
+    the range form, so it has to mean something.
+    """
+    if line_range is None:
+        return measurement
+    return replace(
+        measurement,
+        functions=tuple(
+            metric
+            for metric in measurement.functions
+            if _overlaps_line_range(metric, line_range)
+        ),
+    )
 
 
 def main(argv=None) -> int:
     arguments = build_parser().parse_args(argv)
-    thresholds = discover_thresholds(arguments.repo_root)
+
+    try:
+        thresholds = discover_thresholds(arguments.repo_root)
+    except Exception as error:
+        # Each source already treats a config it cannot read as absence. This
+        # is the backstop that makes that invariant structural rather than
+        # dependent on every future source remembering it: exit 1 is reserved
+        # for a blocking gate verdict, so a repo with a typo in someone else's
+        # config file must still get a measurement and a stated "no limit" —
+        # never a traceback wearing the gate's reserved exit code.
+        thresholds = no_thresholds_because(
+            f"threshold discovery failed: {type(error).__name__}: {error}"
+        )
+        # Neither human sink renders the threshold source, so without this the
+        # cause would survive only in --json. stderr keeps stdout a single
+        # valid JSON document.
+        print(f"thresholds: {thresholds.source}", file=sys.stderr)
+
     probe = LizardProbe()
 
     try:
-        paths = _paths_to_measure(arguments)
+        paths, line_range = _target_to_measure(arguments)
     except (ValueError, RuntimeError) as error:
         # A failure to determine scope is itself an unverified outcome: report
         # it as data, with the cause attached, rather than let it crash the
@@ -109,7 +166,7 @@ def main(argv=None) -> int:
             status=UNVERIFIED, reason=f"scope could not be resolved: {error}"
         )
     else:
-        measurement = probe.measure(paths)
+        measurement = _narrowed_to_line_range(probe.measure(paths), line_range)
 
     # Evaluate the verdict if --gate is passed, before rendering so JSON can include it.
     verdict = None
