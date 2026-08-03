@@ -43,7 +43,7 @@ honestly.
 
 ## Output — `draft-findings.md`
 
-One entry per finding: `## [T<n>] title` with **Kind** (rubric dimension), **Location**
+One entry per finding: `## [D<n>] title` with **Kind** (rubric dimension), **Location**
 (`tests/file:line`; all sites), **Evidence**, **Impact**, **Fix**, **Deletion?**
 (yes → what coverage proof is needed), **Suggested tier**, **Suggested risk**,
 **Confidence**, and a possible **Cross-ref** to another lens. End with a **Coverage**

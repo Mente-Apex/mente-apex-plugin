@@ -414,3 +414,38 @@ def test_gof_evals_valid_schema():
             eval_case.keys() >= EVAL_CASE_KEYS
         ), f"case {eval_case.get('id')} missing keys"
         assert isinstance(eval_case["assertions"], list) and eval_case["assertions"]
+
+
+# Every analyzer role file that spells out its own draft entry heading format —
+# the shared docs/refactor-agents/analyzer.md, and each lens-local override that
+# doesn't just link back to it. solid/gof's agents/analyzer.md are deliberately
+# absent: they only point at the shared file and never restate the format, so
+# they carry nothing to drift.
+DRAFT_ENTRY_FORMAT_FILES = (
+    "docs/refactor-agents/analyzer.md",
+    "skills/ddd/agents/analyzer.md",
+    "skills/clean-architecture/agents/analyzer.md",
+    "skills/clean-code/agents/analyzer.md",
+    "skills/test-quality/agents/analyzer.md",
+)
+STRAY_DRAFT_ENTRY_LETTERS = ("[A<n>]", "[G<n>]", "[T<n>]")
+
+
+def test_draft_entry_id_format_is_converged_on_shared_d_n():
+    """The draft's per-finding heading prefix used to vary by lens ([D<n>] shared,
+    [A<n>] clean-architecture, [G<n>] clean-code, [T<n>] test-quality) -- a
+    divergence the plan's 8.6 item asked to align. It's since converged on the
+    shared [D<n>] everywhere; this guards against a lens-local analyzer
+    reintroducing its own letter. The draft prefix is scratch numbering for the
+    analyzer->reviewer hand-off only (see docs/refactor-workflow.md's cast-table
+    note) -- distinct from, and never confused with, the permanent
+    <lens>/<tier>-<n> ID the report template assigns."""
+    offenders = []
+    for relative_path in DRAFT_ENTRY_FORMAT_FILES:
+        text = (REPO_ROOT / relative_path).read_text()
+        if "[D<n>]" not in text:
+            offenders.append(f"{relative_path}: missing the shared [D<n>] draft format")
+        for stray_letter in STRAY_DRAFT_ENTRY_LETTERS:
+            if stray_letter in text:
+                offenders.append(f"{relative_path}: still carries stray {stray_letter}")
+    assert not offenders, "Draft entry-ID format drifted:\n" + "\n".join(offenders)

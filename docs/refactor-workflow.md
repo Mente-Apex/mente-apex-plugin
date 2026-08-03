@@ -38,12 +38,12 @@ lens-local file is dispatched instead of the shared one for that role — Phase 
 this for the implementer specifically; the same direction holds for analyzer and
 reviewer. A lens-local file typically stays thin (rubric path, output path) and links
 back to the shared file it specializes rather than restating it, e.g.
-[skills/solid/agents/analyzer.md](../skills/solid/agents/analyzer.md). One thing a
-lens-local analyzer may change along the way: the draft's per-finding heading prefix —
-the shared format is `[D<n>]` (`docs/refactor-agents/analyzer.md`); clean-architecture
-uses `[A<n>]`, clean-code `[G<n>]`, test-quality `[T<n>]`. That prefix is scratch
-numbering for the analyzer→reviewer hand-off only — it never survives into the final
-report, which always uses the canonical `<lens>/<tier>-<n>` ID from
+[skills/solid/agents/analyzer.md](../skills/solid/agents/analyzer.md). The draft's
+per-finding heading prefix is `[D<n>]` everywhere — `D` for draft — whether the
+analyzer role in play is the shared `docs/refactor-agents/analyzer.md` or a
+lens-local override; a lens-local analyzer does not get its own letter. That prefix
+is scratch numbering for the analyzer→reviewer hand-off only — it never survives
+into the final report, which always uses the canonical `<lens>/<tier>-<n>` ID from
 [report-contract.md](report-contract.md).
 
 All agent instruction paths above are relative to the plugin root. Dispatch

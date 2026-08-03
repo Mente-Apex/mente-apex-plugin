@@ -39,7 +39,7 @@ and flag borderline items honestly.
 
 ## Output — `draft-findings.md`
 
-One entry per finding: `## [A<n>] title` with **Check**, **Location** (component /
+One entry per finding: `## [D<n>] title` with **Check**, **Location** (component /
 `file:line`; cycle chain), **Evidence**, **Reader impact**, **Proposed change**,
 **Suggested tier**, **Confidence**, and a possible **Cross-ref** to another lens.
 End with a **Coverage** section (what you examined, what you skipped, and the
