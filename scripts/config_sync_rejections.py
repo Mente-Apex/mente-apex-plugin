@@ -257,3 +257,100 @@ class CompositeRejectionPolicy:
         if revivals:
             return False
         return self._rule.suppresses(newest, source_timestamp)
+
+
+def rejoin_sections(sections: list) -> str:
+    """Inverse of `config_sync_merge._parse_sections`.
+
+    That function stores a section's heading line separately from its body (the
+    lines that followed it), so rejoining puts the heading back with the newline
+    the split consumed. The preamble has no heading line to restore.
+    """
+    # Deferred import: config_sync_merge is a sibling script, not a package.
+    import config_sync_merge as merge
+
+    parts = []
+    for _key, heading, body in sections:
+        if heading == merge._PREAMBLE:
+            parts.append(body)
+        else:
+            parts.append(heading + "\n" + body)
+    return "".join(parts)
+
+
+def section_address(file_key: str, heading: str, occurrence: int) -> str:
+    """JSON rather than a delimited string: a heading may legitimately contain
+    any character, including whatever separator a flat encoding would pick."""
+    return json.dumps(
+        {"file": file_key, "heading": heading, "occurrence": occurrence},
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+
+class SnapshotFileAddressor:
+    """A whole file in the snapshot, addressed by its own dict key."""
+
+    kind = "snapshot-file"
+
+    def identify(self, file_key: str) -> str:
+        return file_key
+
+    def matches(self, address: str, file_key: str) -> bool:
+        return address == file_key
+
+
+class SnapshotSectionAddressor:
+    """One markdown section, addressed by (file, heading, nth occurrence) — the
+    key `_parse_sections` already produces, so repeated headings stay distinct."""
+
+    kind = "snapshot-section"
+
+    def identify(self, unit) -> str:
+        file_key, heading, occurrence = unit
+        return section_address(file_key, heading, occurrence)
+
+    def matches(self, address: str, unit) -> bool:
+        return address == self.identify(unit)
+
+
+def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
+    """Subtract rejected files and sections from a snapshot `files` mapping.
+
+    Returns `(kept_files, removed_addresses)`. A file whose every section is
+    rejected is kept as empty rather than dropped — dropping it would be a
+    *file* rejection the operator never asked for.
+    """
+    # Deferred import: config_sync_merge is a sibling script, not a package.
+    import config_sync_merge as merge
+
+    file_addressor = SnapshotFileAddressor()
+    section_addressor = SnapshotSectionAddressor()
+    kept: dict = {}
+    removed: list = []
+
+    for file_key, content in files.items():
+        file_target = RejectionTarget(
+            kind=file_addressor.kind, address=file_addressor.identify(file_key)
+        )
+        if policy.is_rejected(file_target, source_timestamp):
+            removed.append(file_target.address)
+            continue
+
+        if not isinstance(content, str) or not file_key.endswith(".md"):
+            kept[file_key] = content
+            continue
+
+        surviving_sections = []
+        for (heading_text, occurrence), heading, body in merge._parse_sections(content):
+            unit = (file_key, heading_text, occurrence)
+            section_target = RejectionTarget(
+                kind=section_addressor.kind, address=section_addressor.identify(unit)
+            )
+            if policy.is_rejected(section_target, source_timestamp):
+                removed.append(section_target.address)
+                continue
+            surviving_sections.append(((heading_text, occurrence), heading, body))
+        kept[file_key] = rejoin_sections(surviving_sections)
+
+    return kept, removed
