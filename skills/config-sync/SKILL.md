@@ -420,10 +420,11 @@ per-content provenance, which is Phase 2.
 
 ## Step 5 — Commit the updated consolidated snapshot and rejections, then push
 
-`rejections/` is staged here, not in Step 1. `reject` and `resolve-rejection keep`
-run at Step 4 — *after* Step 1's commit — so this is the only commit in the cycle
-that carries them. Without it a `--scope network` rejection stays an uncommitted
-working-tree change forever and never reaches another machine.
+This is the commit that carries `rejections/`. `reject` and `resolve-rejection
+keep` run at Step 4 — *after* Step 1 has already committed — so Step 1's staging
+can only ever pick up a ledger left behind by an earlier run. Without this one, a
+`--scope network` rejection stays an uncommitted working-tree change forever and
+never reaches another machine.
 
 ```bash
 cd "$REPO"
