@@ -141,3 +141,63 @@ def test_umbrella_skill_prose_is_group_aware():
     assert (
         "grouped change" in lowered or "as units" in lowered
     ), "umbrella SKILL.md must state groups are approved/applied as units"
+
+
+def test_consolidator_carries_gof_inventory_as_informational_never_findings():
+    text = read_cq("agents/consolidator.md")
+    lowered = text.lower()
+    assert (
+        "detected patterns" in lowered and "maturity" in lowered
+    ), "consolidator.md must say what to do with gof's A-F inventory + Maturity line"
+    assert (
+        "coverage & method" in lowered or "coverage notes" in lowered
+    ), "consolidator.md must route gof's non-finding context to an informational section"
+    assert (
+        "never" in lowered and "finding" in lowered
+    ), "consolidator.md must state the gof inventory is never filed as a finding"
+
+
+def test_umbrella_skill_skips_gof_html_in_umbrella_mode():
+    phase2 = extract_section(read_cq("SKILL.md"), "Phase 2 —").lower()
+    assert (
+        "html" in phase2 and "gof" in phase2 and "skip" in phase2
+    ), "umbrella SKILL.md Phase 2 must tell the gof reviewer to skip its HTML report"
+
+
+def test_umbrella_skill_reaps_drafts_after_consolidation():
+    phase25 = extract_section(read_cq("SKILL.md"), "Phase 2.5").lower()
+    assert (
+        "reap" in phase25 and "draft-findings.md" in phase25
+    ), "umbrella SKILL.md Phase 2.5 must state the draft-reap step"
+    assert (
+        "exists and parses" in phase25
+    ), "the reap must be conditioned on the consolidated report existing and parsing"
+
+
+def test_report_template_lenses_run_example_lists_all_six_lenses():
+    text = read_cq("references/report-template.md")
+    lenses_run_line = next(
+        line for line in text.splitlines() if line.strip().startswith("- Lenses run:")
+    )
+    for lens in (
+        "clean-architecture",
+        "ddd",
+        "solid",
+        "gof",
+        "clean-code",
+        "test-quality",
+    ):
+        assert (
+            lens in lenses_run_line
+        ), f"report-template.md example 'Lenses run:' line must include {lens}"
+
+
+def test_report_template_severity_tiers_naming_is_aligned():
+    text = read_cq("references/report-template.md")
+    ids_section = extract_section(text, "IDs")
+    assert (
+        "severity rubrics" not in ids_section.lower()
+    ), "the IDs section must not claim both lenses share one 'Severity rubrics' name"
+    assert (
+        "tiers rubric" in ids_section.lower()
+    ), "the IDs section must name test-quality's rubric section by its actual title, Tiers"
