@@ -42,10 +42,28 @@ def test_rejecting_a_section_records_it(tmp_path, capsys):
     assert payload["scope"] == "network"
 
 
-def test_scope_defaults_to_network_and_local_is_selectable(tmp_path, capsys):
+def test_scope_defaults_to_network_and_local_is_selectable(
+    tmp_path, capsys, claude_home
+):
     repo = _repo(tmp_path)
     config_sync.cmd_reject(str(repo), "snapshot-file", "rules/a.md", "--scope", "local")
     assert json.loads(capsys.readouterr().out)["scope"] == "local"
+
+    # Scope routing is the property that keeps a local veto out of the
+    # network (CompositeRejectionPolicy.record routes by the record's own
+    # scope) — assert it on disk, not just in the printed payload, so a
+    # regression that routed "local" into the shared repo would be caught.
+    shared_repo_rejections = repo / "rejections"
+    assert not shared_repo_rejections.exists() or not any(
+        shared_repo_rejections.glob("*.json")
+    )
+
+    local_ledger_path = claude_home / "config-sync-rejections.json"
+    assert local_ledger_path.exists()
+    local_rejections = json.loads(local_ledger_path.read_text(encoding="utf-8"))[
+        "rejections"
+    ]
+    assert [entry["address"] for entry in local_rejections] == ["rules/a.md"]
 
 
 def test_an_address_matching_nothing_is_refused(tmp_path):
@@ -126,3 +144,65 @@ def test_rejecting_one_of_several_sections_is_not_guarded(tmp_path, capsys):
         str(repo), "snapshot-section", "CLAUDE.md", "--section", STALE
     )
     assert json.loads(capsys.readouterr().out)["id"]
+
+
+def test_an_out_of_range_occurrence_is_refused(tmp_path):
+    """`CLAUDE.md` has exactly one `STALE` heading (occurrence 0). Asking for
+    occurrence 7 must not silently address something that will never match —
+    that is the exact ledger-rot the command's address resolution exists to
+    prevent."""
+    repo = _repo(tmp_path)
+    with pytest.raises(config_sync.UnknownRejectionTargetError):
+        config_sync.cmd_reject(
+            str(repo),
+            "snapshot-section",
+            "CLAUDE.md",
+            "--section",
+            STALE,
+            "--occurrence",
+            "7",
+        )
+
+
+REPEATED_HEADING_DOCUMENT = "## Notes\n\nalpha\n\n## Notes\n\nbeta\n"
+
+
+def _repo_with_repeated_heading(tmp_path):
+    repo = tmp_path / "repo3"
+    (repo / "consolidated").mkdir(parents=True)
+    (repo / "consolidated" / "snapshot.json").write_text(
+        json.dumps({"files": {"dup.md": REPEATED_HEADING_DOCUMENT}}), encoding="utf-8"
+    )
+    return repo
+
+
+def test_rejecting_one_occurrence_of_a_repeated_heading_is_not_guarded(
+    tmp_path, capsys
+):
+    """Rejecting occurrence 0 of a twice-repeated `## Notes` leaves occurrence
+    1 ("beta") behind, so the file is not emptied and the guard must not
+    fire. The recorded address must target occurrence 0 specifically."""
+    repo = _repo_with_repeated_heading(tmp_path)
+    config_sync.cmd_reject(
+        str(repo),
+        "snapshot-section",
+        "dup.md",
+        "--section",
+        "## Notes",
+        "--occurrence",
+        "0",
+    )
+    payload = json.loads(capsys.readouterr().out)
+    address = json.loads(payload["address"])
+    assert address == {"file": "dup.md", "heading": "## Notes", "occurrence": 0}
+
+
+def test_a_mistyped_option_is_refused(tmp_path):
+    """`--scop` (missing the `e`) must not silently leave `scope` at its
+    "network" default — a private rejection would then propagate to every
+    machine with no sign anything went wrong."""
+    repo = _repo(tmp_path)
+    with pytest.raises(ValueError):
+        config_sync.cmd_reject(
+            str(repo), "snapshot-file", "rules/a.md", "--scop", "local"
+        )
