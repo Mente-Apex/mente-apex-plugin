@@ -9,7 +9,7 @@ Uses:
 2. **Hand off** — a rec better expressed in the other lens is marked and the other
    skill recommended.
 3. **Dedup on a shared branch** — when both lenses run, the second reads the first's
-   `*-reports/` and references existing rec IDs instead of duplicating.
+   `docs/reports/<lens>/` and references existing rec IDs instead of duplicating.
 
 | GoF pattern | Category | Serves (SOLID) | Typical shared smell / handoff note |
 |---|---|---|---|

@@ -55,12 +55,12 @@ report template, and output path.
    notes even when it adds nothing ("swept the remaining modules; nothing
    added"). An empty result is a written result; nothing downstream should
    ever have to infer whether the sweep happened.
-3. **Cross-reference the other lens.** Check [docs/lens-overlap.md](../lens-overlap.md) for
-   findings that overlap or conflict with the sibling lens's territory: for
+3. **Cross-reference the overlapping lenses per the hub.** Check [docs/lens-overlap.md](../lens-overlap.md) for
+   findings that overlap or conflict with an overlapping lens's territory: for
    each rec, note the overlapping principle/pattern; if a rec is better
-   expressed in the other lens, mark it and recommend that skill instead of
-   filing it here; if the other lens has already produced a report in its
-   own `*-reports/` directory, reference its existing rec IDs instead of
+   expressed in an overlapping lens, mark it and recommend that skill instead of
+   filing it here; if an overlapping lens has already produced a report in its
+   own `docs/reports/<lens>/` directory, reference its existing rec IDs instead of
    emitting a duplicate.
 4. **Tier and risk with the rubric.** Assign final tiers (when in doubt, tier
    down) and a Risk to every rec — Risk gates the apply phase: High-risk
