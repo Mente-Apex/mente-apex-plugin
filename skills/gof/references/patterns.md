@@ -1,8 +1,12 @@
 # GoF Patterns Reference
 
-All 23 Gang of Four patterns with Python-specific detection signals, quality
-indicators, and opportunity triggers. Shared rubric for the `gof` skill's
-analyzer and reviewer. The skill's goal is real reader value: every
+All 23 Gang of Four patterns, with detection signals, quality indicators, and
+opportunity triggers written against Python as the base case. Shared rubric
+for the `gof` skill's analyzer and reviewer. **Precedence:** where a detected
+language ships its own `references/<language>.md`, that file's idioms
+override this rubric's Python-flavored signals (`java.md`'s Singleton grading
+is one such override) — this file is the language-agnostic default, not the
+final word for every language. The skill's goal is real reader value: every
 *opportunity* must argue a concrete benefit at a specific location, and "no
 opportunity" (N/A) is a valid, trust-building outcome.
 
@@ -431,7 +435,8 @@ opportunity" (N/A) is a valid, trust-building outcome.
 
 ## Grade rubric (detected patterns)
 Always use the full label, not just the letter.
-- **A — Clean implementation** — idiomatic Python; follows GoF intent; no obvious flaws
+- **A — Clean implementation** — idiomatic for the language (per its `references/<language>.md`
+  when one applies); follows GoF intent; no obvious flaws
 - **B — Mostly correct** — minor deviations (missing abstraction, slight coupling)
 - **C — Structural issues** — recognizable but partially broken or awkward
 - **D — Significantly misimplemented** — intended as the pattern but mostly wrong
