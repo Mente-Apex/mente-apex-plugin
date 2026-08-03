@@ -1,4 +1,4 @@
-"""Where a measurement goes: the transcript, the audit artifact, or a review.
+"""Where a report goes: the transcript, the audit artifact, or a review.
 
 One producer, three consumers — the probe does not know which sink it feeds,
 which is what lets the same lizard run serve the TDD cycle, the Phase 0
@@ -8,15 +8,48 @@ about each other.
 No sink words a breach as a failure. A threshold breach is a place to look;
 the judgment belongs to a lens, not to a number.
 
-Every sink also takes the scope's own description of what it selected, because
-"nothing to measure" is two different facts: a target with no functions in it,
-and a target that selected nothing. `File.py:3-4` (two blank lines) and a file
-with no functions used to render byte-identically. The description defaults to
-`None` for a caller that has no scope to state — an omitted line, never an
-invented one.
+Every sink takes one argument, a `ProbeReport`. It was three, growing by
+optional positional parameter as each new thing a sink renders was discovered:
+`scope_description` arrived that way and two of the three implementations
+silently ignored it, so the text and JSON renderings of one run disagreed about
+which target it was. An argument three signatures accept and two drop is not a
+contract. The verdict was worse — it never reached a sink at all, and the
+caller edited the dict `ArtifactSink` returned, so the audit payload was
+assembled in two files. A parameter object gives the port one shape: a fourth
+thing to render is a field, not a signature change, and a sink that renders
+none of it still cannot disagree with one that does.
+
+`ProbeReport` lives here because a port owns the shape of its own input, and it
+carries the verdict as plain data read through `.status` and `.message` — the
+sinks import no gate, so the module that decides whether a check was performed
+still knows nothing about rendering.
 """
 
+from dataclasses import dataclass
+
 from complexity_probe_measurement import RAN
+
+
+@dataclass(frozen=True)
+class ProbeReport:
+    """One run, as everything that renders it needs to see it.
+
+    `scope_description` is the scope's own words for what it selected, because
+    "nothing to measure" is two different facts: a target with no functions in
+    it, and a target that selected nothing. `File.py:3-4` (two blank lines) and
+    a file with no functions used to render byte-identically. It stays `None`
+    for a caller with no scope to state — an omitted line, never an invented
+    one.
+
+    `verdict` is present only when the caller asked for one (`--gate`), and a
+    sink that renders it must leave it out of the payload entirely when it is
+    absent rather than emit a null.
+    """
+
+    measurement: object
+    thresholds: object = None
+    scope_description: str | None = None
+    verdict: object = None
 
 
 def _sorted_by_complexity(functions):
@@ -38,8 +71,9 @@ def _is_worth_a_look(metric, thresholds) -> bool:
 class TranscriptSink:
     """For the TDD cycle: compact lines the agent must answer to."""
 
-    def render(self, measurement, thresholds, scope_description=None) -> str:
-        lines = _scope_lines(scope_description)
+    def render(self, report) -> str:
+        measurement = report.measurement
+        lines = _scope_lines(report.scope_description)
         if not measurement.has_numbers:
             # The scope still belongs here. A probe that could not run says
             # nothing about *what* it could not run against, and the artifact
@@ -51,7 +85,9 @@ class TranscriptSink:
             lines.append(f"measured {len(measurement.functions)} changed function(s):")
             for metric in _sorted_by_complexity(measurement.functions):
                 marker = (
-                    "   <- worth a look" if _is_worth_a_look(metric, thresholds) else ""
+                    "   <- worth a look"
+                    if _is_worth_a_look(metric, report.thresholds)
+                    else ""
                 )
                 lines.append(
                     f"  {metric.name}  CC {metric.cyclomatic_complexity}"
@@ -69,13 +105,20 @@ class TranscriptSink:
 
 
 class ArtifactSink:
-    """For the Phase 0 Measurements artifact — data, not prose."""
+    """For the Phase 0 Measurements artifact — data, not prose.
 
-    def render(self, measurement, thresholds, scope_description=None) -> dict:
-        return {
+    Owns the whole payload, including the verdict. The caller used to render
+    this dict and then add a key to it, which put one schema in two files and
+    left the sink named for the artifact not actually in charge of it.
+    """
+
+    def render(self, report) -> dict:
+        measurement = report.measurement
+        thresholds = report.thresholds
+        payload = {
             "status": measurement.status,
             "reason": measurement.reason,
-            "scope": scope_description,
+            "scope": report.scope_description,
             "skipped": list(measurement.skipped),
             "thresholds": {
                 "cyclomatic_complexity": (
@@ -97,13 +140,23 @@ class ArtifactSink:
                 for metric in measurement.functions
             ],
         }
+        if report.verdict is not None:
+            # Omitted rather than null when nobody asked for a verdict: a
+            # consumer reading `verdict` must be able to tell "the gate said
+            # nothing" from "the gate was never consulted".
+            payload["verdict"] = {
+                "status": report.verdict.status,
+                "message": report.verdict.message,
+            }
+        return payload
 
 
 class ReviewSink:
     """For on-demand chunk review: outlier first, so a lens knows where to look."""
 
-    def render(self, measurement, thresholds, scope_description=None) -> str:
-        lines = _scope_lines(scope_description)
+    def render(self, report) -> str:
+        measurement = report.measurement
+        lines = _scope_lines(report.scope_description)
         if not measurement.has_numbers:
             # The scope still belongs here. A probe that could not run says
             # nothing about *what* it could not run against, and the artifact
@@ -116,7 +169,7 @@ class ReviewSink:
             for metric in _sorted_by_complexity(measurement.functions):
                 marker = (
                     "   <- outlier, worth a look"
-                    if _is_worth_a_look(metric, thresholds)
+                    if _is_worth_a_look(metric, report.thresholds)
                     else ""
                 )
                 lines.append(
