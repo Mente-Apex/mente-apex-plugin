@@ -42,7 +42,7 @@ from dataclasses import replace
 from complexity_probe_gate import CycleGate
 from complexity_probe_lizard import LizardProbe
 from complexity_probe_measurement import UNVERIFIED, Measurement
-from complexity_probe_scope import ScopeSelection, resolve_scope
+from complexity_probe_scope import ScopeSelection, resolve_literal_paths, resolve_scope
 from complexity_probe_sinks import ArtifactSink, ReviewSink, TranscriptSink
 from complexity_probe_thresholds import discover_thresholds, no_thresholds_because
 
@@ -79,12 +79,14 @@ def _selection_to_measure(arguments) -> ScopeSelection:
 
     A single positional argument is routed through `resolve_scope` so a range
     like "OrderService.java:40-120" still works. Two or more positional
-    arguments are taken as literal paths and go straight to the probe, with no
-    call to `resolve_scope` at all: its return value would be discarded either
-    way (the caller already named exact files), and now that scope resolution
-    can raise (task 4), making that call anyway would mean an unrelated git
-    failure aborting a request that never needed git in the first place. A
-    bare invocation, or `--scope`, resolves through the same vocabulary
+    arguments are taken as literal paths and go through `resolve_literal_paths`
+    rather than `resolve_scope`: the latter's return value would be discarded
+    either way (the caller already named exact files), and now that scope
+    resolution can raise, making that call anyway would mean an unrelated git
+    failure aborting a request that never needed git in the first place.
+    `resolve_literal_paths` asks the filesystem whether the named paths are
+    there and asks git nothing, so both properties hold at once. A bare
+    invocation, or `--scope`, resolves through the same vocabulary
     scripts/mutation_gate.py uses.
 
     The whole `ScopeSelection` comes back, not just its paths. The line range
@@ -97,7 +99,7 @@ def _selection_to_measure(arguments) -> ScopeSelection:
     if len(arguments.paths) == 1:
         return resolve_scope(arguments.paths[0], repo_root=arguments.repo_root)
     if arguments.paths:
-        return ScopeSelection.of_literal_paths(arguments.paths)
+        return resolve_literal_paths(arguments.paths)
     return resolve_scope(arguments.scope, repo_root=arguments.repo_root)
 
 

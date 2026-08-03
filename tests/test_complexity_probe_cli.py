@@ -3,6 +3,7 @@ gate verdict — never for a high number."""
 
 import json
 import os
+import subprocess
 
 import pytest
 
@@ -142,6 +143,101 @@ class TestScopeWiring:
         assert "add" in captured.out
         assert "sub" in captured.out
         assert "unverified" not in captured.out
+
+
+class TestATargetThatIsNotThereIsNotAMeasurement:
+    """`nosuchfile.py:1-2` used to print "no functions touched" with status
+    `ran` and exit 0 — a confident answer about nothing, and a typo'd path in a
+    review command reading exactly like a clean file. `ran` means "the probe
+    executed and these are the numbers"; absence is `unverified` with a cause
+    (docs/status-vocabulary.md rule 1)."""
+
+    def test_a_missing_ranged_path_is_unverified_with_a_reason(self, tmp_path, capsys):
+        missing = tmp_path / "nosuchfile.py"
+        exit_code = complexity_probe.main([f"{missing}:1-2"])
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "unverified" in output
+        assert "no such path" in output
+        assert str(missing) in output
+        assert "no functions touched" not in output
+
+    def test_a_missing_bare_path_is_unverified_too(self, tmp_path, capsys):
+        """The range is not the cause: the bare form was just as confident."""
+        missing = tmp_path / "nosuchfile.py"
+        exit_code = complexity_probe.main([str(missing)])
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "unverified" in output
+        assert "no such path" in output
+        assert "no functions touched" not in output
+
+    def test_the_refusal_is_data_in_the_artifact_too(self, tmp_path, capsys):
+        missing = tmp_path / "nosuchfile.py"
+        complexity_probe.main([f"{missing}:1-2", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "unverified"
+        assert "no such path" in payload["reason"]
+        assert payload["functions"] == []
+
+    def test_one_missing_path_among_several_refuses_the_run(self, tmp_path, capsys):
+        """Two or more positional paths bypass `resolve_scope` entirely, so
+        this form needed its own check to stop being the honest one's blind
+        spot."""
+        present = tmp_path / "first.py"
+        present.write_text("def add(first, second):\n    return first + second\n")
+        missing = tmp_path / "typo.py"
+
+        exit_code = complexity_probe.main(
+            [str(present), str(missing), "--repo-root", str(tmp_path)]
+        )
+        output = capsys.readouterr().out
+
+        assert exit_code == 0
+        assert "unverified" in output
+        assert str(missing) in output
+        assert "add" not in output
+
+    def test_a_target_that_is_there_still_measures(self, tmp_path, capsys):
+        """The control: refusing what is absent must not refuse what is not."""
+        source_file = tmp_path / "sample.py"
+        source_file.write_text("def add(first, second):\n    return first + second\n")
+        exit_code = complexity_probe.main([str(source_file)])
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "add" in output
+        assert "unverified" not in output
+
+    def test_a_deleted_file_in_the_working_tree_still_measures(
+        self, git_repo_with_branch, capsys, monkeypatch
+    ):
+        """The control that matters. A deleted file legitimately appears in a
+        diff; turning an ordinary deletion into an `unverified` measurement
+        would be a worse defect than the one this fixes.
+
+        `chdir` because git reports repo-relative paths and the probe resolves
+        them against the working directory — without it the surviving file is
+        not found either, and the test would pass on the wrong evidence."""
+        repo_root, _ = git_repo_with_branch
+        monkeypatch.chdir(repo_root)
+        (repo_root / "kept.py").write_text(
+            "def add(first, second):\n    return first + second\n"
+        )
+        subprocess.run(
+            ["git", "rm", "-q", "feature.py"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        exit_code = complexity_probe.main(
+            ["--scope", "working-tree", "--repo-root", str(repo_root)]
+        )
+        output = capsys.readouterr().out
+
+        assert exit_code == 0
+        assert "scope could not be resolved" not in output
+        assert "add" in output
 
 
 class TestABadConfigFileNeverCrashesTheRun:

@@ -3,7 +3,13 @@ meaning the uncommitted working tree, and a line range naming one function."""
 
 import pytest
 
-from complexity_probe_scope import GitRunner, ScopeSelection, parse_range, resolve_scope
+from complexity_probe_scope import (
+    GitRunner,
+    ScopeSelection,
+    parse_range,
+    resolve_literal_paths,
+    resolve_scope,
+)
 
 
 class StubGitRunner:
@@ -14,6 +20,26 @@ class StubGitRunner:
     def changed_paths(self, mode):
         self.calls.append(mode)
         return list(self.changed_files)
+
+
+class StubFilesystem:
+    """A disk that answers about the fixture paths these tests name.
+
+    `missing` rather than `present` because absence is the exception being
+    tested: a test about something else states no paths at all and gets a disk
+    where its fixtures are simply there, while every test that cares names the
+    paths it wants gone.
+    """
+
+    def __init__(self, directories=(), missing=()):
+        self.directories = set(directories)
+        self.missing = set(missing)
+
+    def is_directory(self, path) -> bool:
+        return path in self.directories
+
+    def exists(self, path) -> bool:
+        return path not in self.missing
 
 
 class TestParsingARange:
@@ -59,14 +85,20 @@ class TestResolvingScope:
 
     def test_a_path_is_taken_literally(self):
         selection = resolve_scope(
-            "src/orders/", repo_root=".", git_runner=StubGitRunner()
+            "src/orders/",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(),
         )
         assert selection.paths == ("src/orders/",)
         assert selection.line_range is None
 
     def test_a_range_keeps_its_bounds(self):
         selection = resolve_scope(
-            "OrderService.java:40-120", repo_root=".", git_runner=StubGitRunner()
+            "OrderService.java:40-120",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(),
         )
         assert selection.paths == ("OrderService.java",)
         assert selection.line_range == (40, 120)
@@ -83,7 +115,10 @@ class TestResolvingScope:
         than by being merely non-empty."""
         described = {
             argument: resolve_scope(
-                argument, repo_root="/repo", git_runner=StubGitRunner()
+                argument,
+                repo_root="/repo",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(),
             )
             for argument in (None, "working-tree", "merge-base", "full", "src/orders")
         }
@@ -98,17 +133,12 @@ class TestResolvingScope:
 
     def test_a_range_describes_its_bounds(self):
         selection = resolve_scope(
-            "OrderService.java:40-120", repo_root=".", git_runner=StubGitRunner()
+            "OrderService.java:40-120",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(),
         )
         assert selection.description == "OrderService.java lines 40-120"
-
-
-class StubFilesystem:
-    def __init__(self, directories=()):
-        self.directories = set(directories)
-
-    def is_directory(self, path) -> bool:
-        return path in self.directories
 
 
 class TestARangeMustNameAFile:
@@ -152,6 +182,120 @@ class TestARangeMustNameAFile:
         )
         assert selection.paths == ("src/orders",)
         assert selection.line_range is None
+
+
+class TestATargetMustExist:
+    """A path that is not there produced a confident, empty measurement:
+    `nosuchfile.py:1-2` rendered "no functions touched" with status `ran`. A
+    typo'd path in a review command read exactly like a clean file."""
+
+    def test_a_missing_ranged_path_is_refused(self):
+        with pytest.raises(ValueError, match="no such path"):
+            resolve_scope(
+                "nosuchfile.py:1-2",
+                repo_root=".",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(missing=("nosuchfile.py",)),
+            )
+
+    def test_a_missing_bare_path_is_refused(self):
+        """The range is not the cause — the bare form was just as confident."""
+        with pytest.raises(ValueError, match="no such path"):
+            resolve_scope(
+                "nosuchfile.py",
+                repo_root=".",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(missing=("nosuchfile.py",)),
+            )
+
+    def test_the_refusal_names_the_target(self):
+        with pytest.raises(ValueError, match="nosuchfile.py"):
+            resolve_scope(
+                "nosuchfile.py",
+                repo_root=".",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(missing=("nosuchfile.py",)),
+            )
+
+    def test_a_missing_directory_range_still_says_it_is_a_directory(self):
+        """Order matters: a directory that exists gets the answer that names
+        its actual problem, not a bare "no such path"."""
+        with pytest.raises(ValueError, match="is a directory"):
+            resolve_scope(
+                "src/orders:1-2",
+                repo_root=".",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(directories=("src/orders",)),
+            )
+
+    def test_a_path_that_is_there_is_untouched(self):
+        selection = resolve_scope(
+            "OrderService.java",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(missing=("somethingelse.py",)),
+        )
+        assert selection.paths == ("OrderService.java",)
+
+    def test_a_deleted_file_in_a_git_diff_is_not_refused(self):
+        """The case this guard must not break. A deleted file legitimately
+        appears in a working-tree diff; refusing the whole run over an ordinary
+        deletion would be a worse failure than the one being fixed."""
+        selection = resolve_scope(
+            "working-tree",
+            repo_root=".",
+            git_runner=StubGitRunner(changed_files=("src/Deleted.java",)),
+            filesystem=StubFilesystem(missing=("src/Deleted.java",)),
+        )
+        assert selection.paths == ("src/Deleted.java",)
+
+    def test_a_deleted_file_on_the_branch_is_not_refused_either(self):
+        selection = resolve_scope(
+            "merge-base",
+            repo_root=".",
+            git_runner=StubGitRunner(changed_files=("src/Deleted.java",)),
+            filesystem=StubFilesystem(missing=("src/Deleted.java",)),
+        )
+        assert selection.paths == ("src/Deleted.java",)
+
+
+class TestLiteralPathsMustExistToo:
+    """Two or more positional paths never reach `resolve_scope`, so without
+    their own check `probe.py real.py typo.py` kept reporting `ran` — the same
+    defect one input over from the one being fixed."""
+
+    def test_a_missing_path_among_several_is_refused(self):
+        with pytest.raises(ValueError, match="no such path"):
+            resolve_literal_paths(
+                ("first.py", "typo.py"),
+                filesystem=StubFilesystem(missing=("typo.py",)),
+            )
+
+    def test_only_the_missing_paths_are_named(self):
+        with pytest.raises(ValueError) as refusal:
+            resolve_literal_paths(
+                ("first.py", "typo.py"),
+                filesystem=StubFilesystem(missing=("typo.py",)),
+            )
+        assert "typo.py" in str(refusal.value)
+        assert "first.py" not in str(refusal.value)
+
+    def test_every_missing_path_is_named_not_just_the_first(self):
+        with pytest.raises(ValueError) as refusal:
+            resolve_literal_paths(
+                ("one_typo.py", "another_typo.py"),
+                filesystem=StubFilesystem(missing=("one_typo.py", "another_typo.py")),
+            )
+        assert "one_typo.py" in str(refusal.value)
+        assert "another_typo.py" in str(refusal.value)
+
+    def test_paths_that_are_all_there_pass_through_described(self):
+        selection = resolve_literal_paths(
+            ("first.py", "second.py"), filesystem=StubFilesystem()
+        )
+        assert selection.paths == ("first.py", "second.py")
+        assert selection.line_range is None
+        assert selection.description == "first.py, second.py"
 
 
 class TestGitRunnerWithRealRepository:
