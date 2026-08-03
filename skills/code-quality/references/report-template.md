@@ -35,7 +35,9 @@ this block — pruned to the codes that actually appear — into each report:
   finding raised by the SOLID lens. The lens and severity are in the code itself.
 - **Lenses**
   - `clean-arch` — clean-architecture: the component/dependency graph.
-  - `ddd` — domain-driven design: is the domain modelled well? (analyze-only).
+  - `ddd` — domain-driven design: is the domain modelled well? (analyze-only — its own
+    run stops at Phases 0–3; a finding merged here or opted into directly is applicable
+    through the shared engine).
   - `solid` — the five SOLID class principles.
   - `gof` — Gang-of-Four design patterns.
   - `clean-code` — line-level craft (naming, function shape, comments).

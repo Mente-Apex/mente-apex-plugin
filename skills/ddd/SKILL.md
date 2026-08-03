@@ -133,7 +133,9 @@ Never assume an external memory system exists.
 
 ## Mode: analyze (report-only)
 
-Mirrors `solid`'s pipeline minus the apply phase. **This mode never edits code.**
+Mirrors `solid`'s pipeline minus the apply phase. **This mode's own run never edits
+code** — that constrains the run, not the finding: a finding merged by the code-quality
+umbrella (or explicitly opted into by a user) is applicable through the shared engine.
 
 ### Phase 0 — Inventory & baseline
 Scope the target tree (skip vendored/generated dirs). Detect and record the test
@@ -165,8 +167,10 @@ human review (the same three decisions gated in `design`). On approval they are
 
 ### Phase 4 — Stop
 Present a compact summary: findings by tier, top 2–3 wins, anything High-impact.
-**No code changes.** Offer next steps: `/ddd design` on a new context, hand
-specific findings to `/tdd`, or `/solid` for the pure-SOLID cut. **Offer** to
+**No code changes in this run** — findings remain applicable through the shared engine
+when merged by the umbrella or opted into directly. Offer next steps: `/ddd design` on
+a new context, hand specific findings to `/tdd`, or `/solid` for the pure-SOLID cut.
+**Offer** to
 capture key findings (and any kept domain decisions) wherever the project keeps
 durable knowledge — the memory brain when present, else a short repo `docs/domain/` note.
 
@@ -184,8 +188,10 @@ durable knowledge — the memory brain when present, else a short repo `docs/dom
 
 ## Guardrails
 
-- **`analyze` never edits code.** Its only writes are the report, the draft, and
-  the *proposed* `docs/domain/` (kept or discarded by the user).
+- **`analyze`'s own run never edits code.** Its only writes are the report, the draft,
+  and the *proposed* `docs/domain/` (kept or discarded by the user) — that constrains
+  the run, not the finding: a finding merged by the umbrella (or opted into) is
+  applicable through the shared engine.
 - **The modeling gate is a hard stop.** No test, no production code, before
   ubiquitous language + bounded contexts + aggregates are approved.
 - **Judgment, not ceremony.** Follow the when-NOT-to rules in
