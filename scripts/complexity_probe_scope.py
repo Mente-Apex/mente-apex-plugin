@@ -10,6 +10,13 @@ so both probes answer "what changed?" identically. This shared implementation
 ensures that untracked files are included in working-tree, that merge-base
 errors surface rather than silently producing empty lists, and that future VCS
 changes affect both sensors the same way.
+
+A path the *caller* named — a bare path, a range, or several literal paths — is
+refused when it is not there, because "I measured nothing" and "there was
+nothing to measure" are different facts and only the first belongs to a target
+that exists. A path list that came back from git is never refused: a deleted
+file legitimately appears in a diff. The caller turns a refusal into an
+`unverified` measurement carrying the cause.
 """
 
 import re
@@ -58,16 +65,20 @@ def parse_range(argument: str):
 
 
 class LocalFilesystem:
-    """The one filesystem question scope resolution asks: is this a directory?
+    """The two filesystem questions scope resolution asks: is this a directory,
+    and is it there at all?
 
-    A collaborator rather than a bare `Path(...).is_dir()` call for the same
-    reason `GitRunner` is one — resolution is then testable without laying down
-    real directories, and a caller that resolves against something other than
-    the local disk has a seam to substitute.
+    A collaborator rather than bare `Path(...)` calls for the same reason
+    `GitRunner` is one — resolution is then testable without laying down real
+    directories, and a caller that resolves against something other than the
+    local disk has a seam to substitute.
     """
 
     def is_directory(self, path) -> bool:
         return Path(path).is_dir()
+
+    def exists(self, path) -> bool:
+        return Path(path).exists()
 
 
 class GitRunner:
@@ -80,6 +91,37 @@ class GitRunner:
 
     def changed_paths(self, mode: str) -> list[str]:
         return list(changed_paths(self._repo_root, mode))
+
+
+def _refuse_missing_paths(paths, filesystem) -> None:
+    """Raise when a path the caller named outright is not there.
+
+    Only ever applied to paths a *user* named. A path list that came back from
+    git is left alone on purpose: a deleted file legitimately appears in a
+    diff, and refusing the whole run over an ordinary deletion would be a worse
+    failure than the one this guard exists to stop.
+
+    Every missing path is named, not just the first, so a caller who mistyped
+    two of them learns about both in one run.
+    """
+    missing = [path for path in paths if not filesystem.exists(path)]
+    if missing:
+        named = ", ".join(repr(path) for path in missing)
+        raise ValueError(f"no such path: {named}")
+
+
+def resolve_literal_paths(paths, filesystem=None) -> ScopeSelection:
+    """The selection for paths a caller named outright, refusing absent ones.
+
+    Separate from `ScopeSelection.of_literal_paths` rather than folded into it:
+    a `ScopeSelection` is a value object and has no business holding a
+    filesystem. Asking whether a target exists is resolution's job, and
+    resolution is where the seam already is.
+    """
+    disk = filesystem if filesystem is not None else LocalFilesystem()
+    named = tuple(paths)
+    _refuse_missing_paths(named, disk)
+    return ScopeSelection.of_literal_paths(named)
 
 
 def resolve_scope(
@@ -120,10 +162,14 @@ def resolve_scope(
                 f"a line range names one file, but {path!r} is a directory — "
                 "name a file, or drop the range to measure the whole tree"
             )
+        # After the directory check, so `<dir>:1-2` still gets the answer that
+        # names its actual problem rather than a bare "no such path".
+        _refuse_missing_paths((path,), disk)
         return ScopeSelection(
             paths=(path,),
             line_range=(start_line, end_line),
             description=f"{path} lines {start_line}-{end_line}",
         )
 
+    _refuse_missing_paths((argument,), disk)
     return ScopeSelection(paths=(argument,), line_range=None, description=argument)
