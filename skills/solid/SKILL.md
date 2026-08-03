@@ -35,61 +35,66 @@ detects (the detect-and-load convention in the shared workflow). Reports go to
 
 ## Invocation
 
-`/solid [scope]` — `scope` is a path, a diff, or a range (default: repo root). The user may
-also pre-authorize in the same breath ("apply everything Critical", "doc only",
-"don't ask, use light verification"). **Pre-authorizations count as the human
-review for whatever they cover — don't re-ask.** This also makes the skill
-usable non-interactively.
+Follows the shared Invocation contract exactly
+([../../docs/refactor-workflow.md](../../docs/refactor-workflow.md#invocation))
+rather than restating it: `/solid [scope]` — `scope` is a path, a diff, or a
+range (default: repo root); pre-authorizations ("apply everything Critical",
+"doc only", "don't ask, use light verification") count as the human review
+for whatever they cover, including non-interactive use.
 
-**Measure before you read.** Run `sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --sink review <scope>`
-over the target first. `<scope>` is a path, a diff, or a range
+**Measure before you read.** Run the probe's **chunk review** sink first:
+`sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --sink review <scope>`
+over the target. `<scope>` is a path, a diff, or a range
 (`OrderService.java:40-120`). **This never blocks** — the numbers are triage,
 pointing at where a type switch or a god class is likely to be. A finding still
 has to name the design cost; a number alone is not one. Where the probe cannot
-run, record it and analyze unaided (`docs/status-vocabulary.md`).
+run, record it and analyze unaided
+([../../docs/status-vocabulary.md](../../docs/status-vocabulary.md)).
 
 ## Apply, via TDD
 
 Approved recommendations are applied **through the TDD refactor job**
-(`skills/tdd/references/refactor-jobs.md`), dispatched per
-`docs/refactor-workflow.md` Phase 4 — one rec (or dependent chain) at a time,
-suite green after each. What used to be SOLID's own apply-phase choices —
-"characterization tests first" vs. "light verification" vs. "stop at the
-doc" — are decided at the same Phase 3 human gate and passed straight through
-as the refactor job's `coverage` policy; this skill no longer implements the
-apply mechanics itself.
+([../tdd/references/refactor-jobs.md](../tdd/references/refactor-jobs.md)),
+dispatched per [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md)
+Phase 4 — one rec (or dependent chain) at a time, suite green after each. What
+used to be SOLID's own apply-phase choices — "characterization tests first"
+vs. "light verification" vs. "stop at the doc" — are decided at the same
+Phase 3 human gate and passed straight through as the refactor job's
+`coverage` policy; this skill no longer implements the apply mechanics itself.
 
-## Interop with GoF
+## Interop with the other lenses
 
-The reviewer cross-references
-[../../docs/lens-overlap.md](../../docs/lens-overlap.md) for every
-recommendation: findings that overlap the GoF lens's territory are noted with
-the shared principle/pattern, and where a GoF report already exists in
-`docs/reports/gof/`, its rec ID is cited instead of duplicating the finding. The
-overlap map's one ⚠ entry — **Singleton vs. DIP** — is a genuine tension
-between the two lenses, not a bug to resolve automatically: surface it to the
-human at the decision gate and let them choose.
+The reviewer cross-references [../../docs/lens-overlap.md](../../docs/lens-overlap.md) for
+every recommendation — GoF is the deepest overlap, but not the only one:
+
+- **GoF** — findings that overlap GoF's territory are noted with the shared
+  principle/pattern, and where a GoF report already exists in `docs/reports/gof/`,
+  its rec ID is cited instead of duplicating the finding. The overlap map's one ⚠
+  entry — **Singleton vs. DIP** — is a genuine tension between the two lenses, not
+  a bug to resolve automatically: surface it to the human at the decision gate and
+  let them choose.
+- **clean-architecture** — a dependency-direction violation or an ADP cycle CA
+  finds is one change shared with DIP, not two: whichever lens runs first files
+  it; the other cites that rec ID rather than re-filing it.
+- **test-quality** — an over-mocking finding ("this test can only run by mocking
+  `X`") names a production DIP smell; SOLID files the fix (the missing seam),
+  and test-quality's finding references that rec instead of standing alone.
+
+Where a rec is better expressed in one of these lenses, mark it and recommend
+that skill instead of filing it here.
 
 ## Guardrails
 
-- **Behavior-preserving, always.** This skill refactors; it does not redesign,
-  add features, or "improve" logic. If a rec can't be done without changing
-  behavior, it's High risk at minimum and probably belongs back with the human.
-- **The report is the single source of truth.** Status changes and apply logs
-  happen in the report file, not in ephemeral chat.
-- **Judgment, not dogma.** `references/principles.md` lists for each principle
-  when *not* to flag. A SOLID pass that atomizes a readable 200-line module
-  into nine files has made the codebase worse. The goal is a human reader's
-  comprehension, and every finding must argue its reader impact.
-- **Never widen scope silently.** Unrelated problems noticed along the way go
-  into the report's Reviewer notes or the final summary — not into the diff.
-- **Fan-in at the orchestrator; artifacts always terminal.** Subagents never
-  wait on a file a *peer* subagent is supposed to produce — you collect each
-  agent's result and dispatch the next phase only once the previous phase's
-  artifact exists and parses. Symmetrically, every agent's last act is writing
-  its artifact *even when empty*: "no findings" is a written result, never an
-  absent file. Then absence can only mean the agent died — record the coverage
-  gap loudly and proceed. A silent stall is worse than a reported hole.
+Follows the shared Guardrails exactly
+([../../docs/refactor-workflow.md](../../docs/refactor-workflow.md#guardrails))
+rather than restating them: behavior-preserving only, the report as the single
+source of truth, judgment over dogma, never widen scope silently, and the
+fan-in / artifacts-always-terminal rule for subagents. This skill's own
+addition: `references/principles.md` carries the per-principle when-NOT-to-flag
+rules — read it before pruning a finding as false-DRY or over-abstraction. A
+SOLID pass that atomizes a readable 200-line module into nine files has made
+the codebase worse; the goal is a human reader's comprehension, and every
+finding must argue its reader impact.
 
 ## Evolving this skill
 
@@ -113,8 +118,8 @@ rubric edit beats re-litigating the same judgment call every run.
   is what makes the generator–critic pair calibrated. Read it yourself before
   the decision gate.
 - `references/<language>.md` — per-principle idioms and test-runner detection for
-  a detected language; ships `python.md` and `typescript.md` today (list the
-  `references/` dir for the current set). New languages drop in here.
+  a detected language; ships `python.md`, `typescript.md`, and `java.md` today
+  (list the `references/` dir for the current set). New languages drop in here.
 - [references/report-template.md](references/report-template.md) — the exact
   report format.
 - [agents/analyzer.md](agents/analyzer.md), [agents/reviewer.md](agents/reviewer.md),
@@ -127,4 +132,5 @@ rubric edit beats re-litigating the same judgment call every run.
   [../../docs/refactor-agents/implementer.md](../../docs/refactor-agents/implementer.md) —
   the shared, lens-agnostic role instructions.
 - [../../docs/lens-overlap.md](../../docs/lens-overlap.md) — the
-  SOLID↔GoF overlap map used at review time.
+  cross-lens overlap map used at review time (deepest with GoF, but also
+  clean-architecture and test-quality).
