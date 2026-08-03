@@ -215,15 +215,27 @@ resolve-rejection <id> remove|keep      # the other-machine gate
 ### Converging other machines
 
 A network rejection ships as `rejections/<machine_id>.json`. On another machine's
-next sync, `propagate-apply` returns a `rejection_removals` list — content it holds
-locally that is network-rejected — and the SKILL prompts as it already does for
-bundle deletions:
+next sync, `propagate-apply` returns a `rejection_removals` list — the ledger
+**records** (not bare addresses: the prompt needs `machine_id` and `rejected_at`,
+and `resolve-rejection` takes `id`) behind the content withheld from that apply —
+and the SKILL prompts as it already does for bundle deletions:
 
 > `## Memory protocol` was rejected on `Mac.fritz.box` at 09:00 — remove here, or keep?
 
-- `remove` — deletes it locally.
+- `remove` — records a **local** rejection for the same address, so this machine
+  withholds the content from the next apply onward. It is a write, not a no-op:
+  agreeing silently would leave the consolidated snapshot re-writing the content
+  here on every sync.
 - `keep` — the content returns for everyone, mirroring `resolve-deletion`'s keep
   branch clearing a tombstone. One machine can always overrule the network.
+
+**Convergence is bounded in phase 1.** A network rejection converges only once no
+machine still carries the content. Every machine exports before anyone
+consolidates, and an export is stamped with the time it ran, so a machine that
+still holds the content re-adds it as content strictly newer than the rejection —
+an unchanged re-export is, to this engine, indistinguishable from a deliberate
+re-add. Answering `remove` on each such machine is what finishes the job.
+Automatic convergence needs per-content provenance, which is phase 2.
 
 ## 5. Failure modes
 

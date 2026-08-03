@@ -314,6 +314,45 @@ class SnapshotSectionAddressor:
         return address == self.identify(unit)
 
 
+def records_for_addresses(policy, addresses: list) -> list[RejectionRecord]:
+    """Resolve removed addresses back to the ledger records that suppressed them.
+
+    Deliberately NOT folded into `filter_snapshot_files`: subtracting rejected
+    content from a snapshot and explaining why it went are two reasons to
+    change. The filter stays a pure filter returning addresses; this maps those
+    addresses to the records an operator needs in order to answer — `id` is what
+    `resolve-rejection` takes, `machine_id` and `rejected_at` are what the
+    prompt shows, and `scope` distinguishes another machine's network tombstone
+    from this machine's own local veto.
+
+    Matched on `address` alone because an address is all the filter reports.
+    Revival records are skipped: a revival is an overrule, never the reason
+    something was withheld. Where several records share an address the newest
+    wins, mirroring `CompositeRejectionPolicy.is_rejected`. Output order follows
+    `addresses`, deduplicated — the same address can be removed from more than
+    one place in one pass.
+    """
+    wanted = set(addresses)
+    newest_by_address: dict = {}
+    for record in policy.all():
+        if record.revives is not None or record.address not in wanted:
+            continue
+        previous = newest_by_address.get(record.address)
+        if previous is None or record.rejected_at > previous.rejected_at:
+            newest_by_address[record.address] = record
+
+    resolved: list[RejectionRecord] = []
+    already_seen: set = set()
+    for address in addresses:
+        if address in already_seen:
+            continue
+        already_seen.add(address)
+        found = newest_by_address.get(address)
+        if found is not None:
+            resolved.append(found)
+    return resolved
+
+
 def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
     """Subtract rejected files and sections from a snapshot `files` mapping.
 

@@ -79,11 +79,19 @@ def test_the_shared_snapshot_is_left_untouched(tmp_path):
     assert STALE in snapshot["files"]["CLAUDE.md"]
 
 
-def test_removed_addresses_are_reported_for_the_operator(tmp_path):
+def test_removals_are_reported_as_records_the_operator_can_act_on(tmp_path):
+    """A bare address cannot be answered: `resolve-rejection` takes an id, and
+    the Step 4e prompt names the rejecting machine and the time. All three come
+    from the record, so the record is what apply reports."""
     context = _context(tmp_path)
     address = section_address("CLAUDE.md", STALE, 0)
     result = SnapshotPropagator(policy=_local_policy(tmp_path, address)).apply(context)
-    assert result.rejection_removals == [address]
+    assert [record.address for record in result.rejection_removals] == [address]
+    reported = result.rejection_removals[0]
+    assert reported.id == rejection_id_of("snapshot-section", address)
+    assert reported.machine_id == "machine-a"
+    assert reported.rejected_at == REJECTED_AT
+    assert reported.scope == "local"
 
 
 def test_a_rejection_older_than_the_snapshots_timestamp_still_suppresses(tmp_path):
@@ -98,5 +106,5 @@ def test_a_rejection_older_than_the_snapshots_timestamp_still_suppresses(tmp_pat
     assert REJECTED_AT < CONSOLIDATED_AT
     address = section_address("CLAUDE.md", STALE, 0)
     result = SnapshotPropagator(policy=_local_policy(tmp_path, address)).apply(context)
-    assert result.rejection_removals == [address]
+    assert [record.address for record in result.rejection_removals] == [address]
     assert STALE not in (context.claude_dir / "CLAUDE.md").read_text(encoding="utf-8")

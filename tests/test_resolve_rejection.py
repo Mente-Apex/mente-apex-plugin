@@ -66,11 +66,60 @@ def test_keep_leaves_the_other_machines_file_untouched(tmp_path, capsys):
 
 
 def test_remove_records_the_local_decision_without_a_revival(tmp_path, capsys):
+    """Agreeing must be a write, not a no-op. Without a local record the
+    consolidated snapshot re-writes the content here on every apply, so the
+    operator answers the same prompt forever. `revives` stays unset: this is an
+    agreement with the rejection, not an overrule of it."""
     repo = _repo_with_foreign_rejection(tmp_path)
     config_sync.cmd_resolve_rejection(str(repo), REJECTION_ID, "remove")
     payload = json.loads(capsys.readouterr().out)
     assert payload["decision"] == "remove"
-    assert not (repo / "rejections" / f"{config_sync._machine_id()}.json").exists()
+
+    local_ledger = json.loads(
+        (config_sync.CLAUDE_DIR / "config-sync-rejections.json").read_text(
+            encoding="utf-8"
+        )
+    )["rejections"]
+    assert len(local_ledger) == 1
+    recorded = local_ledger[0]
+    assert recorded["address"] == ADDRESS
+    assert recorded["kind"] == "snapshot-file"
+    assert recorded["scope"] == "local"
+    assert recorded["revives"] is None
+    # The PLAIN target id — the one `CompositeRejectionPolicy.is_rejected`
+    # matches. A `\0revival`-style variant would sit in the ledger suppressing
+    # nothing.
+    assert recorded["id"] == REJECTION_ID
+
+
+def test_remove_leaves_the_shared_repo_untouched(tmp_path, capsys):
+    """A local veto that reached the shared repo would impose this machine's
+    private answer on the whole network. Scope routing is what prevents it."""
+    repo = _repo_with_foreign_rejection(tmp_path)
+    before = (repo / "rejections" / "machine-b.json").read_text(encoding="utf-8")
+
+    config_sync.cmd_resolve_rejection(str(repo), REJECTION_ID, "remove")
+    capsys.readouterr()
+
+    assert (repo / "rejections" / "machine-b.json").read_text(
+        encoding="utf-8"
+    ) == before
+    assert sorted(path.name for path in (repo / "rejections").glob("*.json")) == [
+        "machine-b.json"
+    ]
+
+
+def test_remove_makes_the_target_suppressed_on_this_machine(tmp_path, capsys):
+    """The point of the record: the composite policy this machine applies with
+    must now answer "rejected" for that address."""
+    from config_sync_rejections import RejectionTarget
+
+    repo = _repo_with_foreign_rejection(tmp_path)
+    config_sync.cmd_resolve_rejection(str(repo), REJECTION_ID, "remove")
+    capsys.readouterr()
+
+    target = RejectionTarget(kind="snapshot-file", address=ADDRESS)
+    assert config_sync._rejection_policy(str(repo)).is_rejected(target, "")
 
 
 def test_an_unknown_decision_is_refused(tmp_path):
