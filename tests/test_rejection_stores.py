@@ -78,6 +78,15 @@ def test_corrupt_backing_file_fails_closed(store, tmp_path):
         store.all()
 
 
+def test_structurally_malformed_backing_file_fails_closed(store, tmp_path):
+    store.record(_record(scope=store.scope))
+    malformed_payload = json.dumps({"rejections": [{"address": "x"}]})
+    for corruptible in tmp_path.rglob("*.json"):
+        corruptible.write_text(malformed_payload, encoding="utf-8")
+    with pytest.raises(CorruptRejectionLedgerError):
+        store.all()
+
+
 def test_shared_store_reads_every_machines_file(tmp_path):
     SharedRejectionStore(tmp_path / "repo", "machine-a").record(
         _record(rejection_id="aaaaaaaaaaaa", scope="network")

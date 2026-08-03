@@ -99,7 +99,12 @@ def _read_ledger(path: Path) -> list[RejectionRecord]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, ValueError) as exc:
         raise CorruptRejectionLedgerError(f"{path} does not parse: {exc}") from exc
-    return [_record_from(entry) for entry in payload.get("rejections", [])]
+    try:
+        return [_record_from(entry) for entry in payload.get("rejections", [])]
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise CorruptRejectionLedgerError(
+            f"{path} has a malformed rejection entry: {exc}"
+        ) from exc
 
 
 def _write_ledger(path: Path, records: list[RejectionRecord]) -> None:
