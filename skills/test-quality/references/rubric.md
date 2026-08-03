@@ -39,40 +39,50 @@ against that standard; it reuses those references rather than re-deriving them.
 
 ## Dimensions
 
+Each dimension's **Kind** slug (in parens) is the exact value the report template's
+`Kind:` field takes — the same 11 slugs `references/report-template.md` and the
+`code-quality` umbrella's template already enumerate; naming them here too means the
+analyzer, which reads this rubric and never those templates, files findings under the
+canonical slug the first time instead of a label the reviewer has to reconcile.
+
 ### Structure & organization (the "no module/class architecture" concern)
-1. **Suite structure.** Test modules mirror the SUT (a `tests/` layout or co-located
-   `*.test.ts` that maps to source); related tests grouped into cohesive
+1. **Suite structure.** (`structure`) Test modules mirror the SUT (a `tests/` layout or
+   co-located `*.test.ts` that maps to source); related tests grouped into cohesive
    classes / `describe` blocks, not a flat pile of top-level `test_*` functions with no
    architecture. *Smell:* a 900-line `test_everything.py` spanning six unrelated
    concerns; tests for one module scattered across many files with no discoverable home.
-2. **Naming as spec.** Test names read as behavior specifications
+2. **Naming as spec.** (`naming`) Test names read as behavior specifications
    (`test_rejects_duplicate_email`), not `test_1` / `test_it_works` / `test_foo`.
 
 ### Craft
-3. **One behavior per test; Arrange-Act-Assert.** A test that exercises several behaviors
-   hides *which* spec broke. AAA structure is visible, not tangled.
-4. **No logic in tests.** Conditionals, loops, computation, or branching in a test body
-   mean the test itself is unverified code — use parametrization/fixtures instead.
-5. **Fixture & factory design.** Duplication is removed via fixtures/factories, not
-   copy-paste and not intent-hiding "helper" indirection that buries what's under test.
-6. **Assertion quality.** Assert on types/values, not brittle message substrings (unless
-   the message *is* the contract); no over-assertion pinning irrelevant incidental state.
-7. **Parametrization vs duplication.** Same behavior over many inputs → one parametrized
-   test; *distinct* behaviors stay distinct tests (don't cram different specs into one).
+3. **One behavior per test; Arrange-Act-Assert.** (`one-behavior`) A test that exercises
+   several behaviors hides *which* spec broke. AAA structure is visible, not tangled.
+4. **No logic in tests.** (`no-logic`) Conditionals, loops, computation, or branching in a
+   test body mean the test itself is unverified code — use parametrization/fixtures instead.
+5. **Fixture & factory design.** (`fixtures`) Duplication is removed via fixtures/factories,
+   not copy-paste and not intent-hiding "helper" indirection that buries what's under test.
+6. **Assertion quality.** (`assertions`) Assert on types/values, not brittle message
+   substrings (unless the message *is* the contract); no over-assertion pinning irrelevant
+   incidental state.
+7. **Parametrization vs duplication.** (`parametrization`) Same behavior over many inputs →
+   one parametrized test; *distinct* behaviors stay distinct tests (don't cram different
+   specs into one).
 
 ### Strategy
-8. **Over-mocking / mock-your-own-domain.** Needing to mock your own domain to test it is
-   a design smell (missing port / DIP) — the test-side symptom of a production problem.
-   File the fix under `solid`/`ddd` (hub); name the symptom here. Also: over-specified
-   mock expectations (asserting internal call order) and tests that only assert the mock.
-9. **Isolation.** No shared mutable state or ordering dependency between tests; temp dirs
-   over repo writes; clocks/env stubbed at the boundary and restored.
-10. **Speed / markers.** Slow or integration tests are marked and separable from the fast
-    unit run; the suite doesn't force everything through a slow path.
+8. **Over-mocking / mock-your-own-domain.** (`over-mock`) Needing to mock your own domain
+   to test it is a design smell (missing port / DIP) — the test-side symptom of a
+   production problem. File the fix under `solid`/`ddd` (hub); name the symptom here.
+   Also: over-specified mock expectations (asserting internal call order) and tests that
+   only assert the mock.
+9. **Isolation.** (`isolation`) No shared mutable state or ordering dependency between
+   tests; temp dirs over repo writes; clocks/env stubbed at the boundary and restored.
+10. **Speed / markers.** (`speed`) Slow or integration tests are marked and separable from
+    the fast unit run; the suite doesn't force everything through a slow path.
 
 ### Tending (the missing "clean up" motion — the suite only grows)
-11. **Stale / redundant tests.** Detect, with strong evidence, tests that have outlived
-    their purpose — the suite is never cleaned, so this is where the growth comes from:
+11. **Stale / redundant tests.** (`stale`) Detect, with strong evidence, tests that have
+    outlived their purpose — the suite is never cleaned, so this is where the growth
+    comes from:
     - **Dead** — reference symbols/modules/code paths that no longer exist (won't import,
       or pin a removed branch). Highest-confidence removal; often a collection error.
     - **Provably duplicate** — assert identical behavior on identical inputs (e.g. an old

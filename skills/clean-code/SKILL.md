@@ -39,8 +39,8 @@ gets *used*.
 
 ## Measure before you read
 
-Run the probe over the chunk first — it costs a second and tells you where to
-look:
+Run the probe's **chunk review** sink over the chunk first — it costs a
+second and tells you where to look:
 
 ```bash
 sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/complexity_probe.py" --sink review <scope>
