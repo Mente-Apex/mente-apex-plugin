@@ -2,7 +2,9 @@
 
 The reviewer writes
 `docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md` in exactly this shape.
-Angle brackets are runtime fill-slots.
+Angle brackets are runtime fill-slots. Field names, the ID scheme, and the anchor
+rule are the canonical finding schema defined once in
+[docs/report-contract.md](../../../docs/report-contract.md).
 
 Rec IDs are self-describing: `test-quality/<tier>-<n>`, where `<tier>` ∈ `critical |
 major | minor` — so `test-quality/major-1` reads as "the first Major finding from the
@@ -61,9 +63,9 @@ deletion gate).
 
 ## Coverage & method
 
-Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
-`unverified`, one line each, and **every `unverified` states its reason**. Absence
-is data, never silence.
+Per the plugin's status vocabulary — `ran` / `degraded` / `unverified`, one
+line each, and **every `unverified` states its reason**. Absence is data,
+never silence.
 
 | What | Status | Note |
 |---|---|---|

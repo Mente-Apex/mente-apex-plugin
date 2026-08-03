@@ -3,7 +3,9 @@
 The reviewer writes `docs/reports/solid/SOLID-REPORT-<YYYY-MM-DD>.md` in exactly
 this shape. The structure is load-bearing: the orchestrator parses tiers and
 Risk fields to build the approval question, and the implementer updates Status
-and the Apply log in place. Keep the field names verbatim.
+and the Apply log in place. Keep the field names verbatim. Field names, the ID
+scheme, and the anchor rule are the canonical finding schema defined once in
+[docs/report-contract.md](../../../docs/report-contract.md).
 
 Rec IDs are self-describing: `solid/<tier>-<n>`, where `<tier>` ∈ `critical |
 major | minor` — so `solid/major-1` reads as "the first Major finding from the
@@ -50,17 +52,19 @@ auto-generated heading anchors don't handle the `/`).
 
 ### Major
 
+<a id="solid-major-1"></a>
 #### [solid/major-1] ...
 
 ### Minor
 
+<a id="solid-minor-1"></a>
 #### [solid/minor-1] ...
 
 ## Coverage & method
 
-Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
-`unverified`, one line each, and **every `unverified` states its reason**. Absence
-is data, never silence.
+Per the plugin's status vocabulary — `ran` / `degraded` / `unverified`, one
+line each, and **every `unverified` states its reason**. Absence is data,
+never silence.
 
 | What | Status | Note |
 |---|---|---|
@@ -71,6 +75,13 @@ is data, never silence.
 - Draft findings pruned as false positives: <finding → one-line reason>, or "none"
 - Findings added by the reviewer: <IDs>, or "none"
 - Areas not examined: <anything skipped, so the human knows the coverage>
+
+## Outcome
+
+<!-- Written by the orchestrator at Phase 5, once an apply phase has run — the
+     persisted run synthesis (applied/deferred/failed ids, suite before/after,
+     net diffstat, verification method, residuals). Omit this whole section
+     entirely on an audit-only run; format per refactor-workflow.md. -->
 
 ## Apply log
 

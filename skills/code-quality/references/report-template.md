@@ -5,7 +5,8 @@ in exactly this shape. Like every lens report it is **load-bearing**: the shared
 decision gate parses tiers and Risk fields to build the approval question, and
 the shared implementer updates Status and the Apply log in place
 ([../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md) Phases 3–5).
-Keep the field names verbatim.
+Keep the field names verbatim — they are the canonical finding schema defined
+once in [docs/report-contract.md](../../../docs/report-contract.md).
 
 ## IDs
 

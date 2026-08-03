@@ -12,8 +12,14 @@ once assigned. The tier word records the tier **at first assignment**; if a
 finding is later re-tiered, the section heading it sits under is authoritative and
 the ID is left unchanged.
 
-This mode is **report-only** — there is no Status transition to `applied` and no
-apply log; `Status: pending` simply records that the finding is unactioned.
+This lens's own run never applies — Phases 0–3 only, per this mode's
+report-only scope. That constrains the run, not the finding: a ddd finding
+merged by the code-quality umbrella (or explicitly opted into by a user) is
+applicable through the shared engine, so it carries the same `Risk` and
+`Status` fields any apply-capable finding needs. Field names, the ID scheme,
+and the anchor rule are the canonical finding schema defined once in
+[docs/report-contract.md](../../../docs/report-contract.md) — `Toward DDD` is
+this lens's declared alias for the canonical `Proposed change` field.
 
 **Anchors.** Precede each finding heading with an explicit anchor — the ID with
 `/`→`-`, e.g. `<a id="ddd-critical-1"></a>` above `#### [ddd/critical-1]` — so the
@@ -43,9 +49,10 @@ auto-generated heading anchors don't handle the `/`).
   invariant | transaction script | leaked ubiquitous language>
 - **Location:** `path/to/file.py:120-180` <all affected sites>
 - **Evidence:** <2–4 sentences quoting the key lines. No evidence, no finding.>
-- **Impact:** <why this hurts comprehension/change safety — justifies the tier>
+- **Reader impact:** <why this hurts comprehension/change safety — justifies the tier>
 - **Toward DDD:** <concrete target: which entity/VO/aggregate/port this becomes,
   where the logic should live, what boundary to introduce>
+- **Risk:** <Low | Medium | High> — <what could break if this is applied>
 - **Tier:** Critical
 - **Status:** pending
 
@@ -65,9 +72,9 @@ to domain / application / adapters / web>
 
 ## Coverage & method
 
-Per [docs/status-vocabulary.md](../../../docs/status-vocabulary.md) — `ran` / `degraded` /
-`unverified`, one line each, and **every `unverified` states its reason**. Absence
-is data, never silence.
+Per the plugin's status vocabulary — `ran` / `degraded` / `unverified`, one
+line each, and **every `unverified` states its reason**. Absence is data,
+never silence.
 
 | What | Status | Note |
 |---|---|---|

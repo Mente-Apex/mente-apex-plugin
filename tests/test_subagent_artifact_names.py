@@ -35,7 +35,7 @@ MARKDOWN_REF = re.compile(r"[A-Za-z0-9_/<>{}.-]+\.md")
 
 # Templates and rubrics agents only ever *read*. Reads are unguarded, so a
 # blocked-looking name here is harmless — it is never a Write target.
-READ_ONLY_ARTIFACTS = {"report-template.md"}
+READ_ONLY_ARTIFACTS = {"report-template.md", "report-contract.md"}
 
 # Frozen eval snapshots and narrative plans/specs record history, including the
 # pre-fix name. They drive no live dispatch. Matched on the repo-relative path

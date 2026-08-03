@@ -164,7 +164,7 @@ def test_report_template_has_the_parsed_structure():
         assert re.search(
             rf"\[ddd/{tier}-\d+\]", text
         ), f"report-template.md missing a ddd/{tier}-<n> example ID"
-    for marker in ["Tier", "Impact", "Status", "pending"]:
+    for marker in ["Tier", "Reader impact", "Risk", "Status", "pending"]:
         assert marker in text, f"report-template.md missing: {marker}"
     assert "Target architecture sketch" in text
 
