@@ -11,7 +11,11 @@ from complexity_probe_measurement import (
     Measurement,
 )
 from complexity_probe_sinks import ArtifactSink, ReviewSink, TranscriptSink
-from complexity_probe_thresholds import NO_THRESHOLDS, Thresholds
+from complexity_probe_thresholds import (
+    NO_THRESHOLDS,
+    Thresholds,
+    no_thresholds_because,
+)
 
 
 def measurement_with(cyclomatic_complexity):
@@ -144,6 +148,76 @@ class TestTheArtifactSink:
         thresholds = Thresholds(cyclomatic_complexity=10, source="checkstyle.xml")
         payload = ArtifactSink().render(measurement_with(14), thresholds)
         assert payload["thresholds"]["source"] == "checkstyle.xml"
+
+
+class TestEverySinkStatesWhatWasMeasured:
+    """A sink that renders only the result cannot distinguish "this target has
+    no functions" from "the range I was given selected none of them"."""
+
+    def test_the_transcript_names_the_scope(self):
+        rendered = TranscriptSink().render(
+            Measurement(status=RAN), NO_THRESHOLDS, "File.py lines 3-4"
+        )
+        assert "File.py lines 3-4" in rendered
+        assert "no functions" in rendered
+
+    def test_the_review_sink_names_the_scope(self):
+        rendered = ReviewSink().render(
+            Measurement(status=RAN), NO_THRESHOLDS, "File.py lines 3-4"
+        )
+        assert "File.py lines 3-4" in rendered
+
+    def test_the_artifact_carries_the_scope(self):
+        payload = ArtifactSink().render(
+            Measurement(status=RAN), NO_THRESHOLDS, "File.py lines 3-4"
+        )
+        assert payload["scope"] == "File.py lines 3-4"
+
+    def test_a_caller_with_no_scope_to_state_invents_none(self):
+        rendered = TranscriptSink().render(measurement_with(14), NO_THRESHOLDS)
+        assert "scope:" not in rendered
+        assert (
+            ArtifactSink().render(measurement_with(14), NO_THRESHOLDS)["scope"] is None
+        )
+
+    def test_a_measurement_with_no_numbers_still_names_its_target(self):
+        """The run that produced nothing is the one where "against what?" is
+        the whole question. The artifact records the scope on this path, so a
+        text sink that drops it makes two renderings of one run disagree."""
+        unverified = Measurement(status=UNVERIFIED, reason="lizard is not installed")
+        for sink in (TranscriptSink(), ReviewSink()):
+            rendered = sink.render(unverified, NO_THRESHOLDS, "File.py lines 3-4")
+            assert "File.py lines 3-4" in rendered
+            assert "lizard is not installed" in rendered
+
+    def test_a_measurement_with_no_numbers_and_no_scope_is_unchanged(self):
+        """The control: a caller that states no scope still gets the bare
+        status line, with no empty heading above it."""
+        rendered = TranscriptSink().render(
+            Measurement(status=UNVERIFIED, reason="needs compiled classes"),
+            NO_THRESHOLDS,
+        )
+        assert rendered == "unverified: needs compiled classes"
+
+    def test_the_scope_does_not_displace_the_measurement(self):
+        rendered = TranscriptSink().render(
+            measurement_with(14), NO_THRESHOLDS, "File.py lines 40-78"
+        )
+        assert "OrderService::applyDiscount" in rendered
+        assert "File.py lines 40-78" in rendered
+
+
+class TestTheArtifactSinkReportsUnreadableConfigs:
+    def test_a_diagnostic_reaches_the_payload(self):
+        thresholds = no_thresholds_because("pyproject.toml: max-complexity is 'ten'")
+        payload = ArtifactSink().render(measurement_with(14), thresholds)
+        assert payload["thresholds"]["diagnostics"] == [
+            "pyproject.toml: max-complexity is 'ten'"
+        ]
+
+    def test_a_repo_declaring_nothing_carries_no_diagnostics(self):
+        payload = ArtifactSink().render(measurement_with(14), NO_THRESHOLDS)
+        assert payload["thresholds"]["diagnostics"] == []
 
 
 class TestTheReviewSink:

@@ -78,9 +78,80 @@ class TestResolvingScope:
         assert selection.paths == ()
 
     def test_every_selection_describes_itself_for_the_report(self):
-        selection = resolve_scope("full", repo_root="/repo", git_runner=StubGitRunner())
-        assert isinstance(selection, ScopeSelection)
-        assert selection.description
+        """Each form's description is the only thing that tells a reader what a
+        measurement was taken against, so each is pinned by its words rather
+        than by being merely non-empty."""
+        described = {
+            argument: resolve_scope(
+                argument, repo_root="/repo", git_runner=StubGitRunner()
+            )
+            for argument in (None, "working-tree", "merge-base", "full", "src/orders")
+        }
+        assert all(
+            isinstance(selection, ScopeSelection) for selection in described.values()
+        )
+        assert described[None].description == "uncommitted changes in the working tree"
+        assert described["working-tree"].description == described[None].description
+        assert described["merge-base"].description == "changes on this branch"
+        assert described["full"].description == "the whole repository"
+        assert described["src/orders"].description == "src/orders"
+
+    def test_a_range_describes_its_bounds(self):
+        selection = resolve_scope(
+            "OrderService.java:40-120", repo_root=".", git_runner=StubGitRunner()
+        )
+        assert selection.description == "OrderService.java lines 40-120"
+
+
+class StubFilesystem:
+    def __init__(self, directories=()):
+        self.directories = set(directories)
+
+    def is_directory(self, path) -> bool:
+        return path in self.directories
+
+
+class TestARangeMustNameAFile:
+    """Line numbers belong to one file. `<dir>:1-2` used to be honoured against
+    every file under the tree at once — lines 1-2 of each, reported as a single
+    measurement, which is a confident answer to a question nobody asked."""
+
+    def test_a_range_on_a_directory_is_refused(self):
+        with pytest.raises(ValueError, match="is a directory"):
+            resolve_scope(
+                "src/orders:1-2",
+                repo_root=".",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(directories=("src/orders",)),
+            )
+
+    def test_the_refusal_names_the_target(self):
+        with pytest.raises(ValueError, match="src/orders"):
+            resolve_scope(
+                "src/orders:1-2",
+                repo_root=".",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(directories=("src/orders",)),
+            )
+
+    def test_a_range_on_a_file_is_untouched(self):
+        selection = resolve_scope(
+            "OrderService.java:40-120",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(directories=("src/orders",)),
+        )
+        assert selection.line_range == (40, 120)
+
+    def test_the_same_directory_without_a_range_is_still_a_target(self):
+        selection = resolve_scope(
+            "src/orders",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(directories=("src/orders",)),
+        )
+        assert selection.paths == ("src/orders",)
+        assert selection.line_range is None
 
 
 class TestGitRunnerWithRealRepository:

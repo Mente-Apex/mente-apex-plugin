@@ -164,11 +164,16 @@ class TestABadConfigFileNeverCrashesTheRun:
         exit_code = complexity_probe.main(
             [str(self._sample(tmp_path)), "--repo-root", str(tmp_path), "--json"]
         )
-        payload = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
         assert exit_code == 0
         assert payload["status"] == "ran"
         assert payload["thresholds"]["cyclomatic_complexity"] is None
-        assert payload["thresholds"]["source"] == "none declared"
+        # …and the typo is named rather than reported as "this repo declares
+        # no limit", which is what a repo with no config at all gets.
+        assert payload["thresholds"]["source"] != "none declared"
+        assert payload["thresholds"]["diagnostics"]
+        assert "ten" in captured.err
 
     def test_an_unreadable_pyproject_still_measures(self, tmp_path, capsys):
         """`PermissionError`, which no ruff-source guard caught."""
@@ -186,6 +191,9 @@ class TestABadConfigFileNeverCrashesTheRun:
         captured = capsys.readouterr()
         assert exit_code == 0
         assert "add" in captured.out
+        # The human sinks never render the threshold source, so a config the
+        # repo declared but nobody could open is announced on stderr.
+        assert "pyproject.toml" in captured.err
 
     def test_an_eslintrc_whose_root_is_a_list_still_measures(self, tmp_path, capsys):
         """`AttributeError: 'list' object has no attribute 'get'`."""
@@ -196,6 +204,34 @@ class TestABadConfigFileNeverCrashesTheRun:
         captured = capsys.readouterr()
         assert exit_code == 0
         assert "add" in captured.out
+        assert ".eslintrc.json" in captured.err
+
+    def test_the_cause_survives_another_source_declaring_a_limit(
+        self, tmp_path, capsys
+    ):
+        """The run that looks healthiest is the one where the cause used to
+        vanish: `source` names the *winning* config, so printing it said
+        nothing about the typo in the config that lost."""
+        (tmp_path / ".eslintrc.json").write_text(
+            '{"rules": {"complexity": ["error", 9]}}'
+        )
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.ruff.lint.mccabe]\nmax-complexity = "ten"\n'
+        )
+        complexity_probe.main(
+            [str(self._sample(tmp_path)), "--repo-root", str(tmp_path), "--json"]
+        )
+        captured = capsys.readouterr()
+        assert json.loads(captured.out)["thresholds"]["cyclomatic_complexity"] == 9
+        assert "ten" in captured.err
+
+    def test_a_repo_declaring_nothing_says_nothing_on_stderr(self, tmp_path, capsys):
+        """The control: declaring no limit is an ordinary repo, not a fault,
+        and must stay quiet."""
+        complexity_probe.main(
+            [str(self._sample(tmp_path)), "--repo-root", str(tmp_path)]
+        )
+        assert capsys.readouterr().err == ""
 
     def test_a_source_that_raises_anyway_degrades_and_says_why(
         self, tmp_path, capsys, monkeypatch
@@ -308,3 +344,114 @@ class TestALineRangeNarrowsWhatIsReported:
         source_file.write_text(self.TWO_FUNCTIONS)
         complexity_probe.main([f"{source_file}:1-2", "--gate"])
         assert "measured 1 function(s)" in capsys.readouterr().out
+
+
+class TestWhatWasMeasuredIsStated:
+    """ "No functions" is two different facts. A file with nothing in it and a
+    range that selected nothing rendered byte-identically — text and JSON both
+    — so a user could not tell "there is nothing here" from "I scoped to lines
+    that hold nothing". The selection has always described itself; nobody read
+    it."""
+
+    def test_a_range_that_selects_nothing_still_says_what_was_asked_for(
+        self, tmp_path, capsys
+    ):
+        source_file = tmp_path / "File.py"
+        source_file.write_text("def tiny(value):\n    return value\n\n\n")
+        complexity_probe.main([f"{source_file}:3-4"])
+        output = capsys.readouterr().out
+        assert "no functions touched" in output
+        assert "lines 3-4" in output
+
+    def test_an_empty_file_and_an_empty_range_no_longer_read_alike(
+        self, tmp_path, capsys
+    ):
+        source_file = tmp_path / "File.py"
+        source_file.write_text("def tiny(value):\n    return value\n\n\n")
+        empty_file = tmp_path / "Empty.py"
+        empty_file.write_text("CONSTANT = 1\n")
+
+        complexity_probe.main([f"{source_file}:3-4"])
+        ranged_output = capsys.readouterr().out
+        complexity_probe.main([str(empty_file)])
+        empty_output = capsys.readouterr().out
+
+        assert "no functions" in ranged_output
+        assert "no functions" in empty_output
+        assert ranged_output != empty_output
+
+    def test_the_artifact_payload_carries_the_scope(self, tmp_path, capsys):
+        source_file = tmp_path / "File.py"
+        source_file.write_text("def tiny(value):\n    return value\n\n\n")
+        complexity_probe.main([f"{source_file}:3-4", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["functions"] == []
+        assert "lines 3-4" in payload["scope"]
+
+    def test_the_whole_repository_names_itself_too(self, tmp_path, capsys):
+        """Every scope form describes itself, not just the range."""
+        (tmp_path / "sample.py").write_text("def add(value):\n    return value\n")
+        complexity_probe.main(["--scope", "full", "--repo-root", str(tmp_path)])
+        assert "the whole repository" in capsys.readouterr().out
+
+    def test_several_literal_paths_name_all_of_them(self, tmp_path, capsys):
+        """Two or more positional paths never reach `resolve_scope`, so this is
+        the one description the CLI mints itself."""
+        first_file = tmp_path / "first.py"
+        first_file.write_text("def add(one, two):\n    return one + two\n")
+        second_file = tmp_path / "second.py"
+        second_file.write_text("def sub(one, two):\n    return one - two\n")
+        complexity_probe.main(
+            [str(first_file), str(second_file), "--repo-root", str(tmp_path)]
+        )
+        output = capsys.readouterr().out
+        assert str(first_file) in output
+        assert str(second_file) in output
+
+
+class TestARangeNamesOneFile:
+    """`<dir>:1-2` reported lines 1-2 of *every* file under the tree as one
+    measurement — line numbers from one file cross-applied to all the others.
+    A range names one function, so a directory is a target that cannot mean
+    anything; the honest answer is to refuse it, not to answer confidently."""
+
+    def _tree_with_two_files(self, tmp_path):
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "File.py").write_text("def tiny(value):\n    return value\n")
+        (tmp_path / "sub" / "Other.py").write_text("def other(value):\n    return 1\n")
+        return tmp_path
+
+    def test_a_range_on_a_directory_is_refused_with_a_reason(self, tmp_path, capsys):
+        directory = self._tree_with_two_files(tmp_path)
+        exit_code = complexity_probe.main([f"{directory}:1-2"])
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "unverified" in output
+        assert "is a directory" in output
+
+    def test_it_does_not_report_the_range_against_every_file(self, tmp_path, capsys):
+        directory = self._tree_with_two_files(tmp_path)
+        complexity_probe.main([f"{directory}:1-2"])
+        output = capsys.readouterr().out
+        assert "tiny" not in output
+        assert "other" not in output
+
+    def test_the_refusal_is_data_in_the_artifact_too(self, tmp_path, capsys):
+        """A consumer reading the payload must see the same refusal the
+        transcript shows, not an empty `ran` measurement."""
+        directory = self._tree_with_two_files(tmp_path)
+        complexity_probe.main([f"{directory}:1-2", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "unverified"
+        assert "is a directory" in payload["reason"]
+        assert payload["functions"] == []
+
+    def test_the_same_directory_without_a_range_still_measures_it_all(
+        self, tmp_path, capsys
+    ):
+        """The control: rejecting the range must not reject the directory."""
+        directory = self._tree_with_two_files(tmp_path)
+        complexity_probe.main([str(directory)])
+        output = capsys.readouterr().out
+        assert "tiny" in output
+        assert "other" in output

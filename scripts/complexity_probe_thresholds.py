@@ -11,36 +11,99 @@ intact rather than quietly contradicted.
 
 Every source here reads a file some *other* tool owns, so every source treats a
 file it cannot read or cannot understand as absence: a missing permission, a
-truncated config or a typo'd value returns `None`, never an exception. A repo
+truncated config or a typo'd value returns absence, never an exception. A repo
 with a typo in its ruff config is owed a measurement and a stated limit of
 "none", not a traceback.
+
+Absence, though, is two facts and not one. "This repo declares no limit" is a
+finding; "this repo declares a limit I could not read" is a different finding,
+and reporting the second as the first is exactly the silence
+docs/status-vocabulary.md rule 1 forbids — the user's typo'd threshold is
+ignored and nothing says so. So a source that finds a config it cannot read
+returns an *unreadable* reading (`unreadable_config`) carrying the cause, which
+`first_declared_limit` keeps as a diagnostic even when a later source does
+declare a usable number.
 """
 
 import json
 import re
 import tomllib
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 
 @dataclass(frozen=True)
 class Thresholds:
+    """A declared limit, or the absence of one with whatever caused it.
+
+    `cyclomatic_complexity is None` means no limit is in force. `diagnostics`
+    then names every config that was present but unreadable — empty when the
+    repo genuinely declares nothing, and non-empty even alongside a limit some
+    *other* source did declare, because "ruff's number is a typo" stays true
+    when ESLint's number is the one being used.
+    """
+
     cyclomatic_complexity: int | None
     source: str
+    diagnostics: tuple[str, ...] = ()
 
 
 NO_THRESHOLDS = Thresholds(cyclomatic_complexity=None, source="none declared")
 
 
-def no_thresholds_because(reason: str) -> Thresholds:
+def no_thresholds_because(reason: str, diagnostics=None) -> Thresholds:
     """Absent thresholds that say why nothing could be read.
 
     `NO_THRESHOLDS` means "this repo declares no limit", which is a finding.
     This means "discovery could not answer", which is a different fact, and
     absence without a cause is the silence this design exists to catch.
     """
-    return Thresholds(cyclomatic_complexity=None, source=f"none readable — {reason}")
+    return Thresholds(
+        cyclomatic_complexity=None,
+        source=f"none readable — {reason}",
+        diagnostics=tuple(diagnostics) if diagnostics is not None else (reason,),
+    )
+
+
+def unreadable_config(config_name: str, cause: str) -> Thresholds:
+    """One source's reading of a config file it found but could not read.
+
+    Distinct from returning `None`, which a source uses for the honest "that
+    config declares no complexity limit" — the case a repo is entitled to
+    without anyone reporting anything.
+    """
+    return no_thresholds_because(f"{config_name}: {cause}")
+
+
+def first_declared_limit(readings) -> Thresholds | None:
+    """The first reading that declares a limit, keeping every cause seen.
+
+    Used at both levels — across a source's own candidate configs, and across
+    the sources themselves — because "take the first real answer but never drop
+    a diagnostic" is the same rule at each. Returns `None` when there was
+    nothing to report at all.
+
+    Every reading is consumed, including the ones after the winner. Returning
+    early was cheaper and wrong: which unreadable configs got reported then
+    depended on where the winner happened to sit in the order, so a Java repo
+    whose checkstyle.xml declares a limit was told nothing about the typo in
+    its ruff table — the silence this whole diagnostic exists to end, still
+    there for every repo that ordered its tools the other way.
+    """
+    chosen = None
+    diagnostics = []
+    for reading in readings:
+        if reading is None:
+            continue
+        diagnostics.extend(reading.diagnostics)
+        if chosen is None and reading.cyclomatic_complexity is not None:
+            chosen = reading
+    if chosen is not None:
+        return replace(chosen, diagnostics=tuple(diagnostics))
+    if diagnostics:
+        return no_thresholds_because("; ".join(diagnostics), diagnostics)
+    return None
 
 
 def _local_name(tag: str) -> str:
@@ -101,42 +164,46 @@ class CheckstyleThresholds:
             repo_root_path / "config" / "checkstyle" / "checkstyle.xml",
         ]
 
-        for config_path in config_candidates:
-            if not config_path.exists():
-                continue
-            try:
-                result = self._extract_from_xml(config_path)
-                if result is not None:
-                    return Thresholds(
-                        cyclomatic_complexity=result,
-                        source=str(config_path.relative_to(repo_root_path)),
-                    )
-            except OSError, UnicodeDecodeError:
-                continue
-        return None
+        return first_declared_limit(
+            self._reading_of(config_path, repo_root_path)
+            for config_path in config_candidates
+        )
 
-    def _extract_from_xml(self, config_path):
-        """Extract CyclomaticComplexity max value from Checkstyle XML.
-
-        Returns the max value as int, or None if not found or XML is malformed.
-        Handles self-closing modules and TreeWalker nesting.
-        """
-        try:
-            tree = ET.parse(config_path)
-            root = tree.getroot()
-        except ET.ParseError:
+    def _reading_of(self, config_path, repo_root_path):
+        """What one Checkstyle config declares: a limit, an unreadable config,
+        or nothing at all."""
+        if not config_path.exists():
             return None
+        config_name = str(config_path.relative_to(repo_root_path))
+        try:
+            root = ET.parse(config_path).getroot()
+        except (OSError, UnicodeDecodeError, ET.ParseError) as error:
+            return unreadable_config(config_name, f"{type(error).__name__}: {error}")
+        return self._extract_from_xml(root, config_name)
 
-        # Find CyclomaticComplexity module: could be top-level or nested
-        for module_elem in root.iter("module"):
-            if module_elem.get("name") == "CyclomaticComplexity":
-                # Look for property element with name="max"
-                for prop_elem in module_elem.findall("property"):
-                    if prop_elem.get("name") == "max":
-                        try:
-                            return int(prop_elem.get("value", ""))
-                        except TypeError, ValueError:
-                            return None
+    @staticmethod
+    def _extract_from_xml(root, config_name):
+        """The CyclomaticComplexity module's `max`, read from a parsed config.
+
+        Handles self-closing modules and TreeWalker nesting. A module with no
+        `max` property declares nothing; a `max` that is not a number is a
+        config this reader cannot use, and says so.
+        """
+        for module_element in root.iter("module"):
+            if module_element.get("name") != "CyclomaticComplexity":
+                continue
+            for property_element in module_element.findall("property"):
+                if property_element.get("name") != "max":
+                    continue
+                declared = property_element.get("value", "")
+                try:
+                    return Thresholds(
+                        cyclomatic_complexity=int(declared), source=config_name
+                    )
+                except TypeError, ValueError:
+                    return unreadable_config(
+                        config_name, f"max is not a number: {declared!r}"
+                    )
         return None
 
 
@@ -169,20 +236,17 @@ class PmdThresholds:
             return None
         try:
             root = ET.parse(config_path).getroot()
-        except OSError, UnicodeDecodeError, ET.ParseError:
-            return None
+        except (OSError, UnicodeDecodeError, ET.ParseError) as error:
+            return unreadable_config(
+                config_path.name, f"{type(error).__name__}: {error}"
+            )
 
-        for rule_element in root.iter():
-            if _local_name(rule_element.tag) != "rule":
-                continue
-            if not self._is_cyclomatic_complexity_rule(rule_element):
-                continue
-            declared = self._method_report_level(rule_element)
-            if declared is not None:
-                return Thresholds(
-                    cyclomatic_complexity=declared, source="pmd-ruleset.xml"
-                )
-        return None
+        return first_declared_limit(
+            self._method_report_level(rule_element, config_path.name)
+            for rule_element in root.iter()
+            if _local_name(rule_element.tag) == "rule"
+            and self._is_cyclomatic_complexity_rule(rule_element)
+        )
 
     @classmethod
     def _is_cyclomatic_complexity_rule(cls, rule_element) -> bool:
@@ -197,17 +261,23 @@ class PmdThresholds:
         return cls._CYCLOMATIC_RULE in reference or cls._CYCLOMATIC_RULE in name
 
     @classmethod
-    def _method_report_level(cls, rule_element):
-        """This rule's own `methodReportLevel`, as an int, or None."""
+    def _method_report_level(cls, rule_element, config_name):
+        """What this rule's own `methodReportLevel` declares, or nothing."""
         for property_element in rule_element.iter():
             if _local_name(property_element.tag) != "property":
                 continue
             if property_element.get("name") != cls._METHOD_REPORT_LEVEL:
                 continue
+            declared = property_element.get("value", "")
             try:
-                return int(property_element.get("value", ""))
+                return Thresholds(
+                    cyclomatic_complexity=int(declared), source=config_name
+                )
             except TypeError, ValueError:
-                return None
+                return unreadable_config(
+                    config_name,
+                    f"{cls._METHOD_REPORT_LEVEL} is not a number: {declared!r}",
+                )
         return None
 
 
@@ -224,23 +294,36 @@ class RuffThresholds:
             return None
         try:
             parsed = tomllib.loads(config_path.read_text())
-        except OSError, UnicodeDecodeError, tomllib.TOMLDecodeError:
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             # Unreadable (permissions, encoding) or malformed TOML: this repo
-            # declares nothing we can read. Absence, never a crash.
+            # declares nothing we can read. Absence, never a crash — but an
+            # absence that says why, since the repo may well have declared a
+            # limit inside the file nobody could open.
+            return unreadable_config(
+                "pyproject.toml", f"{type(error).__name__}: {error}"
+            )
+
+        return first_declared_limit(
+            self._reading_of(parsed, table_path, source)
+            for table_path, source in self._MCCABE_TABLES
+        )
+
+    @staticmethod
+    def _reading_of(parsed, table_path, source):
+        """What one mccabe table declares: a limit, an unreadable value, or
+        nothing at all."""
+        declared = _nested_table_value(parsed, table_path, "max-complexity")
+        if declared is None:
             return None
-
-        for table_path, source in self._MCCABE_TABLES:
-            declared = _nested_table_value(parsed, table_path, "max-complexity")
-            if declared is None:
-                continue
-            try:
-                return Thresholds(cyclomatic_complexity=int(declared), source=source)
-            except TypeError, ValueError:
-                # `max-complexity = "ten"`. The table declares something, but
-                # not a limit; keep looking rather than crash the whole run.
-                continue
-
-        return None
+        try:
+            return Thresholds(cyclomatic_complexity=int(declared), source=source)
+        except TypeError, ValueError:
+            # `max-complexity = "ten"`. The table declares something, but not a
+            # limit — and a repo that meant to set one is owed the reason its
+            # number went unused.
+            return unreadable_config(
+                source, f"max-complexity is not a number: {declared!r}"
+            )
 
 
 class EslintThresholds:
@@ -299,41 +382,62 @@ class EslintThresholds:
     def thresholds_for(self, repo_root):
         repo_root_path = Path(repo_root)
 
-        # Try flat config first (ESLint 9+): eslint.config.js or eslint.config.mjs
-        flat_config_candidates = [
-            repo_root_path / "eslint.config.js",
-            repo_root_path / "eslint.config.mjs",
+        # Flat config first (ESLint 9+), then the legacy format. Every
+        # candidate is consulted through the same rule: the first declared
+        # limit wins, and an unreadable config on the way is still reported.
+        candidate_readings = [
+            self._extract_from_flat_config(repo_root_path / "eslint.config.js"),
+            self._extract_from_flat_config(repo_root_path / "eslint.config.mjs"),
+            self._extract_from_legacy_config(repo_root_path / ".eslintrc.json"),
         ]
-        for flat_config_path in flat_config_candidates:
-            result = self._extract_from_flat_config(flat_config_path)
-            if result is not None:
-                return result
+        return first_declared_limit(candidate_readings)
 
-        # Fall back to legacy format: .eslintrc.json
-        legacy_config_path = repo_root_path / ".eslintrc.json"
-        if not legacy_config_path.exists():
+    def _extract_from_legacy_config(self, config_path):
+        """Extract the complexity limit from a legacy `.eslintrc.json`."""
+        if not config_path.exists():
             return None
         try:
-            parsed = json.loads(legacy_config_path.read_text())
-        except OSError, UnicodeDecodeError, json.JSONDecodeError:
-            # Unreadable or not JSON: absence, never a crash.
-            return None
+            parsed = json.loads(config_path.read_text())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            # Unreadable or not JSON: absence, never a crash — but an absence
+            # naming the file, since a limit may well be declared inside it.
+            return unreadable_config(
+                config_path.name, f"{type(error).__name__}: {error}"
+            )
 
         # A JSON document whose root is anything but an object (`[1,2,3]`, a
         # bare string) is not an ESLint config. Asking it for `rules` used to
         # be an AttributeError escaping all the way to the user.
-        rules = parsed.get("rules") if isinstance(parsed, dict) else None
-        rule = rules.get("complexity") if isinstance(rules, dict) else None
+        if not isinstance(parsed, dict):
+            return unreadable_config(
+                config_path.name, "the document's root is not an object"
+            )
+        rules = parsed.get("rules")
+        if rules is None:
+            return None
+        if not isinstance(rules, dict):
+            return unreadable_config(config_path.name, '"rules" is not an object')
+
+        rule = rules.get("complexity")
+        # No rule, or one written in a shape that declares no maximum
+        # (`"complexity": "error"`), declares no limit. That is an ordinary
+        # config, not a broken one.
         if not isinstance(rule, list) or len(rule) < 2:
             return None
         if _severity_disables_the_rule(str(rule[0])):
             return None
         try:
             return Thresholds(
-                cyclomatic_complexity=int(rule[1]), source=".eslintrc.json"
+                cyclomatic_complexity=int(rule[1]), source=config_path.name
             )
         except TypeError, ValueError:
-            return None
+            # The object form, `["error", {"max": 10}]`. A limit *is* declared;
+            # this reader cannot use it, and saying so beats letting the repo
+            # believe its maximum is in force.
+            return unreadable_config(
+                config_path.name,
+                f"the complexity rule declares {rule[1]!r}, not a number",
+            )
 
     def _extract_from_flat_config(self, config_path):
         """Extract complexity limit from flat config JS file.
@@ -350,8 +454,10 @@ class EslintThresholds:
             return None
         try:
             content = config_path.read_text()
-        except OSError, UnicodeDecodeError:
-            return None
+        except (OSError, UnicodeDecodeError) as error:
+            return unreadable_config(
+                config_path.name, f"{type(error).__name__}: {error}"
+            )
 
         sanitized = self._sanitize_for_pattern_match(content)
         # The severity slot below is read out of the ORIGINAL text using a span
@@ -373,9 +479,20 @@ class EslintThresholds:
                 continue
             declared_maximums.add(int(match.group("max")))
 
-        # Nothing readable, or readable candidates that disagree: the config
-        # does not confidently declare one number, so it declares none.
-        if len(declared_maximums) != 1:
+        # Candidates that disagree: the config declares more than one number
+        # and this reader cannot tell which one governs the code being
+        # measured. Not a limit, and not silence either — the repo did declare
+        # something.
+        if len(declared_maximums) > 1:
+            return unreadable_config(
+                config_path.name,
+                "the complexity rule declares more than one maximum "
+                f"({', '.join(str(maximum) for maximum in sorted(declared_maximums))})",
+            )
+        # Nothing this reader can extract. Flat config is JavaScript and most
+        # of them set no complexity rule at all, so this is the ordinary case,
+        # not a broken one.
+        if not declared_maximums:
             return None
 
         return Thresholds(
@@ -538,7 +655,15 @@ class NullThresholds:
 
 
 def default_threshold_sources():
-    """The sources a normal run consults, in order."""
+    """The sources a normal run consults, in order.
+
+    Adding one is adding a class and an entry here. The obligation that comes
+    with the seam: a source returns `None` for "that config declares no
+    complexity limit" and `unreadable_config(name, cause)` for "I found the
+    config and could not read it". A source that reports the second as the
+    first still never crashes — and silently reinstates the bug this
+    distinction exists to fix.
+    """
     return (
         CheckstyleThresholds(),
         PmdThresholds(),
@@ -548,8 +673,14 @@ def default_threshold_sources():
 
 
 def discover_thresholds(repo_root, sources=None) -> Thresholds:
-    for source in sources if sources is not None else default_threshold_sources():
-        thresholds = source.thresholds_for(repo_root)
-        if thresholds is not None:
-            return thresholds
-    return NO_THRESHOLDS
+    """The limit this repo declares, or an absence that says why there is none.
+
+    A source that could not read a config it owns does not stop discovery — a
+    typo'd ruff table must not hide a perfectly good ESLint limit — but its
+    cause travels with whatever answer comes back.
+    """
+    chosen = first_declared_limit(
+        source.thresholds_for(repo_root)
+        for source in (sources if sources is not None else default_threshold_sources())
+    )
+    return chosen if chosen is not None else NO_THRESHOLDS
