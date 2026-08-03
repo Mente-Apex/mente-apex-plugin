@@ -8,7 +8,9 @@ docs/superpowers/specs/2026-08-03-config-sync-rejection-ledger-design.md.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 REJECTION_KINDS = (
     "snapshot-section",
@@ -65,3 +67,101 @@ class TimestampedRejectionRule:
         if not source_timestamp:
             return True
         return source_timestamp <= record.rejected_at
+
+
+class CorruptRejectionLedgerError(RuntimeError):
+    """A rejection ledger on disk does not parse.
+
+    Raised rather than swallowed: treating an unreadable ledger as "no
+    rejections" would silently resurrect exactly the content the operator
+    killed, which is the defect this module exists to prevent.
+    """
+
+
+def _record_from(payload: dict) -> RejectionRecord:
+    return RejectionRecord(
+        id=payload["id"],
+        kind=payload["kind"],
+        address=payload["address"],
+        scope=payload["scope"],
+        rejected_at=payload["rejected_at"],
+        machine_id=payload["machine_id"],
+        reason=payload.get("reason", ""),
+        tier=payload.get("tier", ""),
+        revives=payload.get("revives"),
+    )
+
+
+def _read_ledger(path: Path) -> list[RejectionRecord]:
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise CorruptRejectionLedgerError(f"{path} does not parse: {exc}") from exc
+    return [_record_from(entry) for entry in payload.get("rejections", [])]
+
+
+def _write_ledger(path: Path, records: list[RejectionRecord]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"rejections": [vars(record) for record in records]}
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _replacing(records: list[RejectionRecord], incoming: RejectionRecord) -> list:
+    kept = [record for record in records if record.id != incoming.id]
+    kept.append(incoming)
+    return kept
+
+
+class LocalRejectionStore:
+    """This machine's private vetoes. Never committed — a local preference that
+    reached the shared repo would impose one machine's taste on the network."""
+
+    scope = "local"
+
+    def __init__(self, path: Path):
+        self._path = Path(path)
+
+    def all(self) -> list[RejectionRecord]:
+        return _read_ledger(self._path)
+
+    def record(self, record: RejectionRecord) -> None:
+        _write_ledger(self._path, _replacing(self.all(), record))
+
+    def forget(self, rejection_id: str) -> None:
+        remaining = [found for found in self.all() if found.id != rejection_id]
+        _write_ledger(self._path, remaining)
+
+
+class SharedRejectionStore:
+    """Network-wide tombstones. Reads every machine's file, writes only its own —
+    the per-file pattern `machines/<id>.json` uses, so two machines never touch
+    the same file and the state converges without merge conflicts."""
+
+    scope = "network"
+
+    def __init__(self, repo_dir: Path, machine_id: str):
+        self._directory = Path(repo_dir) / "rejections"
+        self._machine_id = machine_id
+
+    @property
+    def _own_path(self) -> Path:
+        return self._directory / f"{self._machine_id}.json"
+
+    def all(self) -> list[RejectionRecord]:
+        if not self._directory.exists():
+            return []
+        found: list[RejectionRecord] = []
+        for ledger_path in sorted(self._directory.glob("*.json")):
+            found.extend(_read_ledger(ledger_path))
+        return found
+
+    def record(self, record: RejectionRecord) -> None:
+        _write_ledger(self._own_path, _replacing(_read_ledger(self._own_path), record))
+
+    def forget(self, rejection_id: str) -> None:
+        remaining = [
+            found for found in _read_ledger(self._own_path) if found.id != rejection_id
+        ]
+        _write_ledger(self._own_path, remaining)
