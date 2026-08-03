@@ -43,7 +43,7 @@ from complexity_probe_gate import CycleGate
 from complexity_probe_lizard import LizardProbe
 from complexity_probe_measurement import UNVERIFIED, Measurement
 from complexity_probe_scope import ScopeSelection, resolve_literal_paths, resolve_scope
-from complexity_probe_sinks import ArtifactSink, ReviewSink, TranscriptSink
+from complexity_probe_sinks import ArtifactSink, ProbeReport, ReviewSink, TranscriptSink
 from complexity_probe_thresholds import discover_thresholds, no_thresholds_because
 
 
@@ -186,16 +186,26 @@ def main(argv=None) -> int:
     if arguments.gate:
         verdict = CycleGate().evaluate(measurement, probe.is_available())
 
+    # One object, every sink. The verdict travels inside it so `ArtifactSink`
+    # emits the whole payload — this file used to render the artifact and then
+    # add a key to the dict it got back, which put one schema in two places.
+    report = ProbeReport(
+        measurement=measurement,
+        thresholds=thresholds,
+        scope_description=scope_description,
+        verdict=verdict,
+    )
+
     if arguments.json:
-        artifact = ArtifactSink().render(measurement, thresholds, scope_description)
-        # In JSON mode, include the verdict in the payload so the entire output is valid JSON.
-        if verdict:
-            artifact["verdict"] = {"status": verdict.status, "message": verdict.message}
-        print(json.dumps(artifact, indent=2))
+        # The verdict is inside the payload, so the entire output is one valid
+        # JSON document.
+        print(json.dumps(ArtifactSink().render(report), indent=2))
     else:
         sink = TranscriptSink() if arguments.sink == "transcript" else ReviewSink()
-        print(sink.render(measurement, thresholds, scope_description))
-        # In transcript/review mode, print the verdict separately to stdout.
+        print(sink.render(report))
+        # The verdict line stays here rather than in a text sink: it carries
+        # exit-code semantics (`blocks` sends it to stderr and returns 1),
+        # which is this entry point's decision to make, not a rendering.
         if verdict:
             if verdict.blocks:
                 print(verdict.message, file=sys.stderr)
