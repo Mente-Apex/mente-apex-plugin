@@ -61,13 +61,16 @@ Scale effort to scope. **Read the standard first**, then:
 - **Quick (default for a diff or a few files).** One read-through against the
   standard; report findings inline (the *Suggested output* format in the
   standard). No subagents, no report file — the common case stays light.
-- **Deep (a PR, a module, or on request).** The two-stage verified pipeline:
-  dispatch `agents/analyzer.md` (read-only over the code; writes its draft)
-  then `agents/reviewer.md`
-  (re-verifies every finding against the code, prunes false positives), writing a
-  report to `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md` per
-  `references/report-template.md`. Create `docs/reports/clean-code/` git-excluded,
-  as in `../../docs/refactor-workflow.md` Phase 0.
+- **Deep (a PR, a module, or on request).** Follows
+  [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md) Phases 0–2
+  verbatim — including the structural-graph detection + verdict, the stale-draft
+  pre-clear, and the git-exclude via `.git/info/exclude` for
+  `docs/reports/clean-code/`: dispatch `agents/analyzer.md` (read-only over the
+  code; writes `docs/reports/clean-code/draft-findings.md`) then
+  `agents/reviewer.md` (re-verifies every finding against the code, prunes false
+  positives, then reaps the draft once the report exists and parses), writing
+  the report to `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md` per
+  `references/report-template.md`.
 
 ## Non-overlap — defer up-ladder
 
