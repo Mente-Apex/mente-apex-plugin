@@ -167,8 +167,8 @@ human review (the same three decisions gated in `design`). On approval they are
 
 ### Phase 4 — Stop
 Present a compact summary: findings by tier, top 2–3 wins, anything High-impact.
-**No code changes in this run** — findings remain applicable through the shared engine
-when merged by the umbrella or opted into directly. Offer next steps: `/ddd design` on
+**No code changes in this lens's own run** — findings remain applicable through the
+shared engine when merged by the umbrella or opted into directly. Offer next steps: `/ddd design` on
 a new context, hand specific findings to `/tdd`, or `/solid` for the pure-SOLID cut.
 **Offer** to
 capture key findings (and any kept domain decisions) wherever the project keeps
