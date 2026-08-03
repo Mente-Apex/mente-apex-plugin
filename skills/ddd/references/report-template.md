@@ -88,4 +88,26 @@ never silence.
 - Findings added by the reviewer: <IDs>, or "none"
 - Areas not examined: <coverage gaps>
 - Reverse-engineered docs/domain proposal: <written / kept / discarded by user>
+
+## Outcome
+
+<!-- Written by the orchestrator at Phase 5, once an apply phase has run — the
+     persisted run synthesis (applied/deferred/failed ids, suite before/after,
+     net diffstat, verification method, residuals). Omit this whole section
+     entirely on an audit-only run; format per refactor-workflow.md. This
+     lens's own run never reaches Phase 5, so this section only exists on a
+     report whose findings were later applied via the code-quality umbrella
+     or a direct opt-in. -->
+
+## Apply log
+
+<!-- Appended by the implementer, one line per attempt: -->
+<!-- <UTC timestamp> [ddd/critical-1] applied — suite green (42 passed) — diffstat: 3 files, +120/-85 -->
+<!-- <UTC timestamp> [ddd/major-2] FAILED — test_x broke, fix attempt failed, reverted -->
 ```
+
+The `Status:` vocabulary and the Apply-log line format are defined once in the
+shared workflow — see [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md)
+("Status & Apply-log format"). The skeleton above is what the reviewer lays down;
+a finding merged by the umbrella (or opted into directly) is filled per that spec
+through the shared engine, since this lens's own run never reaches Phase 4–5.

@@ -45,8 +45,8 @@ deletion gate).
 - **Location:** `tests/path:line` <all sites>
 - **Evidence:** <what makes it a finding — the missing import, the mock-only assertion,
   the identical parametrized twin. No evidence, no finding.>
-- **Impact:** <why it hurts trust/readability/change-safety — justifies the tier>
-- **Fix:** <concrete: delete / merge into <test> / split into N tests / inject the port /
+- **Reader impact:** <why it hurts trust/readability/change-safety — justifies the tier>
+- **Proposed change:** <concrete: delete / merge into <test> / split into N tests / inject the port /
   extract a fixture>
 - **Coverage proof:** <only for a deletion — the coverage evidence that removal loses no
   SUT coverage, or "N/A (not a deletion)">
@@ -100,11 +100,18 @@ _Not yet run._
 <!-- mutation-gate:end -->
 
 This section sits in the real report between `## Reviewer notes` and
-`## Apply log`, at the same top level as the rest of the template above and
+`## Outcome`, at the same top level as the rest of the template above and
 below — it is broken out of the fenced block only so this reference doc's own
 structure guard can address it as a real heading.
 
 ```markdown
+## Outcome
+
+<!-- Written by the orchestrator at Phase 5, once an apply phase has run — the
+     persisted run synthesis (applied/deferred/failed ids, suite before/after,
+     net diffstat, verification method, residuals). Omit this whole section
+     entirely on an audit-only run; format per refactor-workflow.md. -->
+
 ## Apply log
 <!-- Appended by the implementer, one line per attempt, per the canonical format in
      docs/refactor-workflow.md — with the safety clause (mutation gate result, or the
