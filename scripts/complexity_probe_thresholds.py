@@ -8,6 +8,12 @@ needs editing.
 The plugin ships no numbers. A repo that declares no limit gets no limit, which
 is what keeps docs/clean-code-standard.md's rejection of universal numbers
 intact rather than quietly contradicted.
+
+Every source here reads a file some *other* tool owns, so every source treats a
+file it cannot read or cannot understand as absence: a missing permission, a
+truncated config or a typo'd value returns `None`, never an exception. A repo
+with a typo in its ruff config is owed a measurement and a stated limit of
+"none", not a traceback.
 """
 
 import json
@@ -25,6 +31,59 @@ class Thresholds:
 
 
 NO_THRESHOLDS = Thresholds(cyclomatic_complexity=None, source="none declared")
+
+
+def no_thresholds_because(reason: str) -> Thresholds:
+    """Absent thresholds that say why nothing could be read.
+
+    `NO_THRESHOLDS` means "this repo declares no limit", which is a finding.
+    This means "discovery could not answer", which is a different fact, and
+    absence without a cause is the silence this design exists to catch.
+    """
+    return Thresholds(cyclomatic_complexity=None, source=f"none readable — {reason}")
+
+
+def _local_name(tag: str) -> str:
+    """An element's name with any XML namespace stripped.
+
+    PMD rulesets normally declare a default namespace, which ElementTree folds
+    into every tag as `{uri}name`. Matching on the local name reads a
+    namespaced and a bare ruleset identically.
+    """
+    return tag.rpartition("}")[2]
+
+
+def _nested_table_value(parsed, table_path, key):
+    """The value at `key` inside the nested table `table_path`, else None.
+
+    Any hop that is missing, or that turns out not to be a table, means the
+    config does not declare this key. A config whose shape surprises us
+    declares nothing — it never raises.
+    """
+    current = parsed
+    for table_name in table_path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(table_name)
+    if not isinstance(current, dict):
+        return None
+    return current.get(key)
+
+
+# ESLint severities that turn a rule off. A number written beside one of these
+# is not a declared limit: the repo asked for the rule not to run at all.
+_DISABLED_SEVERITY_TOKENS = frozenset(("off", '"off"', "'off'", "0"))
+
+
+def _severity_disables_the_rule(severity_token: str) -> bool:
+    """Whether an ESLint severity token, as written, turns the rule off.
+
+    Takes the token as text so the flat-config path (which only ever has the
+    source text) and the legacy JSON path (which has a parsed value) can share
+    one predicate. They have always agreed on what a severity means and must
+    keep agreeing.
+    """
+    return severity_token.strip() in _DISABLED_SEVERITY_TOKENS
 
 
 class CheckstyleThresholds:
@@ -86,59 +145,100 @@ class PmdThresholds:
 
     PMD has no standard location for rulesets — they are always configured
     explicitly. This checks `pmd-ruleset.xml` as a common convention.
-    Matches properties named classReportLevel or methodReportLevel.
+
+    Parsed as XML rather than matched textually, for the same reason
+    `CheckstyleThresholds` is: a property has to be read from the rule element
+    that owns it. PMD's `CyclomaticComplexity` declares two limits,
+    `classReportLevel` and `methodReportLevel`, and the class-level one
+    conventionally comes first — so the first textual match in the file is
+    usually the wrong number by a wide margin.
+
+    Only `methodReportLevel` is read. This probe measures functions, so a
+    per-class limit is not a limit a function can breach; comparing against it
+    silently disables the "worth a look" marker for every PMD repo. A ruleset
+    declaring only `classReportLevel` therefore declares no per-function limit,
+    and gets `None` — a wrong number costs more than an absent one.
     """
 
-    _PMD_PROPERTY = re.compile(
-        r'<property\s+name="(?:classReportLevel|methodReportLevel)"\s+'
-        r'value="(?P<max>\d+)"'
-    )
+    _CYCLOMATIC_RULE = "CyclomaticComplexity"
+    _METHOD_REPORT_LEVEL = "methodReportLevel"
 
     def thresholds_for(self, repo_root):
         config_path = Path(repo_root) / "pmd-ruleset.xml"
         if not config_path.exists():
             return None
         try:
-            content = config_path.read_text()
-        except OSError, UnicodeDecodeError:
+            root = ET.parse(config_path).getroot()
+        except OSError, UnicodeDecodeError, ET.ParseError:
             return None
-        match = self._PMD_PROPERTY.search(content)
-        if not match:
-            return None
-        return Thresholds(
-            cyclomatic_complexity=int(match.group("max")), source="pmd-ruleset.xml"
-        )
+
+        for rule_element in root.iter():
+            if _local_name(rule_element.tag) != "rule":
+                continue
+            if not self._is_cyclomatic_complexity_rule(rule_element):
+                continue
+            declared = self._method_report_level(rule_element)
+            if declared is not None:
+                return Thresholds(
+                    cyclomatic_complexity=declared, source="pmd-ruleset.xml"
+                )
+        return None
+
+    @classmethod
+    def _is_cyclomatic_complexity_rule(cls, rule_element) -> bool:
+        """Whether this `<rule>` configures PMD's CyclomaticComplexity.
+
+        A rule names itself either by `ref` (the usual
+        `category/java/design.xml/CyclomaticComplexity`) or by `name` when
+        defined inline.
+        """
+        reference = rule_element.get("ref", "")
+        name = rule_element.get("name", "")
+        return cls._CYCLOMATIC_RULE in reference or cls._CYCLOMATIC_RULE in name
+
+    @classmethod
+    def _method_report_level(cls, rule_element):
+        """This rule's own `methodReportLevel`, as an int, or None."""
+        for property_element in rule_element.iter():
+            if _local_name(property_element.tag) != "property":
+                continue
+            if property_element.get("name") != cls._METHOD_REPORT_LEVEL:
+                continue
+            try:
+                return int(property_element.get("value", ""))
+            except TypeError, ValueError:
+                return None
+        return None
 
 
 class RuffThresholds:
+    # The current table first, then the still-functional deprecated one.
+    _MCCABE_TABLES = (
+        (("tool", "ruff", "lint", "mccabe"), "pyproject.toml [tool.ruff.lint.mccabe]"),
+        (("tool", "ruff", "mccabe"), "pyproject.toml [tool.ruff.mccabe] (deprecated)"),
+    )
+
     def thresholds_for(self, repo_root):
         config_path = Path(repo_root) / "pyproject.toml"
         if not config_path.exists():
             return None
         try:
             parsed = tomllib.loads(config_path.read_text())
-        except tomllib.TOMLDecodeError:
+        except OSError, UnicodeDecodeError, tomllib.TOMLDecodeError:
+            # Unreadable (permissions, encoding) or malformed TOML: this repo
+            # declares nothing we can read. Absence, never a crash.
             return None
 
-        # Try current location first: tool.ruff.lint.mccabe
-        mccabe = (
-            parsed.get("tool", {}).get("ruff", {}).get("lint", {}).get("mccabe", {})
-        )
-        maximum = mccabe.get("max-complexity")
-        if maximum is not None:
-            return Thresholds(
-                cyclomatic_complexity=int(maximum),
-                source="pyproject.toml [tool.ruff.lint.mccabe]",
-            )
-
-        # Fall back to deprecated location: tool.ruff.mccabe
-        mccabe_legacy = parsed.get("tool", {}).get("ruff", {}).get("mccabe", {})
-        maximum_legacy = mccabe_legacy.get("max-complexity")
-        if maximum_legacy is not None:
-            return Thresholds(
-                cyclomatic_complexity=int(maximum_legacy),
-                source="pyproject.toml [tool.ruff.mccabe] (deprecated)",
-            )
+        for table_path, source in self._MCCABE_TABLES:
+            declared = _nested_table_value(parsed, table_path, "max-complexity")
+            if declared is None:
+                continue
+            try:
+                return Thresholds(cyclomatic_complexity=int(declared), source=source)
+            except TypeError, ValueError:
+                # `max-complexity = "ten"`. The table declares something, but
+                # not a limit; keep looking rather than crash the whole run.
+                continue
 
         return None
 
@@ -152,7 +252,11 @@ class EslintThresholds:
     extracts only the one shape it can be certain about: `complexity` set to an
     array whose severity is a *literal* — `"error"`, `"warn"`, `"off"` (either
     quote style) or the numeric form `0`, `1`, `2` — and whose second element is
-    a bare integer. Everything else is absence, because a wrong number costs
+    a bare integer. A severity that turns the rule *off* (`"off"` or `0`) yields
+    no limit on either path: a rule the repo explicitly disabled declares
+    nothing, whatever number is still written beside it.
+
+    Everything else is absence, because a wrong number costs
     more than a missing one. Deliberately NOT extracted: variable severities
     (`[level, 10]`), spreads (`[...base, 10]`), calls (`[sev(), 10]`), template
     literals (`` [`error`, 10] ``), and the object form (`["error", {max: 10}]`).
@@ -182,7 +286,12 @@ class EslintThresholds:
     # token rule and it is wrong for the rare keyword operands it does not know
     # (`typeof /re/`, `case /re/:`). Both mistakes cost at most a missed
     # threshold, never an invented one.
-    _REGEX_LITERAL_PRECEDERS = frozenset("(,=:[!&|?{};")
+    #
+    # `>` is in the set because it closes an arrow (`=>`) as well as a
+    # comparison, and in both positions a following `/` opens a regex rather
+    # than divides. Arrow functions are near-universal in eslint.config.js, so
+    # omitting it lost the real rule in the common case.
+    _REGEX_LITERAL_PRECEDERS = frozenset("(,=:[!&|?{};>")
 
     # The one keyword operand common enough to be worth knowing.
     _REGEX_LITERAL_KEYWORD = "return"
@@ -206,17 +315,25 @@ class EslintThresholds:
             return None
         try:
             parsed = json.loads(legacy_config_path.read_text())
-        except json.JSONDecodeError:
+        except OSError, UnicodeDecodeError, json.JSONDecodeError:
+            # Unreadable or not JSON: absence, never a crash.
             return None
-        rule = parsed.get("rules", {}).get("complexity")
-        if isinstance(rule, list) and len(rule) > 1:
-            try:
-                return Thresholds(
-                    cyclomatic_complexity=int(rule[1]), source=".eslintrc.json"
-                )
-            except TypeError, ValueError:
-                return None
-        return None
+
+        # A JSON document whose root is anything but an object (`[1,2,3]`, a
+        # bare string) is not an ESLint config. Asking it for `rules` used to
+        # be an AttributeError escaping all the way to the user.
+        rules = parsed.get("rules") if isinstance(parsed, dict) else None
+        rule = rules.get("complexity") if isinstance(rules, dict) else None
+        if not isinstance(rule, list) or len(rule) < 2:
+            return None
+        if _severity_disables_the_rule(str(rule[0])):
+            return None
+        try:
+            return Thresholds(
+                cyclomatic_complexity=int(rule[1]), source=".eslintrc.json"
+            )
+        except TypeError, ValueError:
+            return None
 
     def _extract_from_flat_config(self, config_path):
         """Extract complexity limit from flat config JS file.
@@ -237,12 +354,22 @@ class EslintThresholds:
             return None
 
         sanitized = self._sanitize_for_pattern_match(content)
+        # The severity slot below is read out of the ORIGINAL text using a span
+        # found in the sanitized copy. That is only sound while sanitization is
+        # length-preserving. Fuzzing confirms it holds; nothing else says it
+        # must, so say it here where the dependency actually lives.
+        assert len(sanitized) == len(content), (
+            "sanitization must preserve length: the severity slot is read from "
+            "the original text by offsets found in the sanitized copy"
+        )
 
         declared_maximums = set()
         for match in self._FLAT_COMPLEXITY_RULE.finditer(sanitized):
             severity_start, severity_end = match.span("severity")
             severity_as_written = content[severity_start:severity_end]
             if not self._LITERAL_SEVERITY.match(severity_as_written):
+                continue
+            if _severity_disables_the_rule(severity_as_written):
                 continue
             declared_maximums.add(int(match.group("max")))
 
