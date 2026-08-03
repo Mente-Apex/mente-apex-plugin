@@ -11,6 +11,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 REJECTION_KINDS = (
     "snapshot-section",
@@ -170,3 +171,89 @@ class SharedRejectionStore:
             found for found in _read_ledger(self._own_path) if found.id != rejection_id
         ]
         _write_ledger(self._own_path, remaining)
+
+
+@runtime_checkable
+class RejectionPolicy(Protocol):
+    """The only seam consumers depend on. One reason to change: what counts as
+    rejected."""
+
+    def is_rejected(self, target: RejectionTarget, source_timestamp: str) -> bool: ...
+
+    def record(self, record: RejectionRecord) -> None: ...
+
+    def forget(self, rejection_id: str) -> None: ...
+
+    def all(self) -> list[RejectionRecord]: ...
+
+
+class NullRejectionPolicy:
+    """Rejects nothing. The explicit stand-in for "no ledger here", so callers
+    never branch on a None policy."""
+
+    def is_rejected(self, target: RejectionTarget, source_timestamp: str) -> bool:
+        return False
+
+    def record(self, record: RejectionRecord) -> None:
+        raise NotImplementedError("NullRejectionPolicy is read-only")
+
+    def forget(self, rejection_id: str) -> None:
+        raise NotImplementedError("NullRejectionPolicy is read-only")
+
+    def all(self) -> list[RejectionRecord]:
+        return []
+
+
+class CompositeRejectionPolicy:
+    """Fans a query across stores. Callers cannot tell which store answered.
+
+    Writes route by the record's own scope, so a local veto can never reach the
+    shared repo by accident. Reads honour scope too: a record only counts when
+    its own `scope` matches the store it came from, so a local-scoped record
+    that ended up sitting in a shared-repo file (an older client, a hand edit,
+    a bad merge) is never honoured by a network-only policy. That boundary is
+    a correctness property, not a preference — see
+    docs/superpowers/specs/2026-08-03-config-sync-rejection-ledger-design.md:115.
+    """
+
+    def __init__(self, stores: list, rule=None):
+        self._stores = stores
+        self._rule = rule if rule is not None else TimestampedRejectionRule()
+
+    def all(self) -> list[RejectionRecord]:
+        found: list[RejectionRecord] = []
+        for store in self._stores:
+            found.extend(
+                record for record in store.all() if record.scope == store.scope
+            )
+        return found
+
+    def record(self, record: RejectionRecord) -> None:
+        for store in self._stores:
+            if store.scope == record.scope:
+                store.record(record)
+                return
+        raise ValueError(f"no store for scope {record.scope!r}")
+
+    def forget(self, rejection_id: str) -> None:
+        for store in self._stores:
+            store.forget(rejection_id)
+
+    def is_rejected(self, target: RejectionTarget, source_timestamp: str) -> bool:
+        target_id = rejection_id_of(target.kind, target.address)
+        rejections = [
+            found
+            for found in self.all()
+            if found.revives is None and found.id == target_id
+        ]
+        if not rejections:
+            return False
+        newest = max(rejections, key=lambda found: found.rejected_at)
+        revivals = [
+            found
+            for found in self.all()
+            if found.revives == target_id and found.rejected_at > newest.rejected_at
+        ]
+        if revivals:
+            return False
+        return self._rule.suppresses(newest, source_timestamp)
