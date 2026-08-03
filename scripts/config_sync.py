@@ -1011,15 +1011,11 @@ def _resolve_rejection_address(repo_dir, kind, subject, section_heading, occurre
             raise UnknownRejectionTargetError(
                 f"no snapshot file {subject!r}; known files: {sorted(files)}"
             )
-        headings = [
-            heading_text
-            for (heading_text, _occurrence), _heading, _body in merge._parse_sections(
-                files[subject]
-            )
-        ]
-        if section_heading not in headings:
+        keys = [key for key, _heading, _body in merge._parse_sections(files[subject])]
+        if (section_heading, occurrence) not in keys:
             raise UnknownRejectionTargetError(
-                f"no section {section_heading!r} in {subject}; found: {headings}"
+                f"no section {section_heading!r} occurrence {occurrence} in "
+                f"{subject}; found: {keys}"
             )
         return rejections_module.section_address(subject, section_heading, occurrence)
     raise ValueError(f"kind {kind!r} is not addressable in phase 1")
@@ -1040,6 +1036,9 @@ def _rejection_policy(repo_path):
     )
 
 
+KNOWN_REJECT_OPTIONS = ("--scope", "--section", "--occurrence", "--reason", "--force")
+
+
 def cmd_reject(repo_path, *args):
     """Record a rejection against an address proven to exist in the current
     consolidated snapshot. Refuses a section rejection that would empty its
@@ -1053,6 +1052,21 @@ def cmd_reject(repo_path, *args):
         )
     subject = args[1]
     options = list(args[2:])
+
+    # Fail closed, like `cmd_hooks_prune` does for its own flags: an
+    # unrecognised option (a typo'd `--scop`) must not silently fall through
+    # to a default — `--scop local` defaulting `scope` to "network" would
+    # propagate a rejection meant to stay private to every machine, with a
+    # success-shaped JSON payload giving no sign anything went wrong.
+    unknown_options = [
+        flag
+        for flag in options
+        if flag.startswith("--") and flag not in KNOWN_REJECT_OPTIONS
+    ]
+    if unknown_options:
+        raise ValueError(
+            f"unknown option(s) {unknown_options}; expected one of {KNOWN_REJECT_OPTIONS}"
+        )
 
     def option(name, default=None):
         return options[options.index(name) + 1] if name in options else default
@@ -1078,10 +1092,16 @@ def cmd_reject(repo_path, *args):
         # strings never sees an empty remainder — the sentinel itself is
         # non-empty. Rejoining and checking the actual text is what tells us
         # whether anything would survive the rejection.
+        #
+        # Filtered by the parse KEY `(heading, occurrence)`, not heading text
+        # alone: a repeated heading is an explicitly supported document shape
+        # (`_parse_sections`'s docstring exists because of it), and dropping
+        # every occurrence of a heading that appears twice would falsely
+        # refuse a rejection that targets only one of them.
         remaining_sections = [
             triple
             for triple in merge._parse_sections(_consolidated_files(repo_path)[subject])
-            if triple[1] != section_heading
+            if triple[0] != (section_heading, occurrence)
         ]
         remaining_content = rejections_module.rejoin_sections(remaining_sections)
         if not remaining_content.strip():
