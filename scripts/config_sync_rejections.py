@@ -509,10 +509,15 @@ def filter_settings_blob(files: dict, policy, source_timestamp: str) -> tuple:
     blob = files.get("settings.json")
     if not isinstance(blob, str):
         return files, []
+    # fmt: off
+    # PEP 758 lets black strip these parens (Python 3.14). Kept explicit: the
+    # unparenthesized form reads as a Python 2 `except X, name:` bind and has
+    # already been misread once in review.
     try:
         parsed = json.loads(blob)
-    except json.JSONDecodeError, ValueError:
+    except (json.JSONDecodeError, ValueError):
         return files, []
+    # fmt: on
     if not isinstance(parsed, dict):
         return files, []
 
