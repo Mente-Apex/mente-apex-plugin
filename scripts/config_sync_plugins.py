@@ -254,10 +254,20 @@ class MarketplacePlan:
 
 
 def plan_convergence(
-    context: propagators.SyncContext, reader: PluginRegistryReader
+    context: propagators.SyncContext, reader: PluginRegistryReader, policy=None
 ) -> MarketplacePlan:
     """Pure planner: union all repo manifests, diff against the live registry,
-    emit ordered actions (marketplaces first). Never emits an uninstall."""
+    emit ordered actions (marketplaces first). Never emits an uninstall.
+
+    `policy` is the rejection ledger, injected. It defaults to a null object so
+    every existing caller is unaffected, and so this module never has to branch
+    on a None policy. plugins-plan writes LOCAL state, so the caller hands it the
+    COMPOSITE policy — both scopes are correct here.
+    """
+    # Deferred import: config_sync_rejections is a sibling script, not a package.
+    import config_sync_rejections as rejections_module
+
+    policy = policy if policy is not None else rejections_module.NullRejectionPolicy()
     desired_marketplaces: dict = {}  # name -> source (or None)
     desired_plugins: dict = {}  # key -> meta
     manifests_dir = context.repo_dir / "plugins"
@@ -343,6 +353,13 @@ def plan_convergence(
             )
         else:
             plan.actions.append(PlannedAction("install_plugin", plugin_key))
+
+    plan.actions, rejected_targets = rejections_module.filter_plugin_actions(
+        plan.actions, policy, ""
+    )
+    plan.skipped.extend(
+        f"{target}: rejected in the config-sync ledger" for target in rejected_targets
+    )
     return plan
 
 
