@@ -31,8 +31,10 @@ no code and no tests** — you write the report only.
 4. **Tier** Critical/Major/Minor (when in doubt, down) and set **Risk** honestly — a
    deletion or a de-mock is rarely Low. Order by impact.
 5. **Write the report** using `report-template.md` exactly, including the **Kind** line on
-   every finding, the **Coverage proof** line on every deletion, the Reviewer notes, and
-   the `## Mutation gate` section **with its `<!-- mutation-gate:begin -->` /
+   every finding, the **Coverage proof** line on every deletion, the `<a id>` anchor
+   preceding every finding heading (in every tier's stub, not only Critical's — the ID
+   with `/`→`-`, per [docs/report-contract.md](../../../docs/report-contract.md)), the
+   Reviewer notes, and the `## Mutation gate` section **with its `<!-- mutation-gate:begin -->` /
    `<!-- mutation-gate:end -->` marker pair intact** — the gate replaces the span between
    them and refuses to guess where its section belongs when they are missing.
 6. **Fill the Mutation-gate section by running the gate against the report you just

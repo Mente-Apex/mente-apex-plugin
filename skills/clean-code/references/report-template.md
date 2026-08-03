@@ -11,7 +11,7 @@ lens's declared aliases for the canonical `Reader impact` and `Proposed change`
 fields (see that doc's alias table).
 
 Rec IDs are self-describing: `clean-code/<tier>-<n>`, where `<tier>` ∈
-`critical | major | minor` — the **same tier vocabulary the other four lenses use**,
+`critical | major | minor` — the **same tier vocabulary the other five lenses use**,
 so `clean-code/major-2` reads as "the second Major clean-code finding" with no
 legend lookup and no cross-scale translation. Grade each finding against the
 standard's Severity rubric (`../../../docs/clean-code-standard.md`), which uses
