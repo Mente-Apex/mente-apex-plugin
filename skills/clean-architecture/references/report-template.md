@@ -55,7 +55,8 @@ auto-generated heading anchors don't handle the `/`).
 
 ## Dependency-rule contract (leave-behind)
 <the drafted contract encoding the Dependency-Rule findings, in the detected
-language's tool (importlinter.ini for Python, .dependency-cruiser.cjs for JS/TS) —
+language's tool (importlinter.ini for Python, .dependency-cruiser.cjs for JS/TS,
+DependencyRuleTest.java for Java via ArchUnit) —
 offered as a CI tripwire; written to docs/reports/clean-architecture/>
 
 ## Structural health (appendix — only if --metrics)

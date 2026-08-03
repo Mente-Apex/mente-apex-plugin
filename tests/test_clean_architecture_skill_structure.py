@@ -119,8 +119,11 @@ def test_principles_cover_the_tiered_rubric():
 def test_python_reference_covers_tooling_and_degrade():
     text = read_skill_file("references/python.md")
     lowered = text.lower()
-    for tool in ["grimp", "import-linter", "importlinter.ini", "dependency-cruiser"]:
+    for tool in ["grimp", "import-linter", "importlinter.ini"]:
         assert tool in lowered, f"python.md missing tool: {tool}"
+    assert (
+        "dependency-cruiser" not in lowered
+    ), "python.md should not restate the TS tool (that's typescript.md's now)"
     assert (
         "fan-in" in lowered and "fan-out" in lowered
     ), "must show how to compute Instability"
