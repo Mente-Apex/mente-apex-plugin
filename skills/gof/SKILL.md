@@ -2,7 +2,7 @@
 name: gof
 description: >
   Gang of Four design-pattern analysis and guided refactor for object-oriented
-  codebases, with deep idiom support for Python and TypeScript.
+  codebases, with deep idiom support for Python, TypeScript, and Java.
   Two-stage analysis: an analyzer detects existing patterns (graded A–F) and
   proposes where unimplemented patterns genuinely help; an independent reviewer
   verifies every finding, tiers the actionable ones (Critical/Major/Minor), and
@@ -28,7 +28,7 @@ change at a time with the test suite as a tripwire.
 Its lens is `references/patterns.md` (rubric) + `references/report-template.md`.
 Reports go to `docs/reports/gof/`. The HTML preview follows `references/html-report.md`.
 Per-language idioms + test detection: `references/<language>.md` for each language
-Phase 0 detects (ships `python.md`, `typescript.md`; list `references/` for the set).
+Phase 0 detects (ships `python.md`, `typescript.md`, and `java.md`; list `references/` for the set).
 
 ## Invocation
 
@@ -86,9 +86,9 @@ pattern back into `patterns.md` and bump this file's `metadata.version`.
 - [references/html-report.md](references/html-report.md) — the
   self-contained HTML preview spec, written after the Markdown report.
 - `references/<language>.md` — idiomatic translations of the 23 patterns plus
-  test-suite detection for a detected language; ships `python.md` and
-  `typescript.md` today (list `references/` for the current set). New languages
-  drop in here.
+  test-suite detection for a detected language; ships `python.md`,
+  `typescript.md`, and `java.md` today (list `references/` for the current set).
+  New languages drop in here.
 - [agents/analyzer.md](agents/analyzer.md), [agents/reviewer.md](agents/reviewer.md),
   [agents/implementer.md](agents/implementer.md) — this skill's thin
   pointers into the shared roles.

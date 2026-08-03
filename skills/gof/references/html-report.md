@@ -5,7 +5,7 @@ the Markdown report. This file is the single source of truth for the HTML's
 structure and styling — the skill build step reads it, not the other way
 around.
 
-The HTML mirrors the MD report's Detected patterns + Recommendations + Not
+The HTML mirrors the MD report's Detected patterns + Findings + Not
 applicable sections; it is a gitignored artifact written after the MD.
 
 ## File
@@ -36,7 +36,7 @@ Colour-coded pill on each detected-pattern heading:
 | A | green | `#22c55e` | white |
 | B | blue | `#3b82f6` | white |
 | C | amber | `#f59e0b` | white |
-| D | orange | `#ef4444` | white |
+| D | orange | `#f97316` | white |
 | F | red | `#dc2626` | white |
 
 ## Category chips
@@ -64,7 +64,7 @@ One card per entry in "Detected patterns (graded inventory)":
 
 - Coloured left border matching the grade colour.
 - Labelled sub-sections (Location, Evidence, Strengths, Issues,
-  Recommendation, Overlap) using small-caps labels in muted text.
+  Recommendation, Related) using small-caps labels in muted text.
 - A distinct light-yellow background for the Recommendation block so it
   stands out from the rest of the card.
 
@@ -72,14 +72,20 @@ One card per entry in "Detected patterns (graded inventory)":
 
 One card per Critical/Major/Minor rec:
 
-- Coloured left border by tier (Critical red, Major amber, Minor blue — kept
-  distinct from the grade-badge palette so tier and grade are never
-  confused).
+- Coloured left border by tier: Critical red `#dc2626`, Major amber `#f59e0b`,
+  Minor slate `#64748b` — slate rather than blue so the tier palette never
+  reads as one of the grade-badge colours above (`#3b82f6` is already Grade B).
 - Labelled sub-sections matching the MD report's fields: Pattern, Location,
-  Problem now, Proposed change, Expected benefit, Overlap, Risk,
+  Problem now, Proposed change, Expected benefit, Related, Risk,
   Verification, Status.
 - A small status pill (`pending` / `applied` / `failed` / `skipped`) in the
-  card header.
+  card header — a stated lossy mapping of the canonical `Status:` vocabulary
+  ([docs/report-contract.md](../../../docs/report-contract.md) /
+  [docs/refactor-workflow.md](../../../docs/refactor-workflow.md)): `failed`
+  collapses `failed (reverted)`, and `skipped` collapses both
+  `skipped (not approved)` and `skipped (lost conflict to <winner-id>)`. The
+  MD report's `Status:` line keeps the full value; the pill is a compact
+  preview, not a second source of truth.
 - Where the recommendation includes a before/after sketch, render it in a
   two-column layout where space allows (stacked on narrow viewports).
 
