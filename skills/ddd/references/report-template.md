@@ -58,10 +58,12 @@ auto-generated heading anchors don't handle the `/`).
 
 ### Major
 
+<a id="ddd-major-1"></a>
 #### [ddd/major-1] ...
 
 ### Minor
 
+<a id="ddd-minor-1"></a>
 #### [ddd/minor-1] ...
 
 ## Target architecture sketch

@@ -88,6 +88,8 @@ isn't in this table is a defect, not a style choice.
 | `Expected benefit` | gof | Reader impact | **Alias, kept** — see `Problem now`. |
 | `Impact` | ddd, clean-architecture | Reader impact | **Renamed** — no lens-specific information was carried by the generic word, so both lenses use the canonical name directly. |
 | `Fix` | clean-architecture | Proposed change | **Renamed** — same reasoning as `Impact`. |
+| `Why it costs the reader` | clean-code | Reader impact | **Alias, kept** — a line-craft-flavoured framing (cost to the *reader specifically*, not change-safety in general) worth keeping distinct from the SOLID/clean-architecture framing of the same canonical field. |
+| `Suggestion` | clean-code | Proposed change | **Alias, kept** — matches the clean-code-standard.md rubric's own vocabulary; the deep-gear analyzer's draft entry format also names this field `Suggestion`, so aliasing (not renaming) keeps the draft and the final report consistent. |
 
 ## What this file is not
 

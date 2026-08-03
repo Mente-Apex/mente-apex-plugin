@@ -46,9 +46,11 @@ auto-generated heading anchors don't handle the `/`).
 - **Status:** pending
 
 ### Major
+<a id="clean-arch-major-1"></a>
 #### [clean-arch/major-1] ...
 
 ### Minor
+<a id="clean-arch-minor-1"></a>
 #### [clean-arch/minor-1] ...
 
 ## Dependency-rule contract (leave-behind)

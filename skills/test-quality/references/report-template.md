@@ -56,9 +56,11 @@ deletion gate).
 - **Status:** pending
 
 ### Major
+<a id="test-quality-major-1"></a>
 #### [test-quality/major-1] ...
 
 ### Minor
+<a id="test-quality-minor-1"></a>
 #### [test-quality/minor-1] ...
 
 ## Coverage & method

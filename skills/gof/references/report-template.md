@@ -63,10 +63,12 @@ auto-generated heading anchors don't handle the `/`).
 
 ### Major
 
+<a id="gof-major-1"></a>
 #### [gof/major-1] ...
 
 ### Minor
 
+<a id="gof-minor-1"></a>
 #### [gof/minor-1] ...
 
 ## Not applicable
