@@ -37,11 +37,19 @@ from pathlib import Path
 class Thresholds:
     """A declared limit, or the absence of one with whatever caused it.
 
-    `cyclomatic_complexity is None` means no limit is in force. `diagnostics`
-    then names every config that was present but unreadable — empty when the
-    repo genuinely declares nothing, and non-empty even alongside a limit some
-    *other* source did declare, because "ruff's number is a typo" stays true
-    when ESLint's number is the one being used.
+    Each field names exactly one thing. `source` is where the limit in force
+    came from — a config file, or `"none declared"` when no limit is in force.
+    It never restates a diagnostic: reading it required checking
+    `cyclomatic_complexity` first to know which of two meanings it carried,
+    and that ambiguity is what let `main()` print a `source` naming a *winning*
+    config while a losing one's typo went unmentioned.
+
+    `diagnostics` is the sole carrier of "and here is what I could not read":
+    every config that was present but unreadable, empty when the repo genuinely
+    declares nothing, and non-empty even alongside a limit some *other* source
+    did declare, because "ruff's number is a typo" stays true when ESLint's
+    number is the one being used. It is already the field every consumer gates
+    on — `main()` for stderr, `ArtifactSink` for the payload.
     """
 
     cyclomatic_complexity: int | None
@@ -52,18 +60,20 @@ class Thresholds:
 NO_THRESHOLDS = Thresholds(cyclomatic_complexity=None, source="none declared")
 
 
-def no_thresholds_because(reason: str, diagnostics=None) -> Thresholds:
+def no_thresholds_because(*reasons: str) -> Thresholds:
     """Absent thresholds that say why nothing could be read.
 
     `NO_THRESHOLDS` means "this repo declares no limit", which is a finding.
     This means "discovery could not answer", which is a different fact, and
-    absence without a cause is the silence this design exists to catch.
+    absence without a cause is the silence this design exists to catch. The
+    difference lives in `diagnostics` alone; `source` says "none declared"
+    either way, because in both cases no limit came from anywhere.
+
+    Varargs rather than `(reason, diagnostics=None)`: that shape let a caller
+    pass a summary string beside the list it summarized, and the second
+    argument silently discarded the first.
     """
-    return Thresholds(
-        cyclomatic_complexity=None,
-        source=f"none readable — {reason}",
-        diagnostics=tuple(diagnostics) if diagnostics is not None else (reason,),
-    )
+    return replace(NO_THRESHOLDS, diagnostics=reasons)
 
 
 def unreadable_config(config_name: str, cause: str) -> Thresholds:
@@ -102,7 +112,7 @@ def first_declared_limit(readings) -> Thresholds | None:
     if chosen is not None:
         return replace(chosen, diagnostics=tuple(diagnostics))
     if diagnostics:
-        return no_thresholds_because("; ".join(diagnostics), diagnostics)
+        return no_thresholds_because(*diagnostics)
     return None
 
 

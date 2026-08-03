@@ -154,11 +154,11 @@ def main(argv=None) -> int:
 
     # Neither human sink renders threshold state, so without this a config the
     # repo declared but nobody could read would go unmentioned — indis-
-    # tinguishable from a repo that declares no limit at all. Printed from the
-    # diagnostics rather than from `source`, because when some *other* source
-    # did declare a usable limit `source` names that winning config and the
-    # cause would vanish exactly when the run looks healthiest. stderr keeps
-    # stdout a single valid JSON document.
+    # tinguishable from a repo that declares no limit at all. `diagnostics` is
+    # the only field that carries a cause: `source` names the config a limit
+    # came from, which on the run that looks healthiest is some *other*,
+    # perfectly readable config. stderr keeps stdout a single valid JSON
+    # document.
     for diagnostic in thresholds.diagnostics:
         print(f"thresholds: {diagnostic}", file=sys.stderr)
 
