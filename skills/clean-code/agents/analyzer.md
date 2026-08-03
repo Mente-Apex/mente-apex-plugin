@@ -35,7 +35,7 @@ honestly rather than self-censoring.
 
 One entry per finding:
 ```markdown
-## [G<n>] <short imperative title>
+## [D<n>] <short imperative title>
 - **Principle:** <the numbered standard principle>
 - **Location:** `file:line` <all sites>
 - **Evidence:** <quote the key lines>
