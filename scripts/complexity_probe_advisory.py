@@ -8,6 +8,15 @@ No version numbers live here on purpose. Every bytecode-reading tool must be
 new enough to parse class-file 69 (Java 25), and a number written into source
 goes stale silently — so the advice states the constraint and leaves the pin to
 the reader.
+
+**This module has no production caller yet, and that is expected — it is not
+dead code, and it is not wired.** The verdict does not carry advice today. The
+only probe implemented so far is `lizard`, and the table below deliberately
+excludes it: a source-reading Python tool is never a build dependency, so there
+is nothing a build could add. `advice_for` is here for the bytecode-reading
+probes (`pit`, `jacoco`, `archunit`, `spotbugs`) that spec §4.5 does cover; the
+first of those to land is what wires it into an `unverified` reason. Deleting
+it would remove the answer, not the question. See docs/status-vocabulary.md.
 """
 
 from dataclasses import dataclass

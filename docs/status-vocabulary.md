@@ -26,9 +26,16 @@ Implemented in [`scripts/complexity_probe_gate.py`](../scripts/complexity_probe_
    nothing is recorded in `## Coverage & method`. Omitting it is a defect, not a
    tidy report.
 2. **`unverified` always carries a reason.** "Did not run" without a cause is
-   indistinguishable from silence. The reason is what makes the gap actionable —
-   and where a build could supply the missing tool, the reason carries the
-   coordinates too (cycle-gate spec §4.5).
+   indistinguishable from silence. The reason is what makes the gap actionable.
+
+   **Not yet shipped:** cycle-gate spec §4.5 asks that where a build could supply
+   the missing tool, the reason carry the install coordinates too. It does not
+   today. [`scripts/complexity_probe_advisory.py`](../scripts/complexity_probe_advisory.py)
+   produces those coordinates and is tested, but nothing calls it: the only probe
+   implemented so far is `lizard`, which §4.5's own table deliberately excludes
+   (a source-reading Python tool is never a build dependency). The advisory is
+   there for the bytecode-reading probes that will need it. Until one exists, a
+   reason is prose.
 
 ## Why `ran`-clean and `unverified` must not look alike
 

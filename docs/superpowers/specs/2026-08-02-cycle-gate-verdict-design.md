@@ -1,7 +1,23 @@
 # The cycle-gate verdict — design
 
-**Status: IMPLEMENTED 2026-08-03.** Plan:
+**Status: PARTIALLY IMPLEMENTED 2026-08-03.** Plan:
 [`../plans/2026-08-02-cycle-gate.md`](../plans/2026-08-02-cycle-gate.md).
+
+A spec marked implemented is read as a description of the code, so the three
+gaps are named here rather than left for a reader to discover:
+
+| Gap | Section | Status |
+|---|---|---|
+| `TierMap` | §4.1 | **Not built, in any form.** Nothing decides which probes are affordable at which frequency; `lizard` is simply always run. |
+| The advisory in the verdict | §4.5, §5 | **Not wired.** `scripts/complexity_probe_advisory.py` exists and is tested, but has no production caller, so no `unverified` reason carries install coordinates. The only implemented probe is `lizard`, which §4.5's own table excludes — the advisory waits on the first bytecode-reading probe. |
+| `NullThresholds` as the default source | §4.1 | **Vestigial.** The class exists but is not in `default_threshold_sources()`; `discover_thresholds` returns the `NO_THRESHOLDS` constant when every source declines, which is the same honest answer by a different route. |
+
+Everything else in §4 ships: `ComplexityProbe`/`LizardProbe`, the four
+`ThresholdSource` implementations, all three `MeasurementSink`s, `CycleGate`,
+and the status vocabulary invariant. One further deliberate divergence, ruled
+by the human rather than pending: `--gate` on this CLI is a **reporter, not a
+blocker** (see `scripts/complexity_probe.py`'s module docstring for why the
+blocking branch cannot fire from a self-contained entry point).
 Resolves §5.1 and §5.2 of
 [`2026-07-30-quality-in-the-loop-design.md`](2026-07-30-quality-in-the-loop-design.md),
 which were the two open questions blocking [#117](https://github.com/menteapex/mente-apex-plugin/issues/117)

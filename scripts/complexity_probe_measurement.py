@@ -5,6 +5,16 @@ Kept separate from every producer and consumer because "what a measurement is"
 and "how we obtain one" are different reasons to change — the lizard parser,
 the sinks and the gate all depend on these types and none of them on each
 other. See docs/status-vocabulary.md for the vocabulary itself.
+
+**No probe emits `degraded` yet.** `LizardProbe` either parses its output or
+reports `unverified`; nothing populates `skipped`. The status, `has_numbers`
+and the sinks' handling of it exist for a probe that parses part of its target
+and has to say which part — a partial-parse case the lizard CSV reader does not
+have. Every `degraded` measurement in the suite is therefore built by hand.
+That is a gap in the producers, not dead vocabulary: the sinks were verified to
+render it distinctly (task 7), and deleting the status would mean the first
+such probe has nowhere to put the truth. Noted here for the same reason
+scripts/complexity_probe.py records its unreachable blocking branch.
 """
 
 from dataclasses import dataclass, field
