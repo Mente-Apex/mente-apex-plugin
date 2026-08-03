@@ -906,7 +906,15 @@ class SnapshotPropagator:
         files, removed_addresses = rejections_module.filter_snapshot_files(
             files, self._policy, ""
         )
-        result.rejection_removals.extend(removed_addresses)
+        # Records, not bare addresses. The SKILL's Step 4e prompt needs the
+        # rejecting machine and the time, and `resolve-rejection` takes an id —
+        # none of which an address carries. The lookup lives here because this
+        # is the only place holding BOTH the removed addresses and the policy
+        # that produced them; `cmd_propagate_apply` is a thin CLI wrapper and
+        # would have to rebuild the composition root to do it.
+        result.rejection_removals.extend(
+            rejections_module.records_for_addresses(self._policy, removed_addresses)
+        )
         # Which `${...}` in a hook command config-sync itself minted. Absent on
         # an older snapshot, which correctly means none are known to be ours.
         minted_tokens = snapshot.get("root_tokens", ())

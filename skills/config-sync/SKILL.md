@@ -193,6 +193,14 @@ py "$ENGINE" consolidate "$REPO"
 > folds its own prior output back in. To retire config content, `reject` it:
 > `--scope network` strips it from the consolidated snapshot and prompts every
 > other machine, `--scope local` withholds it here without touching shared state.
+>
+> **A network rejection converges only once no machine still carries the
+> content.** Every machine exports (Step 1) before anyone consolidates (Step 3),
+> and an export is stamped with the time it ran — so a machine that still holds
+> the content re-adds it as something *newer* than the rejection. Answering
+> `remove` at Step 4e on each such machine is what finishes the job. Telling an
+> unchanged re-export apart from a deliberate re-add needs per-content
+> provenance, which is Phase 2 and not in the engine today.
 
 ## Step 4 — Backup, then apply through the propagator seam
 
@@ -367,19 +375,48 @@ the write; nothing was removed for it. Re-run `hooks-doctor`.
 
 ## Step 4e — Answer other machines' rejections
 
-`propagate-apply` reports a `rejection_removals` list: content this machine holds
-that another machine has rejected network-wide. For each entry, ask with
-**AskUserQuestion** ("`<address>` was rejected on `<machine>` at `<time>` — remove
-it here, or keep it?") and apply the answer:
+`propagate-apply` reports a `rejection_removals` list under the `snapshot`
+propagator: the content a rejection withheld from this apply. Each entry is the
+full ledger record, e.g.
+
+```json
+{
+  "id": "3f1c9a0b7d24",
+  "kind": "snapshot-section",
+  "address": "{\"file\": \"CLAUDE.md\", \"heading\": \"## Memory protocol\", \"occurrence\": 0}",
+  "scope": "network",
+  "rejected_at": "2026-08-03T09:00:00+00:00",
+  "machine_id": "Mac.fritz.box",
+  "reason": "superseded by the mente skill",
+  "tier": "",
+  "revives": null
+}
+```
+
+Entries with `"scope": "local"` are **this** machine's own vetoes — mention them
+in the Step 7 summary, do not prompt. For each `"scope": "network"` entry, ask
+with **AskUserQuestion** ("`<address>` was rejected on `<machine_id>` at
+`<rejected_at>` — remove it here, or keep it?") and apply the answer using that
+entry's `id`:
 
 ```bash
-py "$ENGINE" resolve-rejection "$REPO" <id> remove   # delete it locally
+py "$ENGINE" resolve-rejection "$REPO" <id> remove   # agree: withhold it here
 py "$ENGINE" resolve-rejection "$REPO" <id> keep     # overrule: it returns for everyone
 ```
+
+`remove` records a **local** rejection for the same address, so this machine
+stops writing that content from the next apply onward. It does not erase the copy
+already on disk in this run — the next sync's apply rewrites the file without it,
+and only the sync after that exports a copy that no longer carries it.
 
 `keep` does not edit the rejecting machine's file. It records this machine's own
 newer revival, which wins on timestamp — so one machine can always overrule the
 network without a cross-machine write.
+
+Answering on every machine that still holds the content is what makes a network
+rejection converge; until then those machines keep re-adding it (see the Step 3
+note). Distinguishing an unchanged re-export from a deliberate re-add needs
+per-content provenance, which is Phase 2.
 
 ## Step 5 — Commit the updated consolidated snapshot and rejections, then push
 

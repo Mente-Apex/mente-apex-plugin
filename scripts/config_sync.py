@@ -1145,6 +1145,11 @@ def cmd_resolve_rejection(repo_path, rejection_id, decision):
     `keep` does NOT delete the original — that record lives in the rejecting
     machine's own file and is not ours to edit. It writes our own revival record
     with a newer timestamp, which the composite policy resolves in our favour.
+
+    `remove` is the mirror, and equally a write: it records a LOCAL rejection for
+    the same address, so `SnapshotPropagator.apply` withholds the content on this
+    machine from the next apply onward. Agreeing by doing nothing would leave the
+    consolidated snapshot re-writing the content here on every sync.
     """
     import config_sync_rejections as rejections_module
 
@@ -1156,6 +1161,7 @@ def cmd_resolve_rejection(repo_path, rejection_id, decision):
     if original is None:
         raise UnknownRejectionTargetError(f"no rejection with id {rejection_id!r}")
 
+    machine_id = _machine_id()
     if decision == "keep":
         revival = rejections_module.RejectionRecord(
             id=rejections_module.rejection_id_of(
@@ -1165,11 +1171,30 @@ def cmd_resolve_rejection(repo_path, rejection_id, decision):
             address=original.address,
             scope="network",
             rejected_at=datetime.now(UTC).isoformat(),
-            machine_id=_machine_id(),
-            reason=f"kept on {_machine_id()}",
+            machine_id=machine_id,
+            reason=f"kept on {machine_id}",
             revives=rejection_id,
         )
         policy.record(revival)
+    else:
+        # The PLAIN target id, not the `\0revival` variant: that is what
+        # `CompositeRejectionPolicy.is_rejected` looks for when it asks whether a
+        # target is suppressed. It shares the id of the network record being
+        # answered, which is harmless and deliberate — scope routing sends this
+        # one to the LOCAL store, so it can neither overwrite the rejecting
+        # machine's file nor reach the shared repo, and `is_rejected` takes the
+        # newest of the matching records, which is this one.
+        policy.record(
+            rejections_module.RejectionRecord(
+                id=rejections_module.rejection_id_of(original.kind, original.address),
+                kind=original.kind,
+                address=original.address,
+                scope="local",
+                rejected_at=datetime.now(UTC).isoformat(),
+                machine_id=machine_id,
+                reason=f"accepted {rejection_id} on {machine_id}",
+            )
+        )
 
     print(
         json.dumps(
@@ -1569,7 +1594,13 @@ def cmd_propagate_apply(repo_path):
             "skipped": result.skipped,
             "conflicts": [vars(conflict) for conflict in result.conflicts],
             "deletions": [vars(deletion) for deletion in result.deletions],
-            "rejection_removals": result.rejection_removals,
+            # Serialised like `conflicts` and `deletions`: the whole record, so
+            # Step 4e can name the rejecting machine and the time, pass `id` to
+            # `resolve-rejection`, and tell a network tombstone from this
+            # machine's own local veto by `scope`.
+            "rejection_removals": [
+                vars(record) for record in result.rejection_removals
+            ],
         }
     print(json.dumps(payload, indent=2))
 

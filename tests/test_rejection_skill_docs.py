@@ -57,3 +57,40 @@ def test_step_5_stages_the_rejection_ledger():
         "rejections/" in line for line in staged
     ), "Step 5 stages no rejections/: " + repr(staged)
     assert any("consolidated/" in line for line in staged)
+
+
+SPEC = (
+    Path(__file__).resolve().parents[1]
+    / "docs"
+    / "superpowers"
+    / "specs"
+    / "2026-08-03-config-sync-rejection-ledger-design.md"
+)
+
+
+def test_the_convergence_limit_is_stated_rather_than_promised_away():
+    """Phase 1 converges a network rejection only once no machine still carries
+    the content: every machine exports before anyone consolidates, and an export
+    is stamped "now", so an unchanged re-export is indistinguishable from a
+    deliberate re-add. Shipping documentation that promised unconditional
+    convergence would promise behaviour the engine does not have."""
+    for document in (SKILL, SPEC):
+        text = document.read_text(encoding="utf-8")
+        assert "provenance" in text, f"{document.name} does not name the real fix"
+        assert re.search(
+            r"[Pp]hase 2", text
+        ), f"{document.name} does not say where the fix lives"
+        assert re.search(
+            r"converge", text
+        ), f"{document.name} does not state the convergence limit"
+
+
+def test_step_4e_hands_the_operator_a_usable_rejection_id():
+    """`resolve-rejection` keys on `id`, and the prompt names the rejecting
+    machine and time. Documenting a bare address would leave the agent with no
+    way to run the command it is told to run."""
+    step_4e = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), "Step 4e"
+    )
+    for field in ("id", "machine_id", "rejected_at", "address", "scope"):
+        assert field in step_4e, f"Step 4e never mentions {field}"
