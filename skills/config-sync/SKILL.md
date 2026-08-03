@@ -143,7 +143,12 @@ for warning in data.get('marketplace', {}).get('warnings', []):
 
 ```bash
 cd "$REPO"
+# `rejections/` too: this run records its own rejections later (Step 4), but a
+# rejection left over from a previous run — one recorded after that run's Step 5,
+# or during a run that stopped early — would otherwise never be staged by
+# anything. Step 5 is what carries *this* run's rejections.
 git add machines/ bundles/ plugins/
+if [ -d rejections ]; then git add rejections/; fi
 git diff --cached --quiet && echo "no local changes" || \
   git commit -m "sync: $MACHINE_ID at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -376,13 +381,19 @@ py "$ENGINE" resolve-rejection "$REPO" <id> keep     # overrule: it returns for 
 newer revival, which wins on timestamp — so one machine can always overrule the
 network without a cross-machine write.
 
-## Step 5 — Commit the updated consolidated snapshot and push
+## Step 5 — Commit the updated consolidated snapshot and rejections, then push
+
+`rejections/` is staged here, not in Step 1. `reject` and `resolve-rejection keep`
+run at Step 4 — *after* Step 1's commit — so this is the only commit in the cycle
+that carries them. Without it a `--scope network` rejection stays an uncommitted
+working-tree change forever and never reaches another machine.
 
 ```bash
 cd "$REPO"
 git add consolidated/
-git diff --cached --quiet && echo "consolidated snapshot unchanged" || \
-  git commit -m "merge: consolidated at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+if [ -d rejections ]; then git add rejections/; fi
+git diff --cached --quiet && echo "consolidated snapshot and rejections unchanged" || \
+  git commit -m "merge: consolidated + rejections at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 git push origin main 2>&1
 ```
