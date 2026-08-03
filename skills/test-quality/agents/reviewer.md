@@ -45,7 +45,7 @@ no code and no tests** — you write the report only.
 
        sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/mutation_gate.py" \
            --repo-root <target> --scope merge-base \
-           --report docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md
+           --report "<target>/docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md"
 
    The exit code is a verdict, not a crash signal: `0` clean, `1` survivors found, `2`
    the scope could not be verified (missing tool, crashed backend, broken baseline, zero

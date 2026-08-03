@@ -97,5 +97,5 @@ never silence.
 
 The `Status:` vocabulary and the Apply-log line format are defined once in the
 shared workflow — see [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md)
-("Status & Apply-log format"). The skeleton above is what the reviewer lays down;
+("Status, Apply-log & Outcome format"). The skeleton above is what the reviewer lays down;
 the implementer fills it per that spec.
