@@ -1679,7 +1679,7 @@ def _repo_with_single_section_file(tmp_path):
 
 def test_a_rejection_that_would_empty_a_file_is_refused(tmp_path):
     repo = _repo_with_single_section_file(tmp_path)
-    with pytest.raises(config_sync.MassRejectionRefused):
+    with pytest.raises(config_sync.MassRejectionRefusedError):
         config_sync.cmd_reject(str(repo), "snapshot-section", "solo.md", "--section", "## Only")
 
 
@@ -1700,12 +1700,12 @@ def test_rejecting_one_of_several_sections_is_not_guarded(tmp_path, capsys):
 - [ ] **Step 6: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_rejection_cli.py -q`
-Expected: FAIL with `AttributeError: module 'config_sync' has no attribute 'MassRejectionRefused'`
+Expected: FAIL with `AttributeError: module 'config_sync' has no attribute 'MassRejectionRefusedError'`
 
 - [ ] **Step 7: Implement the guard**
 
 ```python
-class MassRejectionRefused(RuntimeError):
+class MassRejectionRefusedError(RuntimeError):
     """A rejection would leave a snapshot file with no content at all.
 
     Refused rather than performed, mirroring `_guard_mass_deletion`: emptying a
@@ -1729,13 +1729,13 @@ In `cmd_reject`, read `--force` as a flag (`force = "--force" in options`) and, 
             if heading_text != section_heading
         ]
         if not any(heading.strip() for heading in remaining):
-            raise MassRejectionRefused(
+            raise MassRejectionRefusedError(
                 f"rejecting {section_heading!r} would empty {subject}; "
                 f"pass --force, or reject the file with kind snapshot-file"
             )
 ```
 
-Add `MassRejectionRefused` to the `main()` except clause alongside
+Add `MassRejectionRefusedError` to the `main()` except clause alongside
 `UnknownRejectionTargetError`.
 
 - [ ] **Step 8: Run test to verify it passes**
@@ -2072,10 +2072,23 @@ printf '{"files":{"CLAUDE.md":"# Prefs\\n\\n## Stale\\n\\nold text\\n"}}' > cons
 ENGINE=/Users/ai/Projects/mente-apex-plugin/scripts/config_sync.py
 python3 "$ENGINE" reject . snapshot-section CLAUDE.md --section "## Stale" --scope network
 python3 "$ENGINE" consolidate .
-grep -q "## Stale" consolidated/snapshot.json && echo "STILL PRESENT — FAIL" || echo "stripped — PASS"
+python3 - <<'PY'
+import json
+snapshot = json.load(open("consolidated/snapshot.json"))
+stale_present = "## Stale" in snapshot["files"]["CLAUDE.md"]
+print("STILL PRESENT - FAIL" if stale_present else "stripped - PASS")
+PY
 ```
 
-Expected: `stripped — PASS`. Before this plan, the same script prints `STILL PRESENT`.
+A bare `grep -q "## Stale" consolidated/snapshot.json` cannot be used here: `consolidate`
+writes the `rejected` audit trail into the same snapshot file as the content, and the
+rejection's own address embeds the heading text (`{"file": "CLAUDE.md", "heading": "##
+Stale", ...}`), so a whole-file grep matches that audit-trail entry even when the section
+was correctly stripped from `files.CLAUDE.md` — a false "STILL PRESENT" on a working
+implementation. Inspecting `.files["CLAUDE.md"]` specifically is what actually proves the
+defect is gone.
+
+Expected: `stripped - PASS`. Before this plan, the same check prints `STILL PRESENT`.
 
 ## Phase 2
 

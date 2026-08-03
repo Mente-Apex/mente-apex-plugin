@@ -4,6 +4,7 @@ This repo already tests SKILL structure elsewhere; a documented command that
 does not exist, or an existing command nobody documents, is the failure mode.
 """
 
+import re
 from pathlib import Path
 
 import config_sync
@@ -14,7 +15,9 @@ SKILL = Path(__file__).resolve().parents[1] / "skills" / "config-sync" / "SKILL.
 def test_every_new_command_is_documented():
     text = SKILL.read_text(encoding="utf-8")
     for command in ("reject", "rejections", "unreject", "resolve-rejection"):
-        assert command in text, f"{command} is not documented in SKILL.md"
+        assert re.search(
+            rf"(?<![\w-]){re.escape(command)}(?![\w-])", text
+        ), f"{command} is not documented in SKILL.md"
 
 
 def test_documented_commands_exist_in_the_engine():
