@@ -862,12 +862,16 @@ def cmd_merge(path_a: str, path_b: str):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def network_rejection_policy(repo_dir, machine_id):
+def network_rejection_policy(repo_dir, machine_id="consolidated"):
     """The policy `cmd_consolidate` uses: network scope ONLY.
 
     Consolidate writes shared state. A local veto leaking in here would impose
     one machine's private preference on every other machine, so the composite is
     deliberately not used at this call site.
+
+    `machine_id` names the WRITE path only; consolidate never records a
+    rejection, so it needs no machine identity and must not touch ~/.claude to
+    invent one.
     """
     import config_sync_rejections as rejections_module
 
@@ -890,7 +894,7 @@ def cmd_consolidate(repo_path: str, policy=None):
     machines_dir = repo / "machines"
 
     if policy is None:
-        policy = network_rejection_policy(repo, _machine_id())
+        policy = network_rejection_policy(repo)
 
     snapshots = []
     if machines_dir.exists():
@@ -933,6 +937,16 @@ def cmd_consolidate(repo_path: str, policy=None):
     # and only `consolidate` -- the command the pull flow actually runs -- did
     # not.
     conflicts = [entry for entry in merge_log if _is_conflict(entry)]
+    # The same address can be removed more than once — e.g. carried by the
+    # prior consolidated snapshot AND by one or more incoming machine
+    # snapshots — so dedupe order-preservingly rather than reporting it once
+    # per removal.
+    seen_addresses: set = set()
+    deduped_rejected_addresses = []
+    for address in rejected_addresses:
+        if address not in seen_addresses:
+            seen_addresses.add(address)
+            deduped_rejected_addresses.append(address)
     result = {
         "machine_id": "consolidated",
         "hostname": "consolidated",
@@ -940,7 +954,7 @@ def cmd_consolidate(repo_path: str, policy=None):
         "timestamp": datetime.now(UTC).isoformat(),
         "files": base_files,
         "merge_log": merge_log,
-        "rejected": rejected_addresses,
+        "rejected": deduped_rejected_addresses,
     }
     _write(consolidated_path, json.dumps(result, indent=2, ensure_ascii=False))
     print(
@@ -950,7 +964,7 @@ def cmd_consolidate(repo_path: str, policy=None):
                 "machines": len(snapshots),
                 "merge_log": merge_log,
                 "conflicts": conflicts,
-                "rejected": rejected_addresses,
+                "rejected": deduped_rejected_addresses,
             }
         )
     )

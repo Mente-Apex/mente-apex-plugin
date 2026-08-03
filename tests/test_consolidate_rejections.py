@@ -161,3 +161,39 @@ def test_a_local_scope_rejection_does_not_touch_shared_state(tmp_path, capsys):
     capsys.readouterr()
 
     assert STALE in _consolidated(repo)["files"]["CLAUDE.md"]
+
+
+def test_the_removed_address_is_reported_in_both_the_snapshot_and_stdout(
+    tmp_path, capsys
+):
+    repo = _repo(
+        tmp_path,
+        machine_files={"machine-a": {"CLAUDE.md": "# User Preferences\n"}},
+        consolidated_files={"CLAUDE.md": DOCUMENT},
+    )
+    address = section_address("CLAUDE.md", STALE, 0)
+    _reject(repo, address)
+
+    config_sync.cmd_consolidate(str(repo))
+    stdout_payload = json.loads(capsys.readouterr().out)
+
+    assert address in _consolidated(repo)["rejected"]
+    assert address in stdout_payload["rejected"]
+
+
+def test_an_address_removed_from_both_base_files_and_an_incoming_snapshot_appears_once(
+    tmp_path, capsys
+):
+    repo = _repo(
+        tmp_path,
+        machine_files={"machine-a": {"CLAUDE.md": DOCUMENT}},
+        consolidated_files={"CLAUDE.md": DOCUMENT},
+    )
+    address = section_address("CLAUDE.md", STALE, 0)
+    _reject(repo, address)
+
+    config_sync.cmd_consolidate(str(repo))
+    stdout_payload = json.loads(capsys.readouterr().out)
+
+    assert _consolidated(repo)["rejected"].count(address) == 1
+    assert stdout_payload["rejected"].count(address) == 1
