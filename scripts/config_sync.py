@@ -862,16 +862,35 @@ def cmd_merge(path_a: str, path_b: str):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def cmd_consolidate(repo_path: str):
+def network_rejection_policy(repo_dir, machine_id):
+    """The policy `cmd_consolidate` uses: network scope ONLY.
+
+    Consolidate writes shared state. A local veto leaking in here would impose
+    one machine's private preference on every other machine, so the composite is
+    deliberately not used at this call site.
+    """
+    import config_sync_rejections as rejections_module
+
+    return rejections_module.CompositeRejectionPolicy(
+        [rejections_module.SharedRejectionStore(Path(repo_dir), machine_id)]
+    )
+
+
+def cmd_consolidate(repo_path: str, policy=None):
     """Fold all machine snapshots (+ existing consolidated) into consolidated/snapshot.json.
 
     Merge order is ascending `timestamp`, so the most recent snapshot is applied
     last and its scalars win — recency decides, not filename sort order. Runs the
     whole fold in-process, replacing the SKILL's predictable-/tmp fold-loop.
     """
+    import config_sync_rejections as rejections_module
+
     repo = Path(repo_path)
     consolidated_path = repo / "consolidated" / "snapshot.json"
     machines_dir = repo / "machines"
+
+    if policy is None:
+        policy = network_rejection_policy(repo, _machine_id())
 
     snapshots = []
     if machines_dir.exists():
@@ -886,12 +905,24 @@ def cmd_consolidate(repo_path: str):
     else:
         base_files = {}
 
+    # The ratchet. `base_files` is the prior consolidated snapshot, which folds
+    # its own output back in every run — so content that ever entered it is
+    # immortal unless it is filtered HERE, not merely on the way in. Its own
+    # timestamp is unknown and older than any live rejection by construction, so
+    # the empty string reads as "no fresher intent".
+    base_files, base_removed = rejections_module.filter_snapshot_files(
+        base_files, policy, ""
+    )
+    rejected_addresses = list(base_removed)
+
     budget = _LlmMergeBudget(MAX_LLM_MERGES)
     merge_log = []
     for snapshot in snapshots:
-        base_files, log = _merge_snapshot_files(
-            base_files, snapshot.get("files", {}), budget=budget
+        incoming_files, incoming_removed = rejections_module.filter_snapshot_files(
+            snapshot.get("files", {}), policy, snapshot.get("timestamp", "")
         )
+        rejected_addresses.extend(incoming_removed)
+        base_files, log = _merge_snapshot_files(base_files, incoming_files, budget)
         merge_log.extend(log)
 
     # `merge_log` is carried into the snapshot AND reported on stdout. It was
@@ -909,6 +940,7 @@ def cmd_consolidate(repo_path: str):
         "timestamp": datetime.now(UTC).isoformat(),
         "files": base_files,
         "merge_log": merge_log,
+        "rejected": rejected_addresses,
     }
     _write(consolidated_path, json.dumps(result, indent=2, ensure_ascii=False))
     print(
@@ -918,6 +950,7 @@ def cmd_consolidate(repo_path: str):
                 "machines": len(snapshots),
                 "merge_log": merge_log,
                 "conflicts": conflicts,
+                "rejected": rejected_addresses,
             }
         )
     )
