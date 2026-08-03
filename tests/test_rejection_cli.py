@@ -276,3 +276,31 @@ def test_a_mistyped_option_is_refused(tmp_path):
         config_sync.cmd_reject(
             str(repo), "snapshot-file", "rules/a.md", "--scop", "local"
         )
+
+
+def test_a_flag_shaped_option_value_is_a_value_not_an_option(tmp_path, capsys):
+    """A reason may legitimately start with `--`. Scanning every token for a
+    leading `--` refused it as an unknown option, leaving the operator no way to
+    pass a perfectly ordinary string. Only a token in flag position is a flag."""
+    repo = _repo(tmp_path)
+    config_sync.cmd_reject(
+        str(repo), "snapshot-file", "rules/a.md", "--reason", "--needs-follow-up"
+    )
+    assert json.loads(capsys.readouterr().out)["reason"] == "--needs-follow-up"
+
+
+def test_an_option_missing_its_value_is_refused(tmp_path):
+    """A trailing `--scope` with nothing after it must not fall through to the
+    "network" default — the same silent-propagation failure `--scop` has."""
+    repo = _repo(tmp_path)
+    with pytest.raises(ValueError):
+        config_sync.cmd_reject(str(repo), "snapshot-file", "rules/a.md", "--scope")
+
+
+def test_a_stray_positional_after_the_subject_is_refused(tmp_path):
+    """Previously ignored, because only `--`-prefixed tokens were checked. A
+    token the command cannot account for means the operator meant something the
+    command is not doing."""
+    repo = _repo(tmp_path)
+    with pytest.raises(ValueError):
+        config_sync.cmd_reject(str(repo), "snapshot-file", "rules/a.md", "local")

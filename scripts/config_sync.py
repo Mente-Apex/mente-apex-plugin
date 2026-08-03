@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     # name BundleExportFilter in an annotation without forming the config_sync <->
     # config_sync_propagators import cycle (SOLID M2).
     from config_sync_propagators import BundleExportFilter
+    from config_sync_rejections import RejectionPolicy
 
 # ---------------------------------------------------------------------------
 # Paths — always derived from $HOME, never hardcoded
@@ -862,7 +863,9 @@ def cmd_merge(path_a: str, path_b: str):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def network_rejection_policy(repo_dir, machine_id="consolidated"):
+def network_rejection_policy(
+    repo_dir: str | Path, machine_id: str = "consolidated"
+) -> RejectionPolicy:
     """The policy `cmd_consolidate` uses: network scope ONLY.
 
     Consolidate writes shared state. A local veto leaking in here would impose
@@ -880,7 +883,7 @@ def network_rejection_policy(repo_dir, machine_id="consolidated"):
     )
 
 
-def cmd_consolidate(repo_path: str, policy=None):
+def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> None:
     """Fold all machine snapshots (+ existing consolidated) into consolidated/snapshot.json.
 
     Merge order is ascending `timestamp`, so the most recent snapshot is applied
@@ -941,8 +944,8 @@ def cmd_consolidate(repo_path: str, policy=None):
     # prior consolidated snapshot AND by one or more incoming machine
     # snapshots — so dedupe order-preservingly rather than reporting it once
     # per removal.
-    seen_addresses: set = set()
-    deduped_rejected_addresses = []
+    seen_addresses: set[str] = set()
+    deduped_rejected_addresses: list[str] = []
     for address in rejected_addresses:
         if address not in seen_addresses:
             seen_addresses.add(address)
@@ -1038,6 +1041,45 @@ def _rejection_policy(repo_path):
 
 KNOWN_REJECT_OPTIONS = ("--scope", "--section", "--occurrence", "--reason", "--force")
 
+# The one option that takes no value. Kept beside the known-options tuple so the
+# parser below never has to guess whether the next token is a value or a flag.
+VALUELESS_REJECT_OPTIONS = ("--force",)
+
+
+def _parse_reject_options(options: list) -> dict:
+    """`reject`'s trailing options, refusing anything not in `KNOWN_REJECT_OPTIONS`.
+
+    Fail closed, like `cmd_hooks_prune` does for its own flags: an unrecognised
+    option (a typo'd `--scop`) must not silently fall through to a default —
+    `--scop local` defaulting `scope` to "network" would propagate a rejection
+    meant to stay private to every machine, with a success-shaped JSON payload
+    giving no sign anything went wrong.
+
+    Walks flag/value pairs rather than scanning every token for a leading `--`.
+    A scan cannot tell a flag from a flag-shaped *value*, so
+    `--reason "--needs-follow-up"` was refused as an unknown option — a
+    perfectly ordinary reason string that the operator had no way to pass. Only
+    a token in flag position is a candidate flag; whatever follows a
+    value-taking flag is its value, whatever it looks like.
+    """
+    parsed: dict = {}
+    index = 0
+    while index < len(options):
+        flag = options[index]
+        if flag not in KNOWN_REJECT_OPTIONS:
+            raise ValueError(
+                f"unknown option {flag!r}; expected one of {KNOWN_REJECT_OPTIONS}"
+            )
+        if flag in VALUELESS_REJECT_OPTIONS:
+            parsed[flag] = True
+            index += 1
+            continue
+        if index + 1 >= len(options):
+            raise ValueError(f"option {flag!r} expects a value")
+        parsed[flag] = options[index + 1]
+        index += 2
+    return parsed
+
 
 def cmd_reject(repo_path, *args):
     """Record a rejection against an address proven to exist in the current
@@ -1051,32 +1093,14 @@ def cmd_reject(repo_path, *args):
             f"unknown kind {kind!r}; expected one of {rejections_module.REJECTION_KINDS}"
         )
     subject = args[1]
-    options = list(args[2:])
+    options = _parse_reject_options(list(args[2:]))
 
-    # Fail closed, like `cmd_hooks_prune` does for its own flags: an
-    # unrecognised option (a typo'd `--scop`) must not silently fall through
-    # to a default — `--scop local` defaulting `scope` to "network" would
-    # propagate a rejection meant to stay private to every machine, with a
-    # success-shaped JSON payload giving no sign anything went wrong.
-    unknown_options = [
-        flag
-        for flag in options
-        if flag.startswith("--") and flag not in KNOWN_REJECT_OPTIONS
-    ]
-    if unknown_options:
-        raise ValueError(
-            f"unknown option(s) {unknown_options}; expected one of {KNOWN_REJECT_OPTIONS}"
-        )
-
-    def option(name, default=None):
-        return options[options.index(name) + 1] if name in options else default
-
-    scope = option("--scope", "network")
+    scope = options.get("--scope", "network")
     if scope not in rejections_module.REJECTION_SCOPES:
         raise ValueError(f"unknown scope {scope!r}")
-    section_heading = option("--section")
-    occurrence = int(option("--occurrence", "0"))
-    reason = option("--reason", "")
+    section_heading = options.get("--section")
+    occurrence = int(options.get("--occurrence", "0"))
+    reason = options.get("--reason", "")
     force = "--force" in options
 
     address = _resolve_rejection_address(
