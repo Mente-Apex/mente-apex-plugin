@@ -37,7 +37,7 @@ this block — pruned to the codes that actually appear — into each report:
 - **Lenses**
   - `clean-arch` — clean-architecture: the component/dependency graph.
   - `ddd` — domain-driven design: is the domain modelled well? (analyze-only — own run
-    stops at Phases 0–3; a finding merged here or opted into directly is applicable
+    stops at Phases 0–2 plus its own review gate/stop; a finding merged here or opted into directly is applicable
     through the shared engine).
   - `solid` — the five SOLID class principles.
   - `gof` — Gang-of-Four design patterns.
@@ -251,5 +251,5 @@ DIP (solid) on `Config` — the lenses disagree; decide at the gate", or "none">
 
 The `Status:` vocabulary and the Apply-log line format are the shared ones defined
 in [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md)
-("Status & Apply-log format") — identical to the lens templates, so the shared
+("Status, Apply-log & Outcome format") — identical to the lens templates, so the shared
 implementer needs no special casing.

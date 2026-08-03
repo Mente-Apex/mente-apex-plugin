@@ -2,7 +2,7 @@
 
 Shared orchestration for the plugin's refactor lenses (`solid`, `gof`,
 `clean-architecture`, `test-quality`, and the `code-quality` umbrella that fans them out;
-the analyze-only lenses `ddd` and `clean-code` use Phases 0–3 in their own run — their
+the analyze-only lenses `ddd` and `clean-code` use Phases 0–2 plus the lens's own review gate/stop in their own run — their
 findings' applicability is a property of the report fields, not the lens, so a finding
 merged by the umbrella or opted into directly is applicable through the shared engine).
 `test-quality` applies through this engine too but adds its own two safety gates on top —

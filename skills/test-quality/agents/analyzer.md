@@ -44,7 +44,7 @@ honestly.
 ## Output — `draft-findings.md`
 
 One entry per finding: `## [D<n>] title` with **Kind** (rubric dimension), **Location**
-(`tests/file:line`; all sites), **Evidence**, **Impact**, **Fix**, **Deletion?**
+(`tests/file:line`; all sites), **Evidence**, **Reader impact**, **Proposed change**, **Deletion?**
 (yes → what coverage proof is needed), **Suggested tier**, **Suggested risk**,
 **Confidence**, and a possible **Cross-ref** to another lens. End with a **Coverage**
 section (which test files you examined, which you skipped, and how you searched for dead

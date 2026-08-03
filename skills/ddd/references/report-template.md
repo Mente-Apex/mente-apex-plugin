@@ -12,7 +12,7 @@ once assigned. The tier word records the tier **at first assignment**; if a
 finding is later re-tiered, the section heading it sits under is authoritative and
 the ID is left unchanged.
 
-This lens's own run never applies — Phases 0–3 only, per this mode's
+This lens's own run never applies — Phases 0–2 plus the lens's own review gate/stop only, per this mode's
 report-only scope. That constrains the run, not the finding: a ddd finding
 merged by the code-quality umbrella (or explicitly opted into by a user) is
 applicable through the shared engine, so it carries the same `Risk` and
@@ -108,6 +108,6 @@ never silence.
 
 The `Status:` vocabulary and the Apply-log line format are defined once in the
 shared workflow — see [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md)
-("Status & Apply-log format"). The skeleton above is what the reviewer lays down;
+("Status, Apply-log & Outcome format"). The skeleton above is what the reviewer lays down;
 a finding merged by the umbrella (or opted into directly) is filled per that spec
 through the shared engine, since this lens's own run never reaches Phase 4–5.

@@ -167,8 +167,8 @@ others): ddd asks *"is the domain modelled well?"*, clean-architecture asks
 *"is the dependency structure sound, regardless of domain richness?"* — a
 codebase can pass one and fail the other, so name the other lens's finding
 rather than duplicate it. It writes
-`docs/reports/ddd/DDD-REPORT-<YYYY-MM-DD>.md` using the template **exactly**,
-then reaps the draft per the shared Phase 2. It also **reverse-engineers the
+`docs/reports/ddd/DDD-REPORT-<YYYY-MM-DD>.md` using the template **exactly**;
+once it parses, the orchestrator reaps the draft per the shared Phase 2. It also **reverse-engineers the
 implicit model** into proposed `docs/domain/` artifacts (`GLOSSARY.md`,
 `model.md`, `context-map.md` if >1 context) — marked as reverse-engineered
 proposals and written alongside (never over) any pre-existing `docs/domain/`

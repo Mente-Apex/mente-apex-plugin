@@ -86,8 +86,8 @@ isn't in this table is a defect, not a style choice.
 | `Toward DDD` | ddd | Proposed change | **Alias, kept** — the DDD-flavoured elaboration (which entity/VO/aggregate/port the fix becomes), more specific than the generic name would be. |
 | `Problem now` | gof | Reader impact | **Alias, kept** — paired with `Expected benefit` below; together they frame the same reader-impact argument as pain-now / relief-after. |
 | `Expected benefit` | gof | Reader impact | **Alias, kept** — see `Problem now`. |
-| `Impact` | ddd, clean-architecture | Reader impact | **Renamed** — no lens-specific information was carried by the generic word, so both lenses use the canonical name directly. |
-| `Fix` | clean-architecture | Proposed change | **Renamed** — same reasoning as `Impact`. |
+| `Impact` | ddd, clean-architecture, test-quality | Reader impact | **Renamed** — no lens-specific information was carried by the generic word, so all three lenses use the canonical name directly. |
+| `Fix` | clean-architecture, test-quality | Proposed change | **Renamed** — same reasoning as `Impact`. |
 | `Why it costs the reader` | clean-code | Reader impact | **Alias, kept** — a line-craft-flavoured framing (cost to the *reader specifically*, not change-safety in general) worth keeping distinct from the SOLID/clean-architecture framing of the same canonical field. |
 | `Suggestion` | clean-code | Proposed change | **Alias, kept** — matches the clean-code-standard.md rubric's own vocabulary; the deep-gear analyzer's draft entry format also names this field `Suggestion`, so aliasing (not renaming) keeps the draft and the final report consistent. |
 

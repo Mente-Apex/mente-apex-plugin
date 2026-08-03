@@ -68,9 +68,10 @@ Scale effort to scope. **Read the standard first**, then:
   `docs/reports/clean-code/`: dispatch `agents/analyzer.md` (read-only over the
   code; writes `docs/reports/clean-code/draft-findings.md`) then
   `agents/reviewer.md` (re-verifies every finding against the code, prunes false
-  positives, then reaps the draft once the report exists and parses), writing
-  the report to `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md` per
-  `references/report-template.md`.
+  positives, writing the report to
+  `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md` per
+  `references/report-template.md`); once it exists and parses, the orchestrator
+  reaps the draft per the shared Phase 2.
 
 ## Non-overlap — defer up-ladder
 
@@ -84,7 +85,7 @@ problem, name it and hand it up the altitude ladder rather than solving it here:
 
 ## Apply — opt-in only
 
-This lens's own run stops at findings — Phases 0–3 only; that constrains the run, not
+This lens's own run stops at findings — Phases 0–2 plus the lens's own review gate/stop only; that constrains the run, not
 the finding. Code-level nits are cheap to fix by hand and riskiest to mass-apply, so
 apply only when the user asks — then reuse the shared implementer/TDD path
 (`../../docs/refactor-workflow.md` Phases 4–5), which already cleans to this same

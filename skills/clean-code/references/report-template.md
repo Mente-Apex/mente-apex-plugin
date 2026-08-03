@@ -5,7 +5,7 @@ exactly this shape. Angle brackets are fill-slots. Field names, the ID scheme,
 and the anchor rule are the canonical finding schema defined once in
 [docs/report-contract.md](../../../docs/report-contract.md); `Risk` and `Status`
 are load-bearing (parsed by the apply phase) — this lens's own run stops at
-Phases 0–3, but a finding merged by the umbrella (or opted into) is applicable
+Phases 0–2 plus its own review gate/stop, but a finding merged by the umbrella (or opted into) is applicable
 through the shared engine. `Why it costs the reader` and `Suggestion` are this
 lens's declared aliases for the canonical `Reader impact` and `Proposed change`
 fields (see that doc's alias table).
@@ -90,5 +90,5 @@ never silence.
 
 The `Status:` vocabulary and the Apply-log line format are defined once in the
 shared workflow — see [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md)
-("Status & Apply-log format"). The skeleton above is what the reviewer lays down;
+("Status, Apply-log & Outcome format"). The skeleton above is what the reviewer lays down;
 the implementer fills it per that spec.
