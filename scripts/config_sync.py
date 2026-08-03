@@ -883,6 +883,28 @@ def network_rejection_policy(
     )
 
 
+def local_rejection_policy(context) -> RejectionPolicy:
+    """The composite policy for LOCAL-state writers (plugins-plan, hook wiring).
+
+    Both scopes are correct here, unlike `cmd_consolidate`, which writes shared
+    state and gets a network-only policy. Uses the context-injected machine id so
+    a test never reaches the operator's real ~/.claude.
+    """
+    import config_sync_propagators as propagators_module
+    import config_sync_rejections as rejections_module
+
+    return rejections_module.CompositeRejectionPolicy(
+        [
+            rejections_module.LocalRejectionStore(
+                context.claude_dir / "config-sync-rejections.json"
+            ),
+            rejections_module.SharedRejectionStore(
+                context.repo_dir, propagators_module._machine_id(context)
+            ),
+        ]
+    )
+
+
 def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> None:
     """Fold all machine snapshots (+ existing consolidated) into consolidated/snapshot.json.
 
@@ -1655,7 +1677,9 @@ def cmd_plugins_plan(repo_path, host=None):
     import config_sync_plugins as plugins_module
 
     reader = host if host is not None else plugins_module.ClaudePluginHost(context)
-    plan = plugins_module.plan_convergence(context, reader)
+    plan = plugins_module.plan_convergence(
+        context, reader, policy=local_rejection_policy(context)
+    )
     print(
         json.dumps(
             {
@@ -1679,7 +1703,9 @@ def cmd_plugins_apply(repo_path, host=None):
     import config_sync_plugins as plugins_module
 
     plugin_host = host if host is not None else plugins_module.ClaudePluginHost(context)
-    plan = plugins_module.plan_convergence(context, plugin_host)
+    plan = plugins_module.plan_convergence(
+        context, plugin_host, policy=local_rejection_policy(context)
+    )
     result = plugins_module.execute_plan(context, plan, plugin_host)
     print(
         json.dumps(

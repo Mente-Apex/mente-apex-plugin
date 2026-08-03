@@ -530,3 +530,37 @@ def filter_settings_blob(files: dict, policy, source_timestamp: str) -> tuple:
         kept_settings, indent=2, ensure_ascii=False
     )
     return kept_files, removed
+
+
+class PluginAddressor:
+    """A marketplace plugin, addressed by the id `plugins-plan` already uses as an
+    action target. Like a snapshot file key, the id IS the identity."""
+
+    kind = "plugin"
+
+    def identify(self, target: str) -> str:
+        return target
+
+    def matches(self, address: str, target: str) -> bool:
+        return address == target
+
+
+def filter_plugin_actions(actions: list, policy, source_timestamp: str) -> tuple:
+    """Drop planned plugin actions whose target the operator has rejected.
+
+    Returns `(kept_actions, removed_addresses)`. Dropping the ACTION rather than
+    undoing the install is what stops the plugin reappearing in every subsequent
+    plan — the thing an operator who declined it is actually asking for.
+    """
+    addressor = PluginAddressor()
+    kept: list = []
+    removed: list = []
+    for action in actions:
+        target = RejectionTarget(
+            kind=addressor.kind, address=addressor.identify(action.target)
+        )
+        if policy.is_rejected(target, source_timestamp):
+            removed.append(target.address)
+            continue
+        kept.append(action)
+    return kept, removed
