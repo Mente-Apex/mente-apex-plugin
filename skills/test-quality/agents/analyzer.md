@@ -52,9 +52,15 @@ references).
 
 ## Mutation sweep
 
-Before drafting findings, run the mutation gate over the audit scope:
+Before drafting findings, run the mutation gate over the audit scope. Resolve the
+plugin root and the interpreter through the launcher convention
+(`bin/mente-python`, per `$CLAUDE_PLUGIN_ROOT`) rather than a bare relative path or
+a direct `uv run` — a relative `scripts/mutation_gate.py` is only coherent when the
+agent's cwd happens to be the plugin root, which does not hold when the audit
+target is some other repo:
 
-    uv run python scripts/mutation_gate.py --repo-root <path> --scope merge-base
+    sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/mutation_gate.py" \
+        --repo-root <target> --scope merge-base
 
 **Read the exit code — it is not a crash indicator.** `0` means the gate looked and
 found nothing. `1` means it found survivors. `2` means it could not verify the scope

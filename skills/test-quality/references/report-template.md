@@ -115,5 +115,9 @@ structure guard can address it as a real heading.
 
 `Status:` vocabulary and the Apply-log line format are the shared ones in
 [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md)
-("Status, Apply-log & Outcome format") — identical to the other lenses, so the shared
-implementer needs no special casing beyond recording the gate result in the safety clause.
+("Status, Apply-log & Outcome format") — identical to the other lenses. Per that file's
+Phase 4 dispatch rule (lens ships one → use it, otherwise the shared `docs/refactor-agents/implementer.md`),
+a test-quality rec always runs through this
+lens's own [agents/implementer.md](../agents/implementer.md) — including when the rec
+arrives via the `code-quality` umbrella — so no special casing is needed anywhere else
+beyond that implementer recording the gate result in the safety clause.
