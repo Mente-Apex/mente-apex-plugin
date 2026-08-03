@@ -970,6 +970,155 @@ def cmd_consolidate(repo_path: str, policy=None):
     )
 
 
+class UnknownRejectionTargetError(RuntimeError):
+    """A rejection address matches nothing in the consolidated snapshot.
+
+    Refused rather than recorded: a typo'd address would otherwise sit in the
+    ledger forever, suppressing nothing and explaining nothing.
+    """
+
+
+class MassRejectionRefusedError(RuntimeError):
+    """A rejection would leave a snapshot file with no content at all.
+
+    Refused rather than performed, mirroring `_guard_mass_deletion`: emptying a
+    whole file is a *file* rejection, and the operator asked for a section one.
+    `--force` says they meant it.
+    """
+
+
+def _consolidated_files(repo_dir):
+    path = Path(repo_dir) / "consolidated" / "snapshot.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8")).get("files", {})
+
+
+def _resolve_rejection_address(repo_dir, kind, subject, section_heading, occurrence):
+    """The address for `subject`, proven to exist in the consolidated snapshot."""
+    import config_sync_merge as merge
+    import config_sync_rejections as rejections_module
+
+    files = _consolidated_files(repo_dir)
+    if kind == "snapshot-file":
+        if subject not in files:
+            raise UnknownRejectionTargetError(
+                f"no snapshot file {subject!r}; known files: {sorted(files)}"
+            )
+        return subject
+    if kind == "snapshot-section":
+        if subject not in files:
+            raise UnknownRejectionTargetError(
+                f"no snapshot file {subject!r}; known files: {sorted(files)}"
+            )
+        headings = [
+            heading_text
+            for (heading_text, _occurrence), _heading, _body in merge._parse_sections(
+                files[subject]
+            )
+        ]
+        if section_heading not in headings:
+            raise UnknownRejectionTargetError(
+                f"no section {section_heading!r} in {subject}; found: {headings}"
+            )
+        return rejections_module.section_address(subject, section_heading, occurrence)
+    raise ValueError(f"kind {kind!r} is not addressable in phase 1")
+
+
+def _rejection_policy(repo_path):
+    """Composition root for the rejection commands: both scopes, since the
+    operator chooses per rejection."""
+    import config_sync_rejections as rejections_module
+
+    return rejections_module.CompositeRejectionPolicy(
+        [
+            rejections_module.LocalRejectionStore(
+                CLAUDE_DIR / "config-sync-rejections.json"
+            ),
+            rejections_module.SharedRejectionStore(Path(repo_path), _machine_id()),
+        ]
+    )
+
+
+def cmd_reject(repo_path, *args):
+    """Record a rejection against an address proven to exist in the current
+    consolidated snapshot. Refuses a section rejection that would empty its
+    whole file, unless `--force` is passed — see `MassRejectionRefusedError`."""
+    import config_sync_rejections as rejections_module
+
+    kind = args[0] if args else ""
+    if kind not in rejections_module.REJECTION_KINDS:
+        raise ValueError(
+            f"unknown kind {kind!r}; expected one of {rejections_module.REJECTION_KINDS}"
+        )
+    subject = args[1]
+    options = list(args[2:])
+
+    def option(name, default=None):
+        return options[options.index(name) + 1] if name in options else default
+
+    scope = option("--scope", "network")
+    if scope not in rejections_module.REJECTION_SCOPES:
+        raise ValueError(f"unknown scope {scope!r}")
+    section_heading = option("--section")
+    occurrence = int(option("--occurrence", "0"))
+    reason = option("--reason", "")
+    force = "--force" in options
+
+    address = _resolve_rejection_address(
+        repo_path, kind, subject, section_heading, occurrence
+    )
+
+    if kind == "snapshot-section" and not force:
+        import config_sync_merge as merge
+
+        # Compare rendered content, not heading text: `_parse_sections` always
+        # emits a preamble triple (heading `_PREAMBLE`) even for a document with
+        # no text before its first heading, so a truthiness check over heading
+        # strings never sees an empty remainder — the sentinel itself is
+        # non-empty. Rejoining and checking the actual text is what tells us
+        # whether anything would survive the rejection.
+        remaining_sections = [
+            triple
+            for triple in merge._parse_sections(_consolidated_files(repo_path)[subject])
+            if triple[1] != section_heading
+        ]
+        remaining_content = rejections_module.rejoin_sections(remaining_sections)
+        if not remaining_content.strip():
+            raise MassRejectionRefusedError(
+                f"rejecting {section_heading!r} would empty {subject}; "
+                f"pass --force, or reject the file with kind snapshot-file"
+            )
+
+    record = rejections_module.RejectionRecord(
+        id=rejections_module.rejection_id_of(kind, address),
+        kind=kind,
+        address=address,
+        scope=scope,
+        rejected_at=datetime.now(UTC).isoformat(),
+        machine_id=_machine_id(),
+        reason=reason,
+    )
+    _rejection_policy(repo_path).record(record)
+    print(json.dumps(vars(record), indent=2, ensure_ascii=False))
+
+
+def cmd_rejections(repo_path):
+    records = _rejection_policy(repo_path).all()
+    print(
+        json.dumps(
+            {"rejections": [vars(record) for record in records]},
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+
+
+def cmd_unreject(repo_path, rejection_id):
+    _rejection_policy(repo_path).forget(rejection_id)
+    print(json.dumps({"unrejected": rejection_id}))
+
+
 # A merged file carries conflict markers when the section union could not
 # reconcile two contradictory lines. Detected by the marker the union writes,
 # so "was there a conflict?" has one answer rather than one per caller.
@@ -1643,6 +1792,9 @@ COMMANDS = {
     "machine-id": (cmd_machine_id, 0),
     "clean-settings": (cmd_clean_settings, 1),
     "migrate": (cmd_migrate, 0),
+    "reject": (cmd_reject, None),  # variadic: repo kind subject [--scope|--section|...]
+    "rejections": (cmd_rejections, 1),
+    "unreject": (cmd_unreject, 2),
 }
 
 
@@ -1669,12 +1821,16 @@ def main():
     # Deferred, like every other use of this module here: importing it at
     # module scope reintroduces a circular import.
     import config_sync_plugins
+    import config_sync_rejections
 
     try:
         fn(*args[1:])
     except (
         config_sync_hooks.CorruptSettingsError,
         config_sync_plugins.CorruptPluginStateError,
+        config_sync_rejections.CorruptRejectionLedgerError,
+        UnknownRejectionTargetError,
+        MassRejectionRefusedError,
     ) as exc:
         # A named refusal, not a traceback: the operator's settings.json does
         # not parse, and the actionable half of that is the message, not the
