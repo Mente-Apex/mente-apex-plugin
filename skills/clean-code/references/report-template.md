@@ -6,7 +6,9 @@ and the anchor rule are the canonical finding schema defined once in
 [docs/report-contract.md](../../../docs/report-contract.md); `Risk` and `Status`
 are load-bearing (parsed by the apply phase) — this lens's own run stops at
 Phases 0–3, but a finding merged by the umbrella (or opted into) is applicable
-through the shared engine.
+through the shared engine. `Why it costs the reader` and `Suggestion` are this
+lens's declared aliases for the canonical `Reader impact` and `Proposed change`
+fields (see that doc's alias table).
 
 Rec IDs are self-describing: `clean-code/<tier>-<n>`, where `<tier>` ∈
 `critical | major | minor` — the **same tier vocabulary the other four lenses use**,
@@ -45,9 +47,11 @@ auto-generated heading anchors don't handle the `/`).
 - **Status:** pending
 
 ### Major
+<a id="clean-code-major-1"></a>
 #### [clean-code/major-1] ...
 
 ### Minor
+<a id="clean-code-minor-1"></a>
 #### [clean-code/minor-1] ...
 
 ## Hand-offs (not clean-code fixes)
