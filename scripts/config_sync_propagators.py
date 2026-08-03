@@ -123,6 +123,7 @@ class ApplyResult:
     skipped: list = field(default_factory=list)
     conflicts: list = field(default_factory=list)
     deletions: list = field(default_factory=list)
+    rejection_removals: list = field(default_factory=list)
 
 
 @runtime_checkable
@@ -836,6 +837,14 @@ class SnapshotPropagator:
 
     name = "snapshot"
 
+    def __init__(self, policy=None):
+        # Deferred: sibling script, not a package.
+        import config_sync_rejections as rejections_module
+
+        self._policy = (
+            policy if policy is not None else rejections_module.NullRejectionPolicy()
+        )
+
     def export(self, context: SyncContext) -> ExportResult:
         import platform
 
@@ -882,6 +891,13 @@ class SnapshotPropagator:
             return result
         snapshot = config_sync.json.loads(consolidated.read_text(encoding="utf-8"))
         files = snapshot.get("files", {})
+
+        import config_sync_rejections as rejections_module
+
+        files, removed_addresses = rejections_module.filter_snapshot_files(
+            files, self._policy, snapshot.get("timestamp", "")
+        )
+        result.rejection_removals.extend(removed_addresses)
         # Which `${...}` in a hook command config-sync itself minted. Absent on
         # an older snapshot, which correctly means none are known to be ours.
         minted_tokens = snapshot.get("root_tokens", ())
@@ -902,6 +918,29 @@ class SnapshotPropagator:
         return result
 
 
-def apply_propagators() -> list:
-    """Composition root for the local-file apply sweep (Snapshot + ContentBundle)."""
-    return [SnapshotPropagator(), ContentBundlePropagator()]
+def apply_propagators(context=None) -> list:
+    """Composition root for the local-file apply sweep (Snapshot + ContentBundle).
+
+    Apply writes LOCAL files only, so it is handed the COMPOSITE policy — both
+    scopes are correct here, unlike `cmd_consolidate`, which writes shared state
+    and gets a network-only policy.
+    """
+    if context is None:
+        return [SnapshotPropagator(), ContentBundlePropagator()]
+
+    import config_sync_rejections as rejections_module
+
+    # `_machine_id(context)` from THIS module, never config_sync's argless one:
+    # the context-injected variant honours the caller's claude_dir, so a test
+    # cannot be made to read the operator's real ~/.claude.
+    policy = rejections_module.CompositeRejectionPolicy(
+        [
+            rejections_module.LocalRejectionStore(
+                context.claude_dir / "config-sync-rejections.json"
+            ),
+            rejections_module.SharedRejectionStore(
+                context.repo_dir, _machine_id(context)
+            ),
+        ]
+    )
+    return [SnapshotPropagator(policy=policy), ContentBundlePropagator()]
