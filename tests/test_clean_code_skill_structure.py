@@ -114,6 +114,11 @@ def test_deep_gear_agents_state_their_contracts():
     assert (
         "clean-code-standard.md" in analyzer
     ), "analyzer must judge against the standard"
+    # draft entries must carry a Suggestion field, not just a severity/confidence
+    # pair, so the reviewer edits a candidate fix instead of authoring one from
+    # scratch (the field name matches the final report-template's Suggestion —
+    # a declared alias per docs/report-contract.md, never renamed).
+    assert "**Suggestion:**" in analyzer
     assert "report-template.md" in reviewer
     assert "clean-code-standard.md" in reviewer
     assert "verify" in reviewer.lower() and "prune" in reviewer.lower()
@@ -127,8 +132,61 @@ def test_report_template_has_the_expected_structure():
     assert re.search(
         r"\[clean-code/(critical|major|minor)-\d+\]", text
     ), "report-template.md missing a clean-code/<tier>-<n> example ID"
-    for marker in ["Principle", "Severity", "Critical", "Major", "Minor", "Hand-offs"]:
+    for marker in [
+        "Principle",
+        "Severity",
+        "Critical",
+        "Major",
+        "Minor",
+        "Hand-offs",
+        "Suggestion",
+        "Risk",
+        "Status",
+        "## Apply log",
+        "## Outcome",
+    ]:
         assert marker in text, f"report-template.md missing: {marker}"
+
+
+def test_draft_suggestion_field_matches_final_template_field():
+    """The analyzer's draft field name and the reviewer's final field name must
+    be the same word (Suggestion) so the reviewer edits the analyzer's candidate
+    fix rather than authoring every suggestion from scratch — see the alias
+    declared in docs/report-contract.md's alias table (kept, never renamed)."""
+    analyzer = read_skill_file("agents/analyzer.md")
+    template = read_skill_file("references/report-template.md")
+    assert "**Suggestion:**" in analyzer
+    assert "**Suggestion:**" in template
+
+
+def test_deep_gear_invokes_phase_0_and_phase_2_in_full():
+    """Deep gear must produce what the analyzer declares as inputs — the
+    structural-graph verdict — and must run the shared workflow's stale-draft
+    pre-clear (Phase 0) and draft reap (Phase 2), not just create the report
+    dir. Link-don't-restate: SKILL.md points at refactor-workflow.md rather
+    than re-describing the mechanics, per the ddd analyze-mode precedent."""
+    skill = read_skill_file("SKILL.md")
+    lowered = skill.lower()
+    assert "refactor-workflow.md" in skill
+    assert "structural-graph" in lowered
+    assert "pre-clear" in lowered
+    assert "reap" in lowered
+
+
+def test_apply_routes_through_shared_engine_with_no_lens_local_override():
+    """clean-code ships no agents/implementer.md, so the shared workflow's
+    Phase-4 dispatch rule (lens-local implementer first, shared fallback)
+    always resolves clean-code's apply runs to the shared
+    docs/refactor-agents/implementer.md. Pin both halves of that chain."""
+    skill = read_skill_file("SKILL.md")
+    assert "shared implementer" in skill.lower()
+    assert not (CLEAN_CODE_SKILL_DIR / "agents" / "implementer.md").exists(), (
+        "clean-code now ships its own implementer.md — update SKILL.md's Apply "
+        "section, which currently assumes the shared fallback"
+    )
+    workflow = read_repo_file("docs/refactor-workflow.md")
+    assert "docs/refactor-agents/implementer.md" in workflow
+    assert "otherwise the shared" in workflow.lower()
 
 
 def test_substrate_consumers_link_the_standard():

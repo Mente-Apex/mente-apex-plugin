@@ -40,6 +40,7 @@ One entry per finding:
 - **Location:** `file:line` <all sites>
 - **Evidence:** <quote the key lines>
 - **Why it costs the reader:** <one or two sentences — not just the rule name>
+- **Suggestion:** <the concrete fix>
 - **Suggested severity:** <Critical|Major|Minor> **Confidence:** <high|medium|low>
 ```
 End with a **Coverage** section: what you examined, what you skipped and why.
