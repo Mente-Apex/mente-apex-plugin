@@ -920,7 +920,10 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
     base_files, base_removed = rejections_module.filter_snapshot_files(
         base_files, policy, ""
     )
-    rejected_addresses = list(base_removed)
+    base_files, base_settings_removed = rejections_module.filter_settings_blob(
+        base_files, policy, ""
+    )
+    rejected_addresses = list(base_removed) + list(base_settings_removed)
 
     budget = _LlmMergeBudget(MAX_LLM_MERGES)
     merge_log = []
@@ -928,7 +931,13 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
         incoming_files, incoming_removed = rejections_module.filter_snapshot_files(
             snapshot.get("files", {}), policy, snapshot.get("timestamp", "")
         )
+        incoming_files, incoming_settings_removed = (
+            rejections_module.filter_settings_blob(
+                incoming_files, policy, snapshot.get("timestamp", "")
+            )
+        )
         rejected_addresses.extend(incoming_removed)
+        rejected_addresses.extend(incoming_settings_removed)
         base_files, log = _merge_snapshot_files(base_files, incoming_files, budget)
         merge_log.extend(log)
 

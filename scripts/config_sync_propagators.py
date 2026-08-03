@@ -915,6 +915,14 @@ class SnapshotPropagator:
         result.rejection_removals.extend(
             rejections_module.records_for_addresses(self._policy, removed_addresses)
         )
+        files, settings_removed_addresses = rejections_module.filter_settings_blob(
+            files, self._policy, ""
+        )
+        result.rejection_removals.extend(
+            rejections_module.records_for_addresses(
+                self._policy, settings_removed_addresses
+            )
+        )
         # Which `${...}` in a hook command config-sync itself minted. Absent on
         # an older snapshot, which correctly means none are known to be ours.
         minted_tokens = snapshot.get("root_tokens", ())

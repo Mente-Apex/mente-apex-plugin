@@ -494,3 +494,34 @@ def filter_settings_keys(settings: dict, policy, source_timestamp: str) -> tuple
         return kept
 
     return prune(settings, ()), removed
+
+
+def filter_settings_blob(files: dict, policy, source_timestamp: str) -> tuple:
+    """Apply `filter_settings_keys` to the `settings.json` entry of a snapshot
+    `files` mapping, which carries it as a JSON *string*.
+
+    `filter_snapshot_files` cannot do this: it is markdown-shaped (sections for
+    `.md`, whole-file for everything else) and passes `settings.json` through
+    untouched. Returns `(kept_files, removed_addresses)`. A blob that does not
+    parse is left exactly as it is — repairing it is `clean-settings`' job, and
+    a filter that rewrites unparseable input would destroy the evidence.
+    """
+    blob = files.get("settings.json")
+    if not isinstance(blob, str):
+        return files, []
+    try:
+        parsed = json.loads(blob)
+    except json.JSONDecodeError, ValueError:
+        return files, []
+    if not isinstance(parsed, dict):
+        return files, []
+
+    kept_settings, removed = filter_settings_keys(parsed, policy, source_timestamp)
+    if not removed:
+        return files, []
+
+    kept_files = dict(files)
+    kept_files["settings.json"] = json.dumps(
+        kept_settings, indent=2, ensure_ascii=False
+    )
+    return kept_files, removed
