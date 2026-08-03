@@ -172,9 +172,15 @@ Every run states what it measured — the scope's own description of the target,
 so `File.py:3-4` selecting no function is distinguishable from a file that has
 none. A range names one function, so it must name a file: `some/dir:1-2` is
 refused as `unverified` rather than answered by applying lines 1-2 to every
-file under the tree. A path *you* name that isn't there is refused the same
-way — a typo must not read like a clean file. A path list git returns is not:
-a deleted file legitimately appears in a diff.
+file under the tree.
+
+A target *you* name that cannot mean anything is refused the same way, because
+a typo must not read like a clean file. That covers a path that isn't there —
+bare, ranged, or one of several — the `--repo-root` the scope words resolve
+through, and a range beginning past its file's last line. Two things are
+deliberately not refused: a path list git returns, since a deleted file
+legitimately appears in a diff, and a range that merely overhangs the end,
+since "from here down" selects real lines.
 
 Thresholds come from what your repo already declares (Checkstyle, PMD, ruff's
 `mccabe`, ESLint's `complexity`). The plugin ships none of its own. A config it

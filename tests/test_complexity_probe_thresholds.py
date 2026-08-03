@@ -12,6 +12,7 @@ from complexity_probe_thresholds import (
     PmdThresholds,
     RuffThresholds,
     discover_thresholds,
+    no_thresholds_because,
 )
 
 
@@ -724,6 +725,13 @@ class TestDiscoveryTellsTheTwoAbsencesApart:
         thresholds = discover_thresholds(tmp_path)
         assert thresholds.cyclomatic_complexity is None
         assert any("ten" in diagnostic for diagnostic in thresholds.diagnostics)
+
+    def test_an_absence_with_no_cause_at_all_cannot_be_built(self):
+        """`NO_THRESHOLDS` is the honest way to say "nothing was declared".
+        This function is for the other absence, so a call that names no cause
+        is the silence it exists to end and must not typecheck at runtime."""
+        with pytest.raises(TypeError):
+            no_thresholds_because()
 
     def test_source_never_restates_a_diagnostic(self, tmp_path):
         """`source` used to be `"none readable — " + "; ".join(diagnostics)`,
