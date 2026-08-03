@@ -445,3 +445,52 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
             kept[file_key] = content
 
     return kept, removed
+
+
+def settings_key_address(key_path: tuple) -> str:
+    """A JSON list rather than a delimited path: a settings key may legitimately
+    contain a dot, a bracket or an `@` (plugin ids do), so any separator a flat
+    encoding could pick is also a legal key character."""
+    return json.dumps(list(key_path), ensure_ascii=False)
+
+
+class SettingsKeyAddressor:
+    """One key path into the deep-merged settings object. Stable by construction —
+    unlike a hook registration, a key IS its own identity."""
+
+    kind = "settings-key"
+
+    def identify(self, key_path: tuple) -> str:
+        return settings_key_address(key_path)
+
+    def matches(self, address: str, key_path: tuple) -> bool:
+        return address == self.identify(key_path)
+
+
+def filter_settings_keys(settings: dict, policy, source_timestamp: str) -> tuple:
+    """Subtract rejected key paths from a parsed settings dict.
+
+    Returns `(kept_settings, removed_addresses)`. Pure: the input is never
+    mutated and nothing is read from disk, so a caller can use this to preview.
+    A rejected subtree is dropped whole — rejecting `permissions` means the
+    operator does not want any of it.
+    """
+    addressor = SettingsKeyAddressor()
+    removed: list = []
+
+    def prune(node, prefix: tuple):
+        if not isinstance(node, dict):
+            return node
+        kept: dict = {}
+        for key, value in node.items():
+            key_path = prefix + (key,)
+            target = RejectionTarget(
+                kind=addressor.kind, address=addressor.identify(key_path)
+            )
+            if policy.is_rejected(target, source_timestamp):
+                removed.append(target.address)
+                continue
+            kept[key] = prune(value, key_path)
+        return kept
+
+    return prune(settings, ()), removed
