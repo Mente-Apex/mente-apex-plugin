@@ -14,8 +14,9 @@ Each lens already assigns a **globally-unique, self-describing** rec ID —
 `<lens>/<tier>-<n>` — so the consolidator **carries it verbatim** and never
 re-prefixes. `<lens>` ∈ `clean-arch | ddd | solid | gof | clean-code | test-quality`;
 `<tier>` ∈ `critical | major | minor` for **all six** lenses (clean-code and test-quality
-grade on the same three tiers — see their standards' Severity rubrics — so nothing needs
-translating). So `solid/major-5`, `clean-arch/critical-1`, `test-quality/major-2` —
+grade on the same three tiers — see clean-code's Severity rubric and test-quality's
+Tiers rubric — so nothing needs translating). So `solid/major-5`,
+`clean-arch/critical-1`, `test-quality/major-2` —
 from the code alone a reader knows the owning lens and the tier, and can open that
 lens's own report for the long-form evidence without decoding a legend. IDs are
 permanent; later cycles append, never renumber.
@@ -109,7 +110,7 @@ no outcome — the index Status column, all `pending`, already says so).
 
 - Scope: <path analyzed>, <N> source files, <languages>
 - Test suite: <command> — <green / N failing at baseline / none found>
-- Lenses run: clean-architecture, ddd (analyze), solid, gof, clean-code
+- Lenses run: clean-architecture, ddd (analyze), solid, gof, clean-code, test-quality
   <note any that degraded or found nothing, e.g. "gof — no findings">
 - Findings after dedup: <n> Critical, <n> Major, <n> Minor  (<k> findings folded into <g> grouped changes)
 - Top wins: <the 3–5 recs a human should care about most across all lenses, one line each>

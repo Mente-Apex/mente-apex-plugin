@@ -28,14 +28,25 @@ Phase-0 scope/baseline notes.
    drop a principle abbreviation no finding uses). The report must be decodable
    without leaving the page — that is the whole point of the legend.
 
-3. **Find overlaps.** Two findings overlap when they name the **same smell at the
+3. **Carry gof's non-finding context forward, never as a finding.** gof's report
+   carries two informational sections that have no Status field and are never
+   apply-eligible: the **Detected patterns** graded inventory (A–F) and the
+   Summary's **Maturity** line (Nascent/Emerging/Moderate/Mature). Today these
+   silently vanish when only Findings are merged. Carry them into the
+   consolidated report's **Coverage & method** section as an informational
+   "gof pattern maturity" subsection (grades + Maturity, one line each) —
+   never file them as a finding, a Grouped-changes entry, or a Findings-index
+   row. If gof's report is absent, say so there instead of inventing a
+   maturity note.
+
+4. **Find overlaps.** Two findings overlap when they name the **same smell at the
    same location(s)** — e.g. a duplicated type-switch flagged by solid (OCP) and
    gof (Strategy), or a core-imports-framework flagged by clean-arch (dependency
    rule), ddd (missing port), and solid (DIP). Use the hub's rows to recognize the
    canonical pairs; also merge any two findings whose Locations substantially
    coincide even if the hub doesn't list them.
 
-4. **Pick the owner and the relationship type.** For each overlap, use the hub's
+5. **Pick the owner and the relationship type.** For each overlap, use the hub's
    altitude rule to choose the **Primary** — the finding at the altitude where the
    fix actually lives (precedence when several claim it: **clean-arch → ddd → solid
    → gof → clean-code → test-quality**; widest structural altitude files it, line-level
@@ -54,7 +65,7 @@ Phase-0 scope/baseline notes.
    change (usually the Primary's; if a lower lens names the concrete fix idiom —
    "use Strategy" — fold that into the note).
 
-5. **Build the Grouped changes section.** Whenever an overlap resolves to **one
+6. **Build the Grouped changes section.** Whenever an overlap resolves to **one
    physical edit** touching 2+ findings, add a `### [group-<n>] One edit — …` banner —
    give each group a stable id (`group-1`, `group-2`, …) so the shared gate and apply
    can address it. List the Primary and each related finding with its label and a
@@ -67,13 +78,13 @@ Phase-0 scope/baseline notes.
    group's tier is the Primary's tier. A finding that stands alone never appears here.
    If nothing clustered, omit the section.
 
-6. **Write the per-finding Related line.** Every finding still gets a full entry
+7. **Write the per-finding Related line.** Every finding still gets a full entry
    under its tier section. Replace any bare cross-reference with the typed **Related**
    line: name the group it belongs to, its role, and the Primary's ID — e.g.
    `Fix mechanism in "Extract config_sync_fs.py leaf" (see Grouped changes); primary
    is clean-arch/major-1`. A standalone finding's Related line is just `—`.
 
-7. **Surface tensions and forks — structurally, don't resolve them.** Two cases.
+8. **Surface tensions and forks — structurally, don't resolve them.** Two cases.
    A *soft tension* (the hub's Singleton ↔ DIP — two philosophies, both livable)
    goes under **Unresolved tensions** as today. A **hard conflict** — two
    actionable recs that are **mutually exclusive**, where applying one voids the
@@ -85,9 +96,9 @@ Phase-0 scope/baseline notes.
    the gate. A fork is **not** a group: never fold mutually-exclusive recs into a
    `## Grouped changes` entry.
 
-8. **Carry the non-overlapping findings** through unchanged (verbatim ID, `Related: —`).
+9. **Carry the non-overlapping findings** through unchanged (verbatim ID, `Related: —`).
 
-9. **Emit the Findings index** (the template's dashboard, right after Summary). One
+10. **Emit the Findings index** (the template's dashboard, right after Summary). One
    row per actionable finding — grouped-change members included, placed by their
    `Group role`. Fill the **Principle** column from each finding's owning rubric
    (SOLID → `SRP`/`OCP`/…; clean-arch → `ADP`/`SDP`/`SAP`/`Dependency Rule`; ddd → the
@@ -100,7 +111,7 @@ Phase-0 scope/baseline notes.
    than leaving a reader to re-derive it, and add the one-line *why* under the table for
    any non-obvious step. All `Status` start `pending`.
 
-10. **Write** `docs/reports/code-quality/CODE-QUALITY-REPORT-<YYYY-MM-DD>.md` per the
+11. **Write** `docs/reports/code-quality/CODE-QUALITY-REPORT-<YYYY-MM-DD>.md` per the
    template, Findings sorted Critical → Major → Minor. Fill Summary counts
    *after* dedup (report the deduped count and how many findings folded into how many
    grouped changes). Non-edit overlaps (hand-offs, overlaps adjudicated to no action)
@@ -120,6 +131,9 @@ Phase-0 scope/baseline notes.
 - **Never invent findings.** You only merge what the lens reviewers already
   verified. If something looks missed, note it in Coverage & method — don't add it
   as a finding.
+- **Never promote gof's non-finding context into a finding.** The Detected
+  patterns inventory and Maturity line are informational (step 3) — they never
+  get a Status field, an ID, or a row in the Findings index.
 - **Never drop a finding silently.** Every input finding ends up either as a
   standalone finding or folded into a grouped change via a typed *Related* label —
   account for all of them. A dropped finding is a bug.

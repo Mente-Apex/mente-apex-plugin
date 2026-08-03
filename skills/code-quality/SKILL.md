@@ -166,7 +166,10 @@ their lens's own report (e.g. `docs/reports/solid/SOLID-REPORT-<YYYY-MM-DD>.md`)
 need **not** cross-reference each other here — because dedup is deferred to the
 consolidator, the six reviewers are independent and run concurrently. (If a
 reviewer cross-references the hub out of habit, that's harmless; the consolidator is
-authoritative.)
+authoritative.) **Tell the gof reviewer to skip its HTML preview** — under a direct
+`/gof` run it unconditionally writes `docs/reports/gof/GOF-REPORT-<date>.html`
+alongside the Markdown, but under the umbrella the one consolidated report is the
+product, so instruct it to write only the Markdown report here.
 
 ### Phase 2.5 — Consolidate (the umbrella's own step)
 
@@ -177,6 +180,18 @@ Dispatch **one consolidator subagent** reading
 [references/report-template.md](references/report-template.md), filing each shared
 smell once at the owning altitude and cross-referencing the rest. Read the merged
 report yourself before the gate.
+
+**Reap the six drafts here, not in Phase 2.** The umbrella's Phase 2 fans out six
+reviewers instead of running the shared workflow's single-lens Phase 2, so the
+shared per-lens "reap the draft" (Phase 2, docs/refactor-workflow.md) has nowhere
+to run on its own — a lens's `docs/reports/<lens>/draft-findings.md` would
+otherwise persist until the next run's pre-clear. Once the consolidated report
+above exists and parses, delete each `docs/reports/<lens>/draft-findings.md`, one
+per lens, mirroring the shared rule's condition — the consolidator has already
+read that lens's dated report, not its draft, so the draft is superseded.
+**Delete only against a lens whose dated report exists and parses:** if a
+reviewer died before writing one, keep that lens's draft as the sole evidence of
+the partial run and record the coverage gap instead.
 
 ### Phase 3 — Decision gate (human, shared)
 
