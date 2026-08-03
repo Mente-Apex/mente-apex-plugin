@@ -197,6 +197,76 @@ def test_rejecting_one_occurrence_of_a_repeated_heading_is_not_guarded(
     assert address == {"file": "dup.md", "heading": "## Notes", "occurrence": 0}
 
 
+def _main_exit_code(monkeypatch, capsys, *argv):
+    """Drive the real entry point and return its exit status.
+
+    Nothing else in the suite drives `main()`, which is why its except tuple
+    could omit `ValueError` unnoticed: every sibling test calls `cmd_*` directly
+    and sees the exception, never the exit status an operator gets.
+    """
+    monkeypatch.setattr(config_sync.sys, "argv", ["config_sync.py", *argv])
+    with pytest.raises(SystemExit) as exit_info:
+        config_sync.main()
+    return exit_info.value.code, capsys.readouterr().err
+
+
+def test_a_phase_2_kind_exits_2_with_a_message_not_a_traceback(
+    tmp_path, monkeypatch, capsys
+):
+    """`plugin` passes the `REJECTION_KINDS` check — phase 2 kinds are named
+    there deliberately — and is then refused by `_resolve_rejection_address`
+    with a bare `ValueError`. That is a refusal, so it must exit 2 like every
+    other refusal, not 1 with a stack trace."""
+    repo = _repo(tmp_path)
+    code, stderr = _main_exit_code(
+        monkeypatch, capsys, "reject", str(repo), "plugin", "foo@bar"
+    )
+    assert code == 2
+    assert "phase 1" in stderr
+
+
+def test_a_missing_subject_exits_2_rather_than_raising_indexerror(
+    tmp_path, monkeypatch, capsys
+):
+    """`reject` is variadic, so the arity check in `main` does not run and a
+    missing subject reaches `args[1]`."""
+    repo = _repo(tmp_path)
+    code, stderr = _main_exit_code(
+        monkeypatch, capsys, "reject", str(repo), "snapshot-file"
+    )
+    assert code == 2
+    assert stderr.startswith("Error: ")
+
+
+def test_a_non_numeric_occurrence_exits_2(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path)
+    code, stderr = _main_exit_code(
+        monkeypatch,
+        capsys,
+        "reject",
+        str(repo),
+        "snapshot-section",
+        "CLAUDE.md",
+        "--section",
+        STALE,
+        "--occurrence",
+        "second",
+    )
+    assert code == 2
+    assert stderr.startswith("Error: ")
+
+
+def test_a_working_command_still_exits_0_through_main(tmp_path, monkeypatch, capsys):
+    """The refusal path must not swallow success: `main` returns normally when
+    nothing raised, so the operator's shell sees 0."""
+    repo = _repo(tmp_path)
+    monkeypatch.setattr(
+        config_sync.sys, "argv", ["config_sync.py", "rejections", str(repo)]
+    )
+    config_sync.main()
+    assert json.loads(capsys.readouterr().out) == {"rejections": []}
+
+
 def test_a_mistyped_option_is_refused(tmp_path):
     """`--scop` (missing the `e`) must not silently leave `scope` at its
     "network" default — a private rejection would then propagate to every
