@@ -121,3 +121,52 @@ def test_rejecting_every_section_leaves_an_empty_file_not_a_missing_one():
     )
     assert "CLAUDE.md" in kept
     assert kept["CLAUDE.md"].strip() == ""
+
+
+def test_a_file_with_no_rejected_sections_passes_through_byte_identical():
+    """Direct test of the fix: filter_snapshot_files must never round-trip a
+    file through _parse_sections/rejoin_sections unless something in it was
+    actually rejected, because that round-trip is not lossless for every
+    input shape (see the next test). A file nobody touched must come back as
+    the exact same object/content, trailing newline or not."""
+    no_trailing_newline = "## Alpha\n\nalpha body"
+    files = {"CLAUDE.md": DOCUMENT, "no-trailing-newline.md": no_trailing_newline}
+    policy = _RejectingPolicy(["rules/unrelated.md"])
+    kept, removed = filter_snapshot_files(files, policy, "2026-08-03T09:00:00+00:00")
+    assert kept["CLAUDE.md"] == DOCUMENT
+    assert kept["no-trailing-newline.md"] == no_trailing_newline
+    assert removed == []
+
+
+def test_a_bodiless_heading_at_eof_survives_untouched_when_nothing_is_rejected():
+    """Regression test for the reported shape: a document ending in a bodiless
+    heading with no trailing newline. merge._parse_sections('## Foo') and
+    merge._parse_sections('## Foo\\n') parse to the same triples, so
+    rejoin_sections cannot tell them apart and would add a spurious '\\n' to
+    the former. The governing property is that filter_snapshot_files never
+    calls rejoin_sections at all when no section of the file was rejected."""
+    bodiless_heading_no_trailing_newline = "## Foo"
+    kept, removed = filter_snapshot_files(
+        {"CLAUDE.md": bodiless_heading_no_trailing_newline},
+        NullRejectionPolicy(),
+        "2026-08-03T09:00:00+00:00",
+    )
+    assert kept["CLAUDE.md"] == bodiless_heading_no_trailing_newline
+    assert removed == []
+
+
+def test_rejecting_a_section_in_a_bodiless_heading_document_may_gain_a_trailing_newline():
+    """Documents the residual, accepted behaviour: once a document is
+    genuinely edited (a section actually rejected), the surviving content is
+    rebuilt via rejoin_sections, and a bodiless final heading with no
+    original trailing newline gains one. This is acceptable because the file
+    content was going to change anyway; it is the untouched case (tested
+    above) that the fix guarantees is exact."""
+    document = "## Alpha\n\nalpha body\n\n## Foo"
+    policy = _RejectingPolicy([rejections.section_address("CLAUDE.md", "## Alpha", 0)])
+    kept, removed = filter_snapshot_files(
+        {"CLAUDE.md": document}, policy, "2026-08-03T09:00:00+00:00"
+    )
+    assert "alpha body" not in kept["CLAUDE.md"]
+    assert kept["CLAUDE.md"] == "## Foo\n"
+    assert len(removed) == 1

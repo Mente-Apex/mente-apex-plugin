@@ -320,6 +320,18 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
     Returns `(kept_files, removed_addresses)`. A file whose every section is
     rejected is kept as empty rather than dropped — dropping it would be a
     *file* rejection the operator never asked for.
+
+    A file with no rejected section is passed through as the original
+    `content` object, never round-tripped through `_parse_sections` and
+    `rejoin_sections`. That round-trip is not lossless for every input: a
+    document ending in a bodiless heading with no trailing newline (e.g.
+    `"## Foo"`) gains a spurious `"\n"` on rejoin, because `_parse_sections`
+    strips the heading line's own newline and relies on trailing content to
+    supply it back — content that a bodiless final heading doesn't have. Since
+    `_parse_sections` is not injective for that shape (`"## Foo"` and
+    `"## Foo\n"` parse identically), no rejoin logic can recover which one was
+    the input; the only fix that is exact for every untouched file is to never
+    rewrite what nothing rejected.
     """
     # Deferred import: config_sync_merge is a sibling script, not a package.
     import config_sync_merge as merge
@@ -342,6 +354,7 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
             continue
 
         surviving_sections = []
+        any_section_was_rejected = False
         for (heading_text, occurrence), heading, body in merge._parse_sections(content):
             unit = (file_key, heading_text, occurrence)
             section_target = RejectionTarget(
@@ -349,8 +362,13 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
             )
             if policy.is_rejected(section_target, source_timestamp):
                 removed.append(section_target.address)
+                any_section_was_rejected = True
                 continue
             surviving_sections.append(((heading_text, occurrence), heading, body))
-        kept[file_key] = rejoin_sections(surviving_sections)
+
+        if any_section_was_rejected:
+            kept[file_key] = rejoin_sections(surviving_sections)
+        else:
+            kept[file_key] = content
 
     return kept, removed
