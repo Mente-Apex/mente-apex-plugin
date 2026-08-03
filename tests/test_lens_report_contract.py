@@ -122,7 +122,9 @@ def parse_declared_aliases(report_contract_text):
         alias_name, lens_list, canonical_field, treatment = row_match.groups()
         if treatment != "Alias, kept":
             continue
-        for lens_name in (name.strip() for name in lens_list.split(",")):
+        for lens_name in (
+            raw_lens_name.strip() for raw_lens_name in lens_list.split(",")
+        ):
             declared_aliases.setdefault((lens_name, canonical_field), []).append(
                 alias_name
             )
