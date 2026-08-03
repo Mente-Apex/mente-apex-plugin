@@ -70,8 +70,10 @@ Frozen dataclass:
 
 ```
 id            short content hash of (kind, address) — stable id for `unreject`
-kind          snapshot-section | snapshot-file | settings-entry | plugin
+kind          snapshot-section | snapshot-file | settings-key
+              | hook-registration | plugin
 address       kind-specific, produced by that kind's UnitAddressor
+tier          which identity tier produced `address` (hook-registration only)
 scope         local | network
 rejected_at   UTC ISO 8601
 machine_id    who rejected it
@@ -127,12 +129,60 @@ having consolidated).
 |---|---|---|
 | `snapshot-section` | `CLAUDE.md#("## Memory protocol", 0)` | existing `_parse_sections` key (`config_sync_merge.py:251`) |
 | `snapshot-file` | `rules/some-rule.md` | the snapshot `files` dict key |
-| `settings-entry` | `hooks.PreToolUse[config-sync:b0158bc31372]` | existing `# config-sync:<id>` hook tag |
+| `settings-key` | `enabledPlugins["open-memory@open-memory"]` | the JSON key path itself |
+| `hook-registration` | see §3.1 | existing `config_sync_hooks` helpers |
 | `plugin` | `open-memory@open-memory` | `plugins-plan` action target |
 
 `_parse_sections` already returns `(heading, nth_occurrence)` keys that survive
 repeated headings, so section identity is borrowed from tested code rather than
 invented.
+
+`settings.json` needs **two** addressors, not one. A key path into the deep-merged
+object (`enabledPlugins`, `permissions.defaultMode`) is stable by construction and
+needs nothing clever. A hook registration is a *list element* with no natural key,
+and that is the hard case — separating them keeps the easy kind from inheriting
+the hard kind's machinery (ISP), and keeps each addressor to one reason to change.
+
+### 3.1 `HookRegistrationAddressor` — three identity tiers
+
+Keying a registration on its whole command string is a known defect in this
+codebase: `script_key_of` (`config_sync_hooks.py:59`) exists precisely because
+changing an interpreter (`python3 X` becoming `${ROOT}/bin/py X`) minted a fresh
+id, leaving the previous registration unmatched forever as a second, eventually
+broken copy. A rejection keyed that way would be just as brittle — the interpreter
+path is exactly what changes when a tool is reinstalled.
+
+So identity resolves in tiers, **most stable first**, falling to the next tier only
+when a tier is ambiguous:
+
+| Tier | Address | Survives |
+|---|---|---|
+| 1 | `hooks/<hook_id>` | interpreter change, relocation, matcher edit — anything. Available only when the command carries a `# config-sync:<id>` marker (`hook_id_in`). |
+| 2 | `hooks/<event>/<matcher>/<script basename>` | interpreter change and relocation. Uses `script_name_of`, which reads both the `${TOKEN}` and the localized absolute form. |
+| 3 | `hooks/<event>/<matcher>/#<sha1 of strip_marker(command)>` | nothing — exact match. The floor for commands with no identifiable script, such as opaque shell fragments. |
+
+**Ambiguity falls downward, to the more specific tier.** This is not theoretical:
+today's `enforce_gates.py` case has two registrations under the *same* event and
+matcher whose basenames both read `enforce_gates.py`, differing only in full path
+(`~/.claude/mente-apex/…` vs `~/Projects/mente-apex-memory/…`). Tier 2 is ambiguous
+there, so resolution falls to tier 3, where the full path distinguishes them — and
+brittleness is then *correct*, because the operator rejected one specific copy.
+This is the same situation `hooks-doctor` already reports as the advisory
+`duplicate-script` finding.
+
+The rule for a claimed key is inherited verbatim from `registrations_by_script`:
+never guess between two matches. If even tier 3 is ambiguous — two byte-identical
+registrations under one event and matcher — every match is rejected together, since
+they are indistinguishable and an exact duplicate is precisely what one wants gone.
+
+`registrations_by_script` itself is **not** reused: it iterates `registered_hooks`,
+which yields only config-sync's own marked registrations, and 2 of the 3 hooks in
+the motivating case were hand-added and unmarked. The addressor does its own scan
+over `hook_sites`, reusing the pure helpers (`hook_id_in`, `script_name_of`,
+`strip_marker`, `choose_script_path`) rather than duplicating their logic.
+
+The record stores the tier alongside the address, so matching recomputes only that
+tier rather than re-running resolution.
 
 ## 4. Data flow
 
@@ -193,10 +243,17 @@ the bug this feature exists to prevent.
 
 ## 6. Testing
 
-- **Unit** — each `UnitAddressor` (identify→matches round trip, repeated headings,
-  missing hook tag); `TimestampedRejectionRule` at older / newer / **equal**; each
+- **Unit** — each `UnitAddressor` (identify→matches round trip, repeated headings);
+  `TimestampedRejectionRule` at older / newer / **equal**; each
   store (round trip, absent file, corrupt file); `CompositeRejectionPolicy` fan-out
   and revival precedence (revival newer than rejection un-suppresses; older does not).
+- **Hook identity tiers** — a dedicated suite, since this is the part most likely
+  to be wrong: tier 1 chosen when a marker exists; tier 2 matching the *same*
+  registration after its interpreter is swapped (`python3 X` → `/abs/uv/bin/python X`)
+  and after relocation; tier 2 ambiguity (two `enforce_gates.py` under one
+  event+matcher) falling to tier 3 and distinguishing them by full path; tier 3
+  ambiguity rejecting every byte-identical match; an unmarked hand-added hook
+  addressable at all, which `registrations_by_script` alone would miss.
 - **Scope isolation** — a `local` record must never influence the consolidated
   snapshot. Assert it directly: record a local rejection, consolidate, and confirm
   the content survives in shared state while `apply` still withholds it locally.
@@ -213,7 +270,11 @@ the bug this feature exists to prevent.
 
 ## 7. Deliverables
 
-- `scripts/config_sync_rejections.py` — the new module.
+- `scripts/config_sync_rejections.py` — the new module (policy, stores, rule,
+  addressors for `snapshot-section` / `snapshot-file` / `settings-key` / `plugin`).
+- `scripts/config_sync_rejection_hooks.py` — `HookRegistrationAddressor` and its
+  tier resolution, kept separate because it is the only addressor with a
+  non-trivial algorithm and it is the one that depends on `config_sync_hooks`.
 - `scripts/config_sync.py` — `cmd_reject`, `cmd_rejections`, `cmd_unreject`,
   `cmd_resolve_rejection`; `policy` parameter threaded into `cmd_consolidate`.
 - `scripts/config_sync_propagators.py` — `policy` parameter on
