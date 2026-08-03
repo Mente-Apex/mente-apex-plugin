@@ -21,6 +21,7 @@ tests/test_ddd_skill_structure.py and tests/test_code_quality_skill_structure.py
 """
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -156,17 +157,29 @@ def declared_id_prefix(lens_name):
     return prefix_match.group(1)
 
 
-def repo_markdown_files_under(*relative_directories):
-    """Yield every .md file under the given repo-relative directories, minus
-    the historical planning record (docs/superpowers/plans/, which
-    deliberately quotes retired schemes it replaced) -- mirrors Task 2's
-    sweep scope for the C*/M*/N* retirement."""
-    for relative_directory in relative_directories:
-        for markdown_path in (REPO_ROOT / relative_directory).rglob("*.md"):
-            relative_posix = markdown_path.relative_to(REPO_ROOT).as_posix()
-            if relative_posix.startswith("docs/superpowers/plans/"):
-                continue
-            yield markdown_path
+def tracked_markdown_files_under(*relative_directories):
+    """Yield every git-tracked .md file under the given repo-relative
+    directories, minus the historical planning record
+    (docs/superpowers/plans/, which deliberately quotes retired schemes it
+    replaced) -- mirrors Task 2's sweep scope for the C*/M*/N* retirement.
+
+    Tracked files only, on purpose: git-ignored local scratch (skill-run
+    snapshots under skills/*-workspace/, worktree copies) is not shipped
+    content, and a filesystem walk lets a checkout-local leftover fail this
+    sweep on one machine while it passes on every other."""
+    tracked_listing = subprocess.run(
+        ["git", "ls-files", "--", *relative_directories],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for tracked_relative_path in tracked_listing.stdout.splitlines():
+        if not tracked_relative_path.endswith(".md"):
+            continue
+        if tracked_relative_path.startswith("docs/superpowers/plans/"):
+            continue
+        yield REPO_ROOT / tracked_relative_path
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +223,7 @@ def test_no_file_outside_the_historical_plan_still_names_the_retired_c_m_n_schem
     deliberately quotes the scheme it replaced, mirroring Task 2's sweep."""
     offending_files = [
         str(markdown_path.relative_to(REPO_ROOT))
-        for markdown_path in repo_markdown_files_under("skills", "docs")
+        for markdown_path in tracked_markdown_files_under("skills", "docs")
         if "C*/M*/N*" in read_text(markdown_path)
     ]
     assert not offending_files, (
