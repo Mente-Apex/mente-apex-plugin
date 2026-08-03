@@ -181,13 +181,13 @@ files get combined intelligently.
 py "$ENGINE" consolidate "$REPO"
 ```
 
-> **Bundle deletions propagate; config deletions don't.** Skill/agent **bundles**
-> now carry deletion tombstones: delete a skill on one machine and, on the next
-> sync, other machines are *prompted* to remove it (Step 4). **Snapshot config**
-> (CLAUDE.md, `memory/`, `rules/`) is still **union-only** — a memory or rule you
-> delete on one machine is *resurrected* from another machine's snapshot. To remove
-> config content everywhere: delete it on **every** machine **and** from
-> `consolidated/snapshot.json` + each `machines/*.json`, then re-push.
+> **Bundle deletions propagate; config deletions need `reject`.** Skill/agent
+> **bundles** carry deletion tombstones. **Snapshot config** (CLAUDE.md,
+> `memory/`, `rules/`) is union-only, so a deletion alone is *resurrected* from
+> another machine's snapshot — and from the consolidated snapshot itself, which
+> folds its own prior output back in. To retire config content, `reject` it:
+> `--scope network` strips it from the consolidated snapshot and prompts every
+> other machine, `--scope local` withholds it here without touching shared state.
 
 ## Step 4 — Backup, then apply through the propagator seam
 
@@ -227,6 +227,21 @@ a skill/agent the network retired that this machine still has — ask the user w
 # export re-adds it for everyone)
 py "$ENGINE" resolve-deletion "$REPO" "<kind>" "<name>" "<decision>"
 ```
+
+**Reject content you never want (if any).** For any proposal the user declines,
+offer a third answer beyond apply/skip: reject it durably. Ask with
+**AskUserQuestion** whether the rejection is for this machine only or for the
+whole network, then record it:
+
+```bash
+# scope is `local` (this machine only) or `network` (tombstone for everyone)
+py "$ENGINE" reject "$REPO" snapshot-section CLAUDE.md --section "## Memory protocol" --scope network
+py "$ENGINE" reject "$REPO" snapshot-file rules/unwanted.md --scope local
+```
+
+A rejection is timestamped: content re-added *later* than the rejection is
+proposed again as fresh intent. Review or undo with `py "$ENGINE" rejections "$REPO"`
+and `py "$ENGINE" unreject "$REPO" <id>`.
 
 ## Step 4b — Converge marketplace plugins (plan → consent → apply)
 
@@ -345,6 +360,22 @@ never pruned automatically — report them and let the user decide.
 If an entry reports `ok: false`, settings.json changed between the diagnosis and
 the write; nothing was removed for it. Re-run `hooks-doctor`.
 
+## Step 4e — Answer other machines' rejections
+
+`propagate-apply` reports a `rejection_removals` list: content this machine holds
+that another machine has rejected network-wide. For each entry, ask with
+**AskUserQuestion** ("`<address>` was rejected on `<machine>` at `<time>` — remove
+it here, or keep it?") and apply the answer:
+
+```bash
+py "$ENGINE" resolve-rejection "$REPO" <id> remove   # delete it locally
+py "$ENGINE" resolve-rejection "$REPO" <id> keep     # overrule: it returns for everyone
+```
+
+`keep` does not edit the rejecting machine's file. It records this machine's own
+newer revival, which wins on timestamp — so one machine can always overrule the
+network without a cross-machine write.
+
 ## Step 5 — Commit the updated consolidated snapshot and push
 
 ```bash
@@ -395,6 +426,7 @@ Show the user a clean summary:
   Pulled   : <N> remote commit(s)
   Merged   : <list of files that changed>
   Retired  : <N> skill/agent bundle(s) tombstoned or removed (or "none")
+  Rejected : <N> item(s) rejected (or "none")
   Plugins  : <N> plugin(s) installed/updated via consent (or "none")
   MCP servers: <N> new server(s) added (or "none new")
   Network  : <N> machine(s) in sync
