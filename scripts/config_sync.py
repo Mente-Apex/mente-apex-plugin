@@ -1139,6 +1139,49 @@ def cmd_unreject(repo_path, rejection_id):
     print(json.dumps({"unrejected": rejection_id}))
 
 
+def cmd_resolve_rejection(repo_path, rejection_id, decision):
+    """Answer another machine's rejection: remove the content here, or keep it.
+
+    `keep` does NOT delete the original — that record lives in the rejecting
+    machine's own file and is not ours to edit. It writes our own revival record
+    with a newer timestamp, which the composite policy resolves in our favour.
+    """
+    import config_sync_rejections as rejections_module
+
+    if decision not in ("remove", "keep"):
+        raise ValueError(f"decision must be 'remove' or 'keep', got {decision!r}")
+
+    policy = _rejection_policy(repo_path)
+    original = next((found for found in policy.all() if found.id == rejection_id), None)
+    if original is None:
+        raise UnknownRejectionTargetError(f"no rejection with id {rejection_id!r}")
+
+    if decision == "keep":
+        revival = rejections_module.RejectionRecord(
+            id=rejections_module.rejection_id_of(
+                original.kind, original.address + "\0revival"
+            ),
+            kind=original.kind,
+            address=original.address,
+            scope="network",
+            rejected_at=datetime.now(UTC).isoformat(),
+            machine_id=_machine_id(),
+            reason=f"kept on {_machine_id()}",
+            revives=rejection_id,
+        )
+        policy.record(revival)
+
+    print(
+        json.dumps(
+            {
+                "resolved": rejection_id,
+                "decision": decision,
+                "address": original.address,
+            }
+        )
+    )
+
+
 # A merged file carries conflict markers when the section union could not
 # reconcile two contradictory lines. Detected by the marker the union writes,
 # so "was there a conflict?" has one answer rather than one per caller.
@@ -1815,6 +1858,7 @@ COMMANDS = {
     "reject": (cmd_reject, None),  # variadic: repo kind subject [--scope|--section|...]
     "rejections": (cmd_rejections, 1),
     "unreject": (cmd_unreject, 2),
+    "resolve-rejection": (cmd_resolve_rejection, 3),
 }
 
 
