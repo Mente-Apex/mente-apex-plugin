@@ -32,6 +32,20 @@ always the editor; a lens never redesigns on its own.
 | Reviewer | subagent | `docs/refactor-agents/reviewer.md` | no (writes only the report) |
 | Implementer / TDD-coordinator | subagent | `docs/refactor-agents/implementer.md` | yes (approved recs only, via a TDD refactor job) |
 
+**Lens-local overrides shared.** The paths above are the fallback: when a lens ships its
+own `skills/<lens>/agents/<role>.md` for analyzer, reviewer, and/or implementer, that
+lens-local file is dispatched instead of the shared one for that role — Phase 4 states
+this for the implementer specifically; the same direction holds for analyzer and
+reviewer. A lens-local file typically stays thin (rubric path, output path) and links
+back to the shared file it specializes rather than restating it, e.g.
+[skills/solid/agents/analyzer.md](../skills/solid/agents/analyzer.md). One thing a
+lens-local analyzer may change along the way: the draft's per-finding heading prefix —
+the shared format is `[D<n>]` (`docs/refactor-agents/analyzer.md`); clean-architecture
+uses `[A<n>]`, clean-code `[G<n>]`, test-quality `[T<n>]`. That prefix is scratch
+numbering for the analyzer→reviewer hand-off only — it never survives into the final
+report, which always uses the canonical `<lens>/<tier>-<n>` ID from
+[report-contract.md](report-contract.md).
+
 All agent instruction paths above are relative to the plugin root. Dispatch
 subagents with the Agent tool (`general-purpose`), telling each to read its
 instruction file first. **Every role here writes its own artifact, so every
@@ -145,9 +159,9 @@ Spawn the reviewer with the draft path, the same references, **and the
 structural-graph verdict**. The reviewer
 re-opens the actual code for **every** finding, prunes what doesn't hold up,
 re-tiers what does, hunts for cross-file violations the analyzer's
-file-by-file pass tends to miss, and **cross-references the other lens** —
+file-by-file pass tends to miss, and **cross-references the overlapping lenses per the hub** —
 check [docs/lens-overlap.md](lens-overlap.md) for findings that overlap or conflict with
-the sibling lens's territory so the two reports don't contradict each other —
+the overlapping lenses' territory so the reports don't contradict each other —
 before writing the final report to `docs/reports/<lens>/<LENS>-REPORT-<YYYY-MM-DD>.md`
 using the lens's `references/report-template.md` **exactly**: the apply
 phase depends on its structure (IDs, Risk and Status fields).
