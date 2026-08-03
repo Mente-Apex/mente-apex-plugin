@@ -60,7 +60,7 @@ class Thresholds:
 NO_THRESHOLDS = Thresholds(cyclomatic_complexity=None, source="none declared")
 
 
-def no_thresholds_because(*reasons: str) -> Thresholds:
+def no_thresholds_because(first_reason: str, *more_reasons: str) -> Thresholds:
     """Absent thresholds that say why nothing could be read.
 
     `NO_THRESHOLDS` means "this repo declares no limit", which is a finding.
@@ -71,9 +71,12 @@ def no_thresholds_because(*reasons: str) -> Thresholds:
 
     Varargs rather than `(reason, diagnostics=None)`: that shape let a caller
     pass a summary string beside the list it summarized, and the second
-    argument silently discarded the first.
+    argument silently discarded the first. One reason is required, not merely
+    accepted — a bare `no_thresholds_because()` would build exactly the
+    causeless absence the paragraph above calls silence, and `NO_THRESHOLDS`
+    is already the honest way to say "nothing was declared".
     """
-    return replace(NO_THRESHOLDS, diagnostics=reasons)
+    return replace(NO_THRESHOLDS, diagnostics=(first_reason, *more_reasons))
 
 
 def unreadable_config(config_name: str, cause: str) -> Thresholds:

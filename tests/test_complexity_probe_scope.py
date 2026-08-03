@@ -1,10 +1,13 @@
 """Scope resolution, including the two forms the spec adds: a bare invocation
 meaning the uncommitted working tree, and a line range naming one function."""
 
+import os
+
 import pytest
 
 from complexity_probe_scope import (
     GitRunner,
+    LocalFilesystem,
     ScopeSelection,
     parse_range,
     resolve_literal_paths,
@@ -31,15 +34,22 @@ class StubFilesystem:
     paths it wants gone.
     """
 
-    def __init__(self, directories=(), missing=()):
+    def __init__(self, directories=(), missing=(), line_counts=None):
         self.directories = set(directories)
         self.missing = set(missing)
+        self.line_counts = dict(line_counts or {})
 
     def is_directory(self, path) -> bool:
         return path in self.directories
 
     def exists(self, path) -> bool:
         return path not in self.missing
+
+    def line_count(self, path) -> int | None:
+        """`None` for a file nobody stated a length for — the same "I cannot
+        tell" the real filesystem returns for a file it cannot read, which is
+        never grounds for a refusal."""
+        return self.line_counts.get(path)
 
 
 class TestParsingARange:
@@ -79,7 +89,12 @@ class TestResolvingScope:
 
     def test_full_is_the_repo_root_and_asks_git_nothing(self):
         git_runner = StubGitRunner()
-        selection = resolve_scope("full", repo_root="/repo", git_runner=git_runner)
+        selection = resolve_scope(
+            "full",
+            repo_root="/repo",
+            git_runner=git_runner,
+            filesystem=StubFilesystem(),
+        )
         assert selection.paths == ("/repo",)
         assert git_runner.calls == []
 
@@ -259,6 +274,113 @@ class TestATargetMustExist:
         assert selection.paths == ("src/Deleted.java",)
 
 
+class TestTheRepoRootMustExistToo:
+    """The last caller-named path answered confidently. `--scope full
+    --repo-root <typo>` reported `ran` with no functions — #137's defect one
+    flag over, in the form README documents for feeding an audit — and the two
+    git forms crashed with a `FileNotFoundError` carrying exit 1, the code
+    reserved for a blocking gate verdict."""
+
+    def test_full_against_a_missing_root_is_refused(self):
+        with pytest.raises(ValueError, match="no such path"):
+            resolve_scope(
+                "full",
+                repo_root="/definitely/not/here",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(missing=("/definitely/not/here",)),
+            )
+
+    def test_the_working_tree_against_a_missing_root_is_refused(self):
+        """Refused before git is asked, so the crash cannot happen."""
+        git_runner = StubGitRunner()
+        with pytest.raises(ValueError, match="no such path"):
+            resolve_scope(
+                None,
+                repo_root="/definitely/not/here",
+                git_runner=git_runner,
+                filesystem=StubFilesystem(missing=("/definitely/not/here",)),
+            )
+        assert git_runner.calls == []
+
+    def test_merge_base_against_a_missing_root_is_refused(self):
+        with pytest.raises(ValueError, match="no such path"):
+            resolve_scope(
+                "merge-base",
+                repo_root="/definitely/not/here",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(missing=("/definitely/not/here",)),
+            )
+
+    def test_a_named_path_does_not_consult_the_repo_root(self):
+        """The control. Only the three vocabulary words resolve *through* the
+        root; a caller who names a file outright is not asking about it, and
+        refusing on a root that form never reads would be a surprise."""
+        selection = resolve_scope(
+            "OrderService.java",
+            repo_root="/definitely/not/here",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(missing=("/definitely/not/here",)),
+        )
+        assert selection.paths == ("OrderService.java",)
+
+
+class TestARangeMustNameLinesThatExist:
+    """`real.py:9000-9001` on a four-line file reported `ran` with no
+    functions: the path is there, the lines are not. The same confident answer
+    about nothing, one input further along than a missing path."""
+
+    def test_a_range_beginning_past_the_last_line_is_refused(self):
+        with pytest.raises(ValueError, match="name nothing"):
+            resolve_scope(
+                "File.py:9000-9001",
+                repo_root=".",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(line_counts={"File.py": 4}),
+            )
+
+    def test_the_refusal_states_the_length_it_measured_against(self):
+        with pytest.raises(ValueError, match="4 line"):
+            resolve_scope(
+                "File.py:9000-9001",
+                repo_root=".",
+                git_runner=StubGitRunner(),
+                filesystem=StubFilesystem(line_counts={"File.py": 4}),
+            )
+
+    def test_a_range_merely_overhanging_the_end_is_kept(self):
+        """ "From line 3 to the end" is an ordinary gesture and selects real
+        lines. Refusing it would hide a target the caller pointed straight at
+        — this guard's own failure, in the other direction."""
+        selection = resolve_scope(
+            "File.py:3-9000",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(line_counts={"File.py": 4}),
+        )
+        assert selection.line_range == (3, 9000)
+
+    def test_a_range_ending_on_the_last_line_is_kept(self):
+        selection = resolve_scope(
+            "File.py:4-4",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(line_counts={"File.py": 4}),
+        )
+        assert selection.line_range == (4, 4)
+
+    def test_a_file_whose_length_cannot_be_told_is_not_refused(self):
+        """An unreadable file already reaches the user as `unverified` from
+        the probe, with the read error named. Refusing here would replace a
+        specific cause with a guess."""
+        selection = resolve_scope(
+            "File.py:9000-9001",
+            repo_root=".",
+            git_runner=StubGitRunner(),
+            filesystem=StubFilesystem(),
+        )
+        assert selection.line_range == (9000, 9001)
+
+
 class TestLiteralPathsMustExistToo:
     """Two or more positional paths never reach `resolve_scope`, so without
     their own check `probe.py real.py typo.py` kept reporting `ran` — the same
@@ -296,6 +418,47 @@ class TestLiteralPathsMustExistToo:
         assert selection.paths == ("first.py", "second.py")
         assert selection.line_range is None
         assert selection.description == "first.py, second.py"
+
+
+class TestLocalFilesystemAgainstRealFiles:
+    """The stub answers what these tests assert; this class is what keeps the
+    stub honest about the collaborator it stands in for."""
+
+    def test_it_counts_the_lines_of_a_real_file(self, tmp_path):
+        source_file = tmp_path / "File.py"
+        source_file.write_text("one\ntwo\nthree\n", encoding="utf-8")
+        assert LocalFilesystem().line_count(str(source_file)) == 3
+
+    def test_a_final_line_without_a_newline_still_counts(self, tmp_path):
+        source_file = tmp_path / "File.py"
+        source_file.write_text("one\ntwo", encoding="utf-8")
+        assert LocalFilesystem().line_count(str(source_file)) == 2
+
+    def test_an_empty_file_has_no_lines(self, tmp_path):
+        source_file = tmp_path / "Empty.py"
+        source_file.write_text("", encoding="utf-8")
+        assert LocalFilesystem().line_count(str(source_file)) == 0
+
+    def test_bytes_no_text_decoder_would_accept_still_count(self, tmp_path):
+        """Read as bytes, so an encoding a text read would choke on is a line
+        count like any other rather than a crash inside scope resolution."""
+        source_file = tmp_path / "Odd.py"
+        source_file.write_bytes(b"\xff\xfe binary-ish\n second\n")
+        assert LocalFilesystem().line_count(str(source_file)) == 2
+
+    def test_a_file_that_cannot_be_read_reports_no_count(self, tmp_path):
+        if os.geteuid() == 0:
+            pytest.skip("running as root: file mode 000 is still readable")
+        source_file = tmp_path / "Locked.py"
+        source_file.write_text("one\n", encoding="utf-8")
+        source_file.chmod(0o000)
+        try:
+            assert LocalFilesystem().line_count(str(source_file)) is None
+        finally:
+            source_file.chmod(0o600)
+
+    def test_a_missing_file_reports_no_count_rather_than_raising(self, tmp_path):
+        assert LocalFilesystem().line_count(str(tmp_path / "gone.py")) is None
 
 
 class TestGitRunnerWithRealRepository:

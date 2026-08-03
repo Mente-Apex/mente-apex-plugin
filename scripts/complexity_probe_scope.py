@@ -11,12 +11,19 @@ ensures that untracked files are included in working-tree, that merge-base
 errors surface rather than silently producing empty lists, and that future VCS
 changes affect both sensors the same way.
 
-A path the *caller* named — a bare path, a range, or several literal paths — is
-refused when it is not there, because "I measured nothing" and "there was
-nothing to measure" are different facts and only the first belongs to a target
-that exists. A path list that came back from git is never refused: a deleted
-file legitimately appears in a diff. The caller turns a refusal into an
-`unverified` measurement carrying the cause.
+A target the *caller* named is refused when it cannot mean anything, because
+"I measured nothing" and "there was nothing to measure" are different facts and
+only the first belongs to a target that exists. Every caller-named form is
+covered — a bare path, a range, several literal paths, and the repo root the
+three vocabulary words resolve through — as is a range that begins past its
+file's last line.
+
+Two things are deliberately not refused. A path list that came back from git:
+a deleted file legitimately appears in a diff. And a file whose length cannot
+be read: an unreadable file already reaches the user as `unverified` from the
+probe itself, with the read error named.
+
+The caller turns a refusal into an `unverified` measurement carrying the cause.
 """
 
 import re
@@ -65,13 +72,17 @@ def parse_range(argument: str):
 
 
 class LocalFilesystem:
-    """The two filesystem questions scope resolution asks: is this a directory,
-    and is it there at all?
+    """The three filesystem questions scope resolution asks: is this a
+    directory, is it there at all, and how many lines does it have?
 
     A collaborator rather than bare `Path(...)` calls for the same reason
     `GitRunner` is one — resolution is then testable without laying down real
-    directories, and a caller that resolves against something other than the
-    local disk has a seam to substitute.
+    files, and a caller that resolves against something other than the local
+    disk has a seam to substitute.
+
+    Narrow on purpose. This is scope resolution's view of a filesystem, not a
+    general one: three questions, one client, and every one of them asked to
+    decide whether a named target can mean anything.
     """
 
     def is_directory(self, path) -> bool:
@@ -79,6 +90,23 @@ class LocalFilesystem:
 
     def exists(self, path) -> bool:
         return Path(path).exists()
+
+    def line_count(self, path) -> int | None:
+        """How many lines `path` holds, or `None` when that cannot be told.
+
+        `None` rather than an exception, because "I could not read this file"
+        must not become a refusal: an unreadable file already reaches the user
+        as `unverified` from the probe itself, with the read error named. Only
+        a definite count is grounds for saying a range names nothing.
+
+        Read as bytes so an encoding a text read would choke on is a line
+        count like any other.
+        """
+        try:
+            with open(path, "rb") as handle:
+                return sum(1 for _line in handle)
+        except OSError:
+            return None
 
 
 class GitRunner:
@@ -110,6 +138,27 @@ def _refuse_missing_paths(paths, filesystem) -> None:
         raise ValueError(f"no such path: {named}")
 
 
+def _refuse_a_range_past_the_end(path, start_line, end_line, filesystem) -> None:
+    """Raise when a range begins after the file's last line.
+
+    Only when it *begins* past the end. A range that merely overhangs — line 3
+    to line 9000 of a forty-line file — is the ordinary "from here to the end"
+    gesture and selects real lines, so it narrows as usual. Refusing that would
+    reproduce this guard's own failure in the other direction: hiding a target
+    the caller was pointing straight at.
+
+    A file whose length cannot be told is not refused. `line_count` returns
+    `None` for that, and an unreadable file already reaches the user as
+    `unverified` from the probe, with the read error named.
+    """
+    total_lines = filesystem.line_count(path)
+    if total_lines is not None and start_line > total_lines:
+        raise ValueError(
+            f"{path!r} has {total_lines} line(s), so lines "
+            f"{start_line}-{end_line} name nothing"
+        )
+
+
 def resolve_literal_paths(paths, filesystem=None) -> ScopeSelection:
     """The selection for paths a caller named outright, refusing absent ones.
 
@@ -129,6 +178,17 @@ def resolve_scope(
 ) -> ScopeSelection:
     resolver = git_runner if git_runner is not None else GitRunner(repo_root)
     disk = filesystem if filesystem is not None else LocalFilesystem()
+
+    if argument is None or argument in (WORKING_TREE, MERGE_BASE, FULL):
+        # These three, and only these three, resolve *through* the repo root —
+        # the other forms never look at it. A root that is not there was the
+        # last caller-named path answered confidently: `--scope full
+        # --repo-root <typo>` reported `ran` with no functions, which is the
+        # defect this module exists to refuse, and the two git forms crashed
+        # with a `FileNotFoundError` carrying exit 1 — the code reserved for a
+        # blocking gate verdict, from a branch that is supposed to be a
+        # reporter.
+        _refuse_missing_paths((repo_root,), disk)
 
     if argument is None or argument == WORKING_TREE:
         paths = tuple(resolver.changed_paths(WORKING_TREE))
@@ -163,8 +223,11 @@ def resolve_scope(
                 "name a file, or drop the range to measure the whole tree"
             )
         # After the directory check, so `<dir>:1-2` still gets the answer that
-        # names its actual problem rather than a bare "no such path".
+        # names its actual problem rather than a bare "no such path"; before
+        # the length check, which has nothing to measure against until the
+        # file is known to be there.
         _refuse_missing_paths((path,), disk)
+        _refuse_a_range_past_the_end(path, start_line, end_line, disk)
         return ScopeSelection(
             paths=(path,),
             line_range=(start_line, end_line),

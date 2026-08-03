@@ -240,6 +240,93 @@ class TestATargetThatIsNotThereIsNotAMeasurement:
         assert "add" in output
 
 
+class TestARootThatIsNotThereIsNotAMeasurement:
+    """`--repo-root` was the last caller-named path answered confidently, and
+    it failed two ways at once: `--scope full` reported `ran` with no
+    functions — #137's defect in the form README documents for feeding an
+    audit — while the git forms crashed with a `FileNotFoundError` carrying
+    exit 1, the code `TestABadConfigFileNeverCrashesTheRun` below exists to
+    keep unreachable."""
+
+    MISSING_ROOT = "/definitely/not/here"
+
+    def test_scope_full_against_a_missing_root_is_unverified(self, tmp_path, capsys):
+        exit_code = complexity_probe.main(
+            ["--scope", "full", "--repo-root", self.MISSING_ROOT, "--json"]
+        )
+        payload = json.loads(capsys.readouterr().out)
+        assert exit_code == 0
+        assert payload["status"] == "unverified"
+        assert "no such path" in payload["reason"]
+        assert payload["functions"] == []
+
+    def test_the_working_tree_against_a_missing_root_does_not_crash(self, capsys):
+        """It exited 1 by traceback, which is the gate's reserved code reached
+        from a branch documented as a reporter that cannot block."""
+        exit_code = complexity_probe.main(["--repo-root", self.MISSING_ROOT])
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "unverified" in output
+        assert "no such path" in output
+
+    def test_merge_base_against_a_missing_root_does_not_crash(self, capsys):
+        exit_code = complexity_probe.main(
+            ["--scope", "merge-base", "--repo-root", self.MISSING_ROOT]
+        )
+        assert exit_code == 0
+        assert "no such path" in capsys.readouterr().out
+
+    def test_a_root_that_is_there_still_measures_the_whole_repository(
+        self, tmp_path, capsys
+    ):
+        """The control."""
+        (tmp_path / "sample.py").write_text("def add(value):\n    return value\n")
+        exit_code = complexity_probe.main(
+            ["--scope", "full", "--repo-root", str(tmp_path)]
+        )
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "add" in output
+        assert "unverified" not in output
+
+
+class TestARangeMustNameLinesThatExist:
+    """`File.py:9000-9001` on a four-line file reported "no functions touched"
+    with status `ran`: the path is there, the lines are not. The same confident
+    answer about nothing, one input further than a missing path."""
+
+    def _four_line_file(self, tmp_path):
+        source_file = tmp_path / "File.py"
+        source_file.write_text("def tiny(value):\n    return value\n\n\n")
+        return source_file
+
+    def test_a_range_past_the_end_is_unverified_with_a_reason(self, tmp_path, capsys):
+        source_file = self._four_line_file(tmp_path)
+        exit_code = complexity_probe.main([f"{source_file}:9000-9001"])
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "unverified" in output
+        assert "name nothing" in output
+        assert "no functions touched" not in output
+
+    def test_the_refusal_is_data_in_the_artifact_too(self, tmp_path, capsys):
+        source_file = self._four_line_file(tmp_path)
+        complexity_probe.main([f"{source_file}:9000-9001", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "unverified"
+        assert "4 line" in payload["reason"]
+
+    def test_a_range_overhanging_the_end_still_measures(self, tmp_path, capsys):
+        """The control that matters: "from line 1 to the end" is an ordinary
+        gesture, and the function it selects must still be reported."""
+        source_file = self._four_line_file(tmp_path)
+        exit_code = complexity_probe.main([f"{source_file}:1-9000"])
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "tiny" in output
+        assert "unverified" not in output
+
+
 class TestABadConfigFileNeverCrashesTheRun:
     """Exit 1 is this branch's reserved code for a blocking gate verdict, and
     the whole "`--gate` is a reporter, not a blocker" ruling rests on it being
