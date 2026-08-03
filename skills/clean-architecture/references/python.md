@@ -1,8 +1,7 @@
 # clean-architecture in Python — tooling & metrics
 
 The headline checks want the real import graph. Use a tool when one is reachable;
-**degrade gracefully** when not. Other languages: `dependency-cruiser` / `madge`
-(JS/TS) do the equivalent; else fall back to reading imports.
+**degrade gracefully** when not — fall back to reading imports directly.
 
 ## Detect a graph tool (no hard install)
 

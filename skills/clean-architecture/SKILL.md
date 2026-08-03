@@ -11,8 +11,9 @@ description: >-
   Architecture, and the composition root; an opt-in appendix reports the
   abstractness / Main-Sequence metrics (approximate). Audit-first, no
   build mode — building the layered shape is /ddd's job. Emits a dependency-rule
-  contract (import-linter for Python, dependency-cruiser for JS/TS) as a
-  leave-behind CI tripwire. Use for "/clean-architecture",
+  contract (import-linter for Python, dependency-cruiser for JS/TS, an ArchUnit
+  `DependencyRuleTest.java` for Java) as a leave-behind CI tripwire. Use for
+  "/clean-architecture",
   dependency rule, boundaries, framework as a detail, import cycles, component
   cohesion/coupling, stable dependencies, screaming architecture, composition
   root.
@@ -82,15 +83,26 @@ degrade path applies.
 
 The Dependency-Rule findings compile to a **dependency-rule contract** in the
 detected language's tool (`importlinter.ini` for Python, `.dependency-cruiser.cjs`
-for JS/TS) written into the report dir — a one-time audit becomes a repeatable CI
-guardrail. Offered for the user to commit; never committed silently.
+for JS/TS, `DependencyRuleTest.java` for Java, ArchUnit) written into the report
+dir — a one-time audit becomes a repeatable CI guardrail. Offered for the user
+to commit; never committed silently.
+
+**Limit, stated explicitly:** for a detected language with no `references/<language>.md`
+today (anything other than Python, TypeScript, or Java), there is no leave-behind
+contract. The audit still runs — agent-driven import reading, the degrade path — and
+still produces findings, but this section is skipped and the report's Coverage line
+says so; never a silent omission.
 
 ## Flow (audit-first; apply opt-in)
 
 Follows the shared workflow, Phases 0–3; apply (4–5) is opt-in and conservative.
 
 1. **Phase 0 — Inventory & baseline.** Scope the tree; detect the test suite and a
-   graph tool; create git-excluded `docs/reports/clean-architecture/`.
+   graph tool; create git-excluded `docs/reports/clean-architecture/`. If
+   `--cohesion` wasn't passed, this is where to offer it interactively ("go
+   deeper — also run cohesion, Screaming Architecture, and composition-root
+   checks?"): before Phase 1 dispatches, since the analyzer needs its depth up
+   front rather than after a headline-only draft already exists.
 2. **Phase 1 — Analyzer** ([agents/analyzer.md](agents/analyzer.md); read-only over the
    code, writes its own draft) →
    `draft-findings.md`. Headline checks always; secondary/appendix only if opted
@@ -121,8 +133,8 @@ Follows the shared workflow, Phases 0–3; apply (4–5) is opt-in and conservat
   violation signatures, when-NOT-to, tier assignment. Both analysis agents read it.
 - `references/<language>.md` — graph-tool detection, metric how-to, the
   dependency-rule contract, and graceful degrade for a detected language; ships
-  `python.md` and `typescript.md` today (list the `references/` dir for the
-  current set). New languages drop in here.
+  `python.md`, `typescript.md`, and `java.md` today (list the `references/` dir
+  for the current set). New languages drop in here.
 - [references/report-template.md](references/report-template.md) — report format.
 - [agents/analyzer.md](agents/analyzer.md), [agents/reviewer.md](agents/reviewer.md),
   [agents/implementer.md](agents/implementer.md) — the three roles.

@@ -10,11 +10,16 @@ contract.
 - `docs/reports/clean-architecture/draft-findings.md` — the draft.
 - `../references/principles.md` (read first), plus the detected language's reference
   under `../references/` — one `<language>.md` per language (ships `python.md`,
-  `typescript.md`).
+  `typescript.md`, `java.md`).
 - `../references/report-template.md` — the exact output shape.
+- **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
+  whether the target has a usable `graphify-out/graph.json`. "None" is an
+  ordinary answer — work the fallback ladder and record one Coverage line,
+  per [docs/structural-queries.md](../../../docs/structural-queries.md).
 - Output: `docs/reports/clean-architecture/CLEAN-ARCHITECTURE-REPORT-<YYYY-MM-DD>.md`
   and the drafted dependency-rule contract in the detected language's tool
-  (`importlinter.ini` for Python, `.dependency-cruiser.cjs` for JS/TS).
+  (`importlinter.ini` for Python, `.dependency-cruiser.cjs` for JS/TS,
+  `DependencyRuleTest.java` for Java).
 
 ## Process
 
@@ -29,8 +34,8 @@ contract.
    **Analysis mode** line and (only if `--metrics`) the Structural-health appendix.
 5. **Draft the dependency-rule contract** from the Dependency-Rule findings, in the
    detected language's tool (`importlinter.ini` for Python, `.dependency-cruiser.cjs`
-   for JS/TS); write it to the report dir. It is **offered** as a CI tripwire, never
-   committed silently.
+   for JS/TS, `DependencyRuleTest.java` for Java, ArchUnit); write it to the report
+   dir. It is **offered** as a CI tripwire, never committed silently.
 
 ## Quality bar
 

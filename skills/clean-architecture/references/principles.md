@@ -27,7 +27,11 @@ reader / change-safety impact.
 3. **SDP — stability direction.** Depend toward stability. **Instability**
    `I = fan-out / (fan-in + fan-out)` (0 = stable, 1 = unstable). **Violation:** a
    much-depended-on (low-`I`) component importing a volatile (high-`I`) one. Robust
-   — computed from import counts only, no "abstractness" needed.
+   — computed from import counts only, no "abstractness" needed. **No absolute `I`
+   threshold is prescribed** — the metric is too codebase-shape-dependent for a
+   fixed cutoff. Flag only where the *direction* is clearly backwards for the pair
+   in question, not by distance from a number: `I` is ordinal evidence for that one
+   edge, not a score to rank the whole graph by.
 
 ## Secondary checks (opt-in `--cohesion`)
 
@@ -36,7 +40,11 @@ reader / change-safety impact.
      *Smell:* grab-bag `utils`/`common`/`helpers` with unrelated contents.
    - **CCP** (SRP for components) — classes that change together belong together.
      *Evidence:* git co-change of files that live in different packages, or one
-     requirement rippling across many.
+     requirement rippling across many. **No scripted co-change metric ships** — this
+     is qualitative: read `git log --oneline --follow -- <fileA> <fileB>` (or
+     equivalent) for the specific pair already under suspicion and eyeball how often
+     they land in the same commit. Corroborating evidence for a finding raised on
+     other grounds, not a standalone repo-wide scan.
    - **CRP** (ISP for components) — don't force importers to depend on a fat
      package when each uses only a disjoint slice.
 5. **Screaming Architecture.** Top-level layout should reveal use cases

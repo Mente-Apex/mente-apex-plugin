@@ -13,7 +13,7 @@ and flag borderline items honestly.
   secondary/appendix only if opted in).
 - `../references/principles.md` — the rubric. **Read it first.**
 - The detected language's graph-tooling reference under `../references/` — one
-  `<language>.md` per language (ships `python.md`, `typescript.md`) — how to detect
+  `<language>.md` per language (ships `python.md`, `typescript.md`, `java.md`) — how to detect
   a graph tool and compute the graph; follow the degrade path if no tool is
   reachable, and record which mode ran.
 - **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
