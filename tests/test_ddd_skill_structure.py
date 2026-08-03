@@ -85,6 +85,18 @@ def test_analyze_mode_links_shared_workflow_instead_of_restating_it():
     assert ".git/info/exclude" in body
 
 
+def test_reviewer_role_file_itself_points_at_lens_overlap():
+    """The reviewer subagent only reliably sees what its own role file tells it
+    to read — SKILL.md's orchestrator prose isn't enough, since ddd ships its
+    own complete reviewer role with no shared docs/refactor-agents/reviewer.md
+    fallback. Pin the cross-reference (both SOLID and the clean-architecture
+    carve) directly in agents/reviewer.md so it can't silently regress to
+    SOLID-only."""
+    reviewer = read_skill_file("agents/reviewer.md")
+    assert "docs/lens-overlap.md" in reviewer
+    assert "clean-architecture" in reviewer
+
+
 def test_analyze_mode_phase_numbers_dont_collide_with_the_shared_workflow():
     """WS-5 (5.5): ddd's own gates (model keep/discard, stop) are not the shared
     workflow's Phase 3 (decision gate) or Phase 4 (apply) — so they must not be

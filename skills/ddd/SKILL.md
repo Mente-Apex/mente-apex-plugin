@@ -156,8 +156,9 @@ over its own draft.
 ### Phase 2 — Reviewer
 Spawn the reviewer per the shared Phase 2, with the draft path,
 `agents/reviewer.md` (again ddd's own role), `references/ddd-core.md`,
-`references/report-template.md`, and any detected `references/<language>.md`.
-It re-verifies every finding against the real code, prunes false positives,
+`references/report-template.md`, any detected `references/<language>.md`,
+and [../../docs/lens-overlap.md](../../docs/lens-overlap.md). It re-verifies
+every finding against the real code, prunes false positives,
 tiers survivors Critical/Major/Minor, and cross-references
 [../../docs/lens-overlap.md](../../docs/lens-overlap.md) — both the SOLID
 overlap and the `clean-architecture` carve (hub, clean-architecture ↔ the

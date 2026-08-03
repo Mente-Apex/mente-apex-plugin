@@ -47,5 +47,11 @@ finding you keep, you personally verified against the current code. You **edit n
 ## Quality bar
 
 Ten findings a human acts on beat thirty they skim. The Summary's top wins are
-the most-read lines — make them earn attention. Cross-reference the SOLID lens
-where a smell is really a DIP/SRP violation, but keep the DDD framing primary.
+the most-read lines — make them earn attention. Cross-reference
+[../../../docs/lens-overlap.md](../../../docs/lens-overlap.md) — both the SOLID
+overlap (where a smell is really a DIP/SRP violation) and the
+clean-architecture carve (ddd asks *"is the domain modelled well?"*;
+clean-architecture asks *"is the dependency structure sound, regardless of
+domain richness?"* — a codebase can pass one and fail the other, so name the
+other lens's finding rather than duplicate it) — but keep the DDD framing
+primary.
