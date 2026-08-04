@@ -227,3 +227,61 @@ def test_a_leftover_temp_file_is_not_mistaken_for_a_machine_snapshot(tmp_path, c
         )
     )
     assert "CLAUDE.md" in consolidated["files"]
+
+
+def test_a_previous_snapshot_with_a_malformed_kind_section_warns(tmp_path):
+    """Spec §9's export row. `provenance` itself is a dict, so the top-level
+    guard does not fire, but nothing under `snapshot-file` is usable and every
+    unit of that kind re-stamps as now.
+
+    Export is the ONLY end that ever sees this: it consumes the previous
+    snapshot and immediately overwrites `machines/<id>.json` with a freshly
+    stamped, well-formed map, so the consolidate-side scan never meets the
+    defect. Silence here means nobody is told at either end."""
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    machine_file = list((context.repo_dir / "machines").glob("*.json"))[0]
+    payload = json.loads(machine_file.read_text(encoding="utf-8"))
+    payload["provenance"] = {"snapshot-file": "not a dict"}
+    machine_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = SnapshotPropagator().export(context)
+    assert any("snapshot-file" in warning for warning in result.warnings)
+
+
+def test_a_previous_entry_with_no_changed_at_warns(tmp_path):
+    """The other half of §9's malformed row: the entry is a dict and its hash is
+    intact, but `changed_at` is gone, so the unit cannot carry forward."""
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    machine_file = list((context.repo_dir / "machines").glob("*.json"))[0]
+    payload = json.loads(machine_file.read_text(encoding="utf-8"))
+    for entry in payload["provenance"]["snapshot-file"].values():
+        entry.pop("changed_at")
+    machine_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = SnapshotPropagator().export(context)
+    assert any("changed_at" in warning for warning in result.warnings)
+
+
+def test_a_partly_malformed_previous_map_is_still_used_for_its_intact_units(tmp_path):
+    """Warning is additive, not a bail-out: only the defective units re-stamp.
+    A section whose entry is untouched still carries its `changed_at` forward,
+    so a warning does not itself become a resurrection."""
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    first = _exported(context)["provenance"]
+    carried_section = next(iter(first["snapshot-section"]))
+    original_changed_at = first["snapshot-section"][carried_section]["changed_at"]
+
+    machine_file = list((context.repo_dir / "machines").glob("*.json"))[0]
+    payload = json.loads(machine_file.read_text(encoding="utf-8"))
+    payload["provenance"]["snapshot-file"] = "not a dict"
+    machine_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = SnapshotPropagator().export(context)
+    assert result.warnings
+    after = _exported(context)["provenance"]
+    assert after["snapshot-section"][carried_section]["changed_at"] == (
+        original_changed_at
+    )
