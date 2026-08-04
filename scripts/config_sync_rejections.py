@@ -594,3 +594,92 @@ def filter_plugin_actions(actions: list, policy, source_timestamp: str) -> tuple
             continue
         kept.append(action)
     return kept, removed
+
+
+@dataclass(frozen=True)
+class AddressableUnit:
+    """One thing a rejection can name, with the text whose change should bump it.
+
+    `payload` is what gets hashed for provenance. `source_file` is the `files`
+    key this unit came from, so a consumer groups by file without parsing an
+    address apart. `source` carries whatever a consumer needs to rebuild the
+    unit -- for a section, the triple `config_sync_merge._parse_sections` yields
+    -- so `filter_snapshot_files` can consume this iterator without
+    reimplementing the walk. A producer/consumer drift in addressing is silent
+    and self-disabling, so there is exactly one enumeration and both sides use it.
+    """
+
+    kind: str
+    address: str
+    payload: str
+    source_file: str = ""
+    source: object = None
+
+
+def iter_addressable_units(files: dict):
+    """Every unit in a snapshot `files` mapping that a rejection can address.
+
+    Yields file units for every key, section units for every `.md` whose content
+    is a string, and settings-key units for the `settings.json` blob at every
+    depth. The asymmetry is deliberate and mirrors the filters: sections come
+    from any `.md`, settings keys come only from the literal `settings.json` key.
+    """
+    # Deferred import: config_sync_merge is a sibling script, not a package.
+    import config_sync_merge as merge
+
+    file_addressor = SnapshotFileAddressor()
+    section_addressor = SnapshotSectionAddressor()
+    settings_addressor = SettingsKeyAddressor()
+
+    for file_key, content in files.items():
+        payload = (
+            content
+            if isinstance(content, str)
+            else json.dumps(content, sort_keys=True, ensure_ascii=False)
+        )
+        yield AddressableUnit(
+            kind=file_addressor.kind,
+            address=file_addressor.identify(file_key),
+            payload=payload,
+            source_file=file_key,
+        )
+
+        if not isinstance(content, str):
+            continue
+
+        if file_key.endswith(".md"):
+            for key, heading, body in merge._parse_sections(content):
+                heading_text, occurrence = key
+                yield AddressableUnit(
+                    kind=section_addressor.kind,
+                    address=section_addressor.identify(
+                        (file_key, heading_text, occurrence)
+                    ),
+                    payload=heading + "\n" + body,
+                    source_file=file_key,
+                    source=(key, heading, body),
+                )
+
+        if file_key == "settings.json":
+            try:
+                parsed = json.loads(content)
+            except ValueError:
+                continue
+            if not isinstance(parsed, dict):
+                continue
+            yield from _iter_settings_units(parsed, (), settings_addressor, file_key)
+
+
+def _iter_settings_units(node: dict, prefix: tuple, addressor, file_key: str):
+    """Settings-key units at every depth, in the same order `filter_settings_keys`
+    walks them: a key is yielded before its children."""
+    for key, value in node.items():
+        key_path = prefix + (key,)
+        yield AddressableUnit(
+            kind=addressor.kind,
+            address=addressor.identify(key_path),
+            payload=json.dumps(value, sort_keys=True, ensure_ascii=False),
+            source_file=file_key,
+        )
+        if isinstance(value, dict):
+            yield from _iter_settings_units(value, key_path, addressor, file_key)
