@@ -7,7 +7,7 @@ real consolidate end to end.
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import config_sync
 from config_sync_propagators import SnapshotPropagator, SyncContext
@@ -81,6 +81,9 @@ def test_an_unchanged_reexport_no_longer_resurrects_rejected_content(tmp_path, c
 
 
 def test_a_genuine_readd_still_overrides_the_rejection(tmp_path, capsys):
+    """A content change stamped strictly after the rejection reads as fresh
+    intent (`changed_at > rejected_at`), so it survives, unlike the untouched
+    re-export above."""
     repo = _repo(tmp_path)
     context = _machine(tmp_path, repo, "machine-b")
 
@@ -152,7 +155,17 @@ def test_an_unupgraded_machine_still_resurrects_until_it_upgrades(tmp_path, caps
         json.dumps(
             {
                 "machine_id": "machine-old",
-                "timestamp": "2026-08-09T09:00:00+00:00",
+                # A fixed calendar literal here is exactly the bug this walk
+                # exists to catch, one layer up: this timestamp is the ONLY
+                # thing making the no-provenance fallback observable (see
+                # the comment on `_reject_file` above for the general
+                # failure mode). `_reject_file` below records `rejected_at`
+                # as real "now"; this snapshot must stay strictly after that
+                # for as long as the suite exists, so it is anchored to the
+                # same clock rather than a date that will eventually be in
+                # the past. One day of margin comfortably exceeds this
+                # test's own runtime.
+                "timestamp": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
                 "files": {"CLAUDE.md": CONTENT},
             }
         ),
