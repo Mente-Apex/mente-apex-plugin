@@ -235,7 +235,8 @@ consolidates, and an export is stamped with the time it ran, so a machine that
 still holds the content re-adds it as content strictly newer than the rejection —
 an unchanged re-export is, to this engine, indistinguishable from a deliberate
 re-add. Answering `remove` on each such machine is what finishes the job.
-Automatic convergence needs per-content provenance, which is phase 2.
+Automatic convergence needs per-content provenance. Phase 2 deferred it; it is
+designed in `2026-08-04-config-sync-content-provenance-design.md` (phase 3).
 
 ## 5. Failure modes
 
