@@ -66,6 +66,40 @@ def _address_of(declared):
     return HookRegistrationAddressor().identify(site, [site])
 
 
+def _marked_address_of(declared):
+    """The tier-1 address of a declaration that is ALREADY wired by config-sync.
+
+    A managed hook's live command carries its `# config-sync:<id>` marker, so the
+    operator rejecting it records a tier-1 (marker) address. The planner must
+    still recognise the declaration that would re-wire it, whose own command is
+    pre-marker.
+    """
+    from config_sync_hooks import HookSite, marker_for
+
+    site = HookSite(
+        event=declared.event,
+        group_index=0,
+        hook_index=0,
+        matcher=declared.matcher,
+        command=_localize(declared.command) + " " + marker_for(declared.hook_id),
+    )
+    return HookRegistrationAddressor().identify(site, [site])
+
+
+def test_a_marker_tier_rejection_is_enforced_against_the_declaration(tmp_path):
+    """The tier-1 case: a config-sync-managed hook rejected from its MARKED live
+    command must not be re-wired by the planner."""
+    address, tier = _marked_address_of(DECLARED)
+    assert (address, tier) == ("hooks/aaaaaaaaaaaa", 1)
+    plan = plan_hook_wiring(
+        [DECLARED, KEPT],
+        {},
+        localize=_localize,
+        policy=_policy(tmp_path, address, tier),
+    )
+    assert {action.hook_id for action in plan.actions} == {"bbbbbbbbbbbb"}
+
+
 def test_without_a_policy_every_declaration_is_planned():
     plan = plan_hook_wiring([DECLARED, KEPT], {}, localize=_localize)
     assert {action.hook_id for action in plan.actions} == {

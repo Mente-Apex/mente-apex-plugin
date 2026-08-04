@@ -109,6 +109,17 @@ def marker_for(hook_id: str) -> str:
     return MARKER_PREFIX + hook_id
 
 
+def mark_command(command: str, hook_id: str) -> str:
+    """`command` as config-sync will WRITE it: the invocation plus its marker.
+
+    The single writer of that composition. `plan_hook_wiring` must build its
+    proposed pseudo-site with exactly the bytes `execute_hook_plan` will store,
+    or a tier-1 (marker) rejection matches the live registration and misses the
+    declaration that would re-create it — a silently inert rejection.
+    """
+    return command + " " + marker_for(hook_id)
+
+
 def hook_id_in(command: str) -> str | None:
     """The config-sync hook_id marked on `command`, or None when the command is
     not one of ours. The single reader of the marker format."""
@@ -406,22 +417,29 @@ def plan_hook_wiring(
     policy = policy if policy is not None else rejections_module.NullRejectionPolicy()
 
     plan = HookPlan()
-    declarations = list(declarations)
 
     addressor = rejection_hooks_module.HookRegistrationAddressor()
+    # Bound once: `policy.all()` re-reads every ledger file, and asking per
+    # declaration turned one plan into O(N) full ledger reads.
+    hook_rejections = _active_hook_rejections(policy)
     kept_declarations = []
     for declaration in declarations:
         # A declaration has no position in the block, so its sentinel indices say
         # "proposed, not present". Localized because this planner works in
-        # localized space -- see the note on `localize` above.
+        # localized space -- see the note on `localize` above, and MARKED because
+        # that is exactly what `execute_hook_plan` will write: a tier-1 (marker)
+        # rejection is recorded against the marked live command, so a pre-marker
+        # candidate would never match it and the rejection would be inert.
         proposed = HookSite(
             event=declaration.event,
             group_index=-1,
             hook_index=-1,
             matcher=declaration.matcher,
-            command=localize(declaration.command),
+            command=mark_command(localize(declaration.command), declaration.hook_id),
         )
-        rejected_record = _matching_hook_rejection(policy, addressor, proposed)
+        rejected_record = _matching_hook_rejection(
+            policy, addressor, proposed, hook_rejections
+        )
         if rejected_record is not None:
             plan.skipped.append(
                 f"{declaration.hook_id}: rejected in the config-sync ledger "
@@ -532,27 +550,46 @@ def plan_hook_wiring(
     return plan
 
 
-def _matching_hook_rejection(policy, addressor, site):
+def _active_hook_rejections(policy) -> list:
+    """The `(record, tier)` pairs worth testing a candidate site against.
+
+    Hoisted out of the per-declaration loop: `policy.all()` re-reads every ledger
+    file, so asking it once per declaration made a plan cost O(N) full reads —
+    the same amplification `CompositeRejectionPolicy.is_rejected` already binds
+    against. Records whose tier does not parse are dropped here rather than in
+    the loop; they were skipped before too.
+    """
+    pairs = []
+    for record in policy.all():
+        if record.kind != "hook-registration" or record.revives is not None:
+            continue
+        # fmt: off
+        # PEP 758 lets black strip these parens (Python 3.14). Kept parenthesized
+        # for explicitness -- black would otherwise write the bare tuple form.
+        try:
+            tier = int(record.tier)
+        except (TypeError, ValueError):
+            continue
+        # fmt: on
+        pairs.append((record, tier))
+    return pairs
+
+
+def _matching_hook_rejection(policy, addressor, site, active=None):
     """The first active hook-registration rejection whose address matches `site`
     at its own recorded tier, or None.
 
     Walks records rather than calling `policy.is_rejected`, because a hook
     address alone is not enough to ask that question -- the tier that produced it
     is part of the identity, and only the record knows it.
+
+    `active` is the pre-bound result of `_active_hook_rejections`, so a caller
+    with many sites pays for the ledger read once. Fetched here when omitted, so
+    a single-site caller stays a one-liner.
     """
     import config_sync_rejections as rejections_module
 
-    for record in policy.all():
-        if record.kind != "hook-registration" or record.revives is not None:
-            continue
-        # fmt: off
-        # PEP 758 lets black strip these parens (Python 3.14). Kept explicit: the
-        # unparenthesized form reads as a Python 2 `except X, name:` bind.
-        try:
-            tier = int(record.tier)
-        except (TypeError, ValueError):
-            continue
-        # fmt: on
+    for record, tier in _active_hook_rejections(policy) if active is None else active:
         if not addressor.matches(record.address, tier, site):
             continue
         target = rejections_module.RejectionTarget(
@@ -618,12 +655,12 @@ def execute_hook_plan(plan: HookPlan, host: SettingsHost) -> HookResult:
     wrote_anything = False
 
     for action in plan.actions:
-        marked_command = action.detail["command"] + " " + marker_for(action.hook_id)
+        marked = mark_command(action.detail["command"], action.hook_id)
         match_hook_id = action.detail.get("match_hook_id")
 
         if match_hook_id is None:
             entry = {"type": "command"}
-            _apply_declared_fields(entry, action, marked_command)
+            _apply_declared_fields(entry, action, marked)
             hooks_block.setdefault(action.detail["event"], []).append(
                 {"matcher": action.detail["matcher"], "hooks": [entry]}
             )
@@ -643,7 +680,7 @@ def execute_hook_plan(plan: HookPlan, host: SettingsHost) -> HookResult:
                 )
             )
             continue
-        _apply_declared_fields(entry, action, marked_command)
+        _apply_declared_fields(entry, action, marked)
         wrote_anything = True
         result.outcomes.append(HookOutcome(action.hook_id, ok=True))
 
