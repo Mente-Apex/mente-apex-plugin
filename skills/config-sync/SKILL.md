@@ -200,13 +200,14 @@ py "$ENGINE" consolidate "$REPO"
 > stop syncing it entirely. Reject a `snapshot-section` or a `settings-key`
 > instead, or pass `--force` if a whole synced file really is what you want gone.
 >
-> **A network rejection converges only once no machine still carries the
-> content.** Every machine exports (Step 1) before anyone consolidates (Step 3),
-> and an export is stamped with the time it ran — so a machine that still holds
-> the content re-adds it as something *newer* than the rejection. Answering
-> `remove` at Step 4e on each such machine is what finishes the job. Telling an
-> unchanged re-export apart from a deliberate re-add needs per-content
-> provenance, which is Phase 2 and not in the engine today.
+> **A network rejection converges on its own, machine by machine.** Every
+> export stamps each addressable unit's own `changed_at` from a hash
+> comparison against that machine's previous snapshot — phase 3's per-content
+> provenance — rather than the wall-clock time the export ran. A machine that
+> still holds the content but has not edited it re-exports the same hash, so
+> consolidate reads it as no newer than the rejection and withholds it
+> without anyone answering at Step 4e. See the Step 4e note for what
+> `resolve-rejection` is still for.
 >
 > `settings.json` keys are rejectable individually (see Step 4 below), so
 > retiring one setting no longer means rejecting the whole file.
@@ -456,10 +457,25 @@ and only the sync after that exports a copy that no longer carries it.
 newer revival, which wins on timestamp — so one machine can always overrule the
 network without a cross-machine write.
 
-Answering on every machine that still holds the content is what makes a network
-rejection converge; until then those machines keep re-adding it (see the Step 3
-note). Distinguishing an unchanged re-export from a deliberate re-add needs
-per-content provenance, which is Phase 2.
+> **A network rejection now converges without an answer here.** Phase 3's
+> per-content provenance stamps each unit's own `changed_at` from a hash
+> against that machine's last snapshot, not the export's wall clock (see the
+> Step 3 note) — so a machine that still holds the content but has not edited
+> it stops re-adding it on its own. `resolve-rejection` keeps a narrower
+> meaning: the content named above is still on this machine's disk (a
+> rejection withholds, it never deletes), and this command is for a machine
+> that actively disagrees. `remove` clears it here; `keep` still lets one
+> machine overrule the network, as above.
+>
+> Editing content is the intended escape hatch — an operator who wants
+> rejected content back edits it, or runs `unreject`. A `snapshot-file`
+> rejection's unit of intent is the whole file, so editing any part of it
+> re-adds the whole file; editing one section never re-adds a *different*
+> rejected section in the same file, since each section is hashed on its own.
+>
+> A machine on an engine older than phase 3 has no `provenance` map to
+> compare against, so it keeps the old wall-clock behaviour until it
+> upgrades. No flag day.
 
 ## Step 5 — Commit the updated consolidated snapshot and rejections, then push
 

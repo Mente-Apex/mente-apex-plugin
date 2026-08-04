@@ -149,3 +149,16 @@ def test_the_documented_kinds_match_the_engine():
 def test_the_skill_says_rejection_does_not_delete_an_existing_hook():
     text = SKILL.read_text(encoding="utf-8")
     assert "hooks-prune" in text
+
+
+STEP_4E_CONVERGENCE = "Step 4e — Answer other machines' rejections"
+
+
+def test_the_skill_documents_that_convergence_no_longer_needs_resolve_rejection():
+    """Scoped to the section, not the whole file: a whole-file substring test
+    passes even when the behaviour it describes is broken."""
+    section = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_4E_CONVERGENCE
+    )
+    assert "resolve-rejection" in section
+    assert "converge" in section.lower()
