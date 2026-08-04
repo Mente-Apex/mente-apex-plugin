@@ -985,7 +985,8 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
             # prompt, while aborting would halt the whole fleet.
             for defect in rejections_module.provenance_map_defects(raw_provenance):
                 provenance_warnings.append(
-                    f"{snapshot.get('machine_id', 'unknown')} {defect}"
+                    f"{snapshot.get('machine_id', 'unknown')} {defect}; the "
+                    "affected units fall back to its export timestamp"
                 )
         snapshot_provenance = rejections_module.SnapshotProvenance(
             raw_provenance if isinstance(raw_provenance, dict) else {}

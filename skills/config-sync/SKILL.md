@@ -195,13 +195,21 @@ py "$ENGINE" consolidate "$REPO"
 ```
 
 > **Relay any `provenance_warnings`.** `consolidate` prints a
-> `provenance_warnings` list beside `rejected` and `withheld`. Each line names a
-> machine whose `provenance` map is malformed, so that machine's content fell
-> back to its export timestamp and a rejection it should have converged on may
-> be re-proposed at Step 4e instead. Prefix each with `⚠` and tell the user
-> which machine to re-export. Advisory only — **do not** stop the sync. An
-> empty list is the normal case; a machine that has simply not upgraded yet
-> produces nothing here by design.
+> `provenance_warnings` list beside `rejected` and `withheld`. Prefix each line
+> with `⚠` and relay it. Two classes appear, with different remedies:
+>
+> - **A malformed `provenance` map**, naming the machine. That machine's content
+>   fell back to its export timestamp, so a rejection it should have converged
+>   on may be re-proposed at Step 4e instead. Tell the user to re-export on that
+>   machine — a clean export rewrites the map.
+> - **A snapshot with no `machine_id`** that had content withheld from it. This
+>   line names no machine, and re-exporting is not the fix: the withholding
+>   cannot be attributed to anyone, so *nobody* is prompted about that content at
+>   Step 4e. Tell the user which addresses were affected and that the snapshot in
+>   `machines/` needs a `machine_id` before those prompts can appear.
+>
+> Both are advisory — **do not** stop the sync. An empty list is the normal case;
+> a machine that has simply not upgraded yet produces nothing here by design.
 >
 > **Bundle deletions propagate; config deletions need `reject`.** Skill/agent
 > **bundles** carry deletion tombstones. **Snapshot config** (CLAUDE.md,

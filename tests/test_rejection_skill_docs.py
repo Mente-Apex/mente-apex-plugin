@@ -293,6 +293,23 @@ def test_step_3_tells_the_agent_to_relay_provenance_warnings():
     assert "provenance_warnings" in step_3
 
 
+def test_step_3_describes_both_classes_of_provenance_warning():
+    """`cmd_consolidate` emits two shapes on this channel: a malformed map,
+    which names a machine and is fixed by re-exporting there, and an
+    unattributable snapshot with no `machine_id`, which names no machine and is
+    not fixed by re-exporting. A single "each line names a machine ... tell the
+    user which machine to re-export" sentence is false for the second, and a
+    doc asserting behaviour the engine does not have is this branch's own
+    Critical finding in miniature."""
+    step_3 = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_3
+    )
+    assert "machine_id" in step_3, "Step 3 never covers the unattributable class"
+    assert re.search(
+        r"names no machine", step_3
+    ), "Step 3 still implies every warning names a machine"
+
+
 def test_step_4e_does_not_claim_a_withheld_whole_file_was_already_rewritten():
     """`apply` never deletes, and a whole-file withholding leaves no key in the
     consolidated snapshot at all, so nothing rewrites the file — the local copy
