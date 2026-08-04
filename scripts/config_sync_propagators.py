@@ -869,6 +869,33 @@ def _previous_provenance(machines_dir, machine_id: str) -> tuple:
     return provenance, []
 
 
+def _write_snapshot_atomically(path, payload: str) -> None:
+    """Write a machine snapshot: temp file in the same directory, then `os.replace`.
+
+    `cmd_consolidate` reads every `machines/*.json` with a bare `json.loads` and
+    has no guard, so a write interrupted midway -- Ctrl-C, a full disk, a crash
+    -- would leave a truncated file that aborts consolidate for the ENTIRE
+    network until someone repairs it by hand. Per-content provenance widened
+    that window materially: the snapshot now carries an entry (address, hash,
+    timestamp) for every file, section and settings key, and `_previous_provenance`
+    parses the same file on the next export.
+
+    Deliberately the same shape as `config_sync_rejections._write_ledger`, which
+    documents this reasoning for the ledger; not extracted into a shared helper
+    because `scripts/` is a flat set of siblings, so sharing it would mean a
+    deferred cross-script import for four lines.
+
+    `os.replace` is atomic within a filesystem, and the temp file is created
+    beside the target precisely to keep it on that one. The temp name ends in
+    `.json.tmp`, not `.json`, so a crash between write and replace cannot leave
+    a file that `cmd_consolidate`'s `machines/*.json` glob picks up as a real
+    snapshot.
+    """
+    temp_path = path.with_name(path.name + ".tmp")
+    temp_path.write_text(payload, encoding="utf-8")
+    os.replace(temp_path, path)
+
+
 def _withheld_addresses_for(withheld_entries, machine_id: str) -> list:
     """The addresses `cmd_consolidate` withheld from THIS machine's snapshot.
 
@@ -957,9 +984,9 @@ class SnapshotPropagator:
             "provenance": self._stamper.stamp(files, previous_provenance, now),
         }
         machines_dir.mkdir(parents=True, exist_ok=True)
-        (machines_dir / f"{machine_id}.json").write_text(
+        _write_snapshot_atomically(
+            machines_dir / f"{machine_id}.json",
             config_sync.json.dumps(snapshot, indent=2, ensure_ascii=False),
-            encoding="utf-8",
         )
         return ExportResult(
             self.name,
