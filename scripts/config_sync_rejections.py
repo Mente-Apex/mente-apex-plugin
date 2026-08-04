@@ -254,6 +254,9 @@ class SnapshotProvenance:
     map that is present but malformed, deliberately: provenance is an
     optimisation over a fallback that is already correct-if-conservative, so it
     degrades rather than aborting. A corrupt REJECTION ledger still raises.
+
+    Reading is deliberately silent: `provenance_map_defects` is what names the
+    malformed shapes for the operator, once per map rather than once per unit.
     """
 
     def __init__(self, provenance_map: dict):
@@ -268,6 +271,61 @@ class SnapshotProvenance:
             return fallback
         changed_at = entry.get("changed_at")
         return changed_at if isinstance(changed_at, str) and changed_at else fallback
+
+
+def provenance_map_defects(provenance_map) -> list:
+    """Every structural defect in one snapshot's `provenance` map, one line each.
+
+    Spec §9 rules that a malformed map — including an entry with no usable
+    `changed_at` — falls back AND warns. `SnapshotProvenance.timestamp_for` is
+    where the fallback happens, but it is called once per addressable unit, so
+    warning from there would emit one identical line per unit and an operator
+    drowning in duplicates is no better served than one told nothing. The scan
+    therefore runs once against the whole map and returns a bounded summary: at
+    most one line per malformed kind section, plus one line covering every
+    unusable entry with a count and an example.
+
+    A unit merely ABSENT from the map is not a defect — §9 rules that the same
+    fallback with no warning, because a file created between two exports lands
+    there naturally. Neither is an absent `provenance` key, the mixed-fleet
+    path; the caller keeps that distinction by testing key presence before
+    calling this.
+
+    Each line states what is wrong and what it costs, but never whose snapshot
+    it is: naming the machine is the caller's job, so one caller owns how the
+    operator-facing line reads.
+    """
+    if not isinstance(provenance_map, dict):
+        return [
+            "has a malformed provenance map; every unit falls back to its "
+            "export timestamp"
+        ]
+
+    defects: list = []
+    unusable_entries: list = []
+    for kind, by_address in provenance_map.items():
+        if not isinstance(by_address, dict):
+            defects.append(
+                f"has a malformed provenance section for {kind!r}; every unit "
+                "of that kind falls back to its export timestamp"
+            )
+            continue
+        for address, entry in by_address.items():
+            if not isinstance(entry, dict):
+                unusable_entries.append(f"{kind} {address}")
+                continue
+            changed_at = entry.get("changed_at")
+            if not isinstance(changed_at, str) or not changed_at:
+                unusable_entries.append(f"{kind} {address}")
+
+    if unusable_entries:
+        noun = "entry" if len(unusable_entries) == 1 else "entries"
+        defects.append(
+            f"has {len(unusable_entries)} provenance {noun} with no usable "
+            f"changed_at (first: {unusable_entries[0]}); those units fall back "
+            "to its export timestamp"
+        )
+    return defects
 
 
 class CompositeRejectionPolicy:

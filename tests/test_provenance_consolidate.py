@@ -346,3 +346,179 @@ def test_a_null_provenance_value_warns_and_still_consolidates(tmp_path, capsys):
     )
     assert any("machine-b" in warning for warning in payload["provenance_warnings"])
     assert "rules/a.md" in _consolidated_files(repo)
+
+
+# ---------------------------------------------------------------------------
+# Spec §9's fuller warning set: a malformed map warns at every depth, and the
+# absent-key mixed-fleet path stays silent.
+# ---------------------------------------------------------------------------
+
+
+def _warnings_from(repo):
+    payload = json.loads(
+        (repo / "consolidated" / "snapshot.json").read_text(encoding="utf-8")
+    )
+    return payload["provenance_warnings"]
+
+
+def test_a_wellformed_map_produces_no_warning():
+    assert (
+        rejections.provenance_map_defects(
+            {"snapshot-file": {ADDRESS: {"changed_at": OLDER, "hash": "x"}}}
+        )
+        == []
+    )
+
+
+def test_a_unit_merely_absent_from_the_map_is_not_a_defect():
+    """§9 rules an absent unit the same silent fallback as an absent key: a file
+    created between two exports lands there naturally and is not a defect."""
+    assert rejections.provenance_map_defects({"snapshot-file": {}}) == []
+
+
+def test_a_malformed_kind_section_is_one_line_not_one_per_unit():
+    defects = rejections.provenance_map_defects({"snapshot-file": "not a dict"})
+    assert len(defects) == 1
+    assert "snapshot-file" in defects[0]
+
+
+def test_every_unusable_entry_is_summarised_into_a_single_counted_line():
+    """Deduplication is the point: an operator with a wholly corrupt map needs
+    one actionable line naming a count, not one line per addressable unit."""
+    defects = rejections.provenance_map_defects(
+        {
+            "snapshot-file": {
+                "rules/a.md": "not a dict",
+                "rules/b.md": {"hash": "x"},
+                "rules/c.md": {"changed_at": "", "hash": "x"},
+                "rules/d.md": {"changed_at": 17, "hash": "x"},
+            }
+        }
+    )
+    assert len(defects) == 1
+    assert "4 provenance entries" in defects[0]
+    assert "rules/a.md" in defects[0]
+
+
+def test_a_non_dict_kind_section_warns_and_names_the_machine(tmp_path, capsys):
+    """`provenance` itself is a dict, so the top-level guard does not fire; the
+    per-kind value under it is the malformed one."""
+    import config_sync
+
+    repo = _repo_with(tmp_path, {"snapshot-file": "not a dict"})
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    assert any("machine-b" in warning for warning in _warnings_from(repo))
+
+
+def test_a_non_dict_entry_warns_and_names_the_machine(tmp_path, capsys):
+    import config_sync
+
+    repo = _repo_with(tmp_path, {"snapshot-file": {ADDRESS: "not a dict"}})
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    warnings = _warnings_from(repo)
+    assert any("machine-b" in warning and ADDRESS in warning for warning in warnings)
+
+
+def test_an_entry_with_no_changed_at_warns_and_names_the_machine(tmp_path, capsys):
+    """The case §9 names explicitly and the narrower implementation missed: the
+    entry is a dict and the hash is there, but `changed_at` is not."""
+    import config_sync
+
+    repo = _repo_with(tmp_path, {"snapshot-file": {ADDRESS: {"hash": "x"}}})
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    warnings = _warnings_from(repo)
+    assert any("machine-b" in warning and ADDRESS in warning for warning in warnings)
+
+
+def test_a_malformed_entry_still_falls_back_rather_than_aborting(tmp_path, capsys):
+    """Warning is additive: the unit falls back to the export timestamp exactly
+    as before, and the fold completes."""
+    import config_sync
+
+    repo = _repo_with(tmp_path, {"snapshot-file": {ADDRESS: {"hash": "x"}}})
+    _record_network_rejection(repo)
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    # EXPORTED_AT is newer than REJECTED_AT, so the fallback resurrects — the
+    # pre-provenance behaviour, unchanged by the warning.
+    assert ADDRESS in _consolidated_files(repo)
+
+
+def test_a_wellformed_map_does_not_warn_through_consolidate(tmp_path, capsys):
+    import config_sync
+
+    repo = _repo_with(
+        tmp_path, {"snapshot-file": {ADDRESS: {"changed_at": OLDER, "hash": "x"}}}
+    )
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    assert _warnings_from(repo) == []
+
+
+def test_a_snapshot_with_no_machine_id_warns_that_nobody_can_be_prompted(
+    tmp_path, capsys
+):
+    """Withholding attributes to the holding machine. An unattributable snapshot
+    contributes no `withheld` entry, so no operator is ever asked about content
+    this run took off them -- which must be said, not swallowed."""
+    import config_sync
+
+    repo = tmp_path / "repo"
+    (repo / "machines").mkdir(parents=True)
+    (repo / "consolidated").mkdir(parents=True)
+    # Older than REJECTED_AT, so the rejection genuinely withholds and there IS
+    # a prompt to lose.
+    (repo / "machines" / "anonymous.json").write_text(
+        json.dumps({"timestamp": STALE_EXPORT, "files": {ADDRESS: "## Only\nonly\n"}}),
+        encoding="utf-8",
+    )
+    _record_network_rejection(repo)
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    payload = json.loads(
+        (repo / "consolidated" / "snapshot.json").read_text(encoding="utf-8")
+    )
+    assert payload["withheld"] == []
+    assert any(
+        "machine_id" in warning and ADDRESS in warning
+        for warning in payload["provenance_warnings"]
+    )
+
+
+def test_a_snapshot_with_no_machine_id_and_nothing_withheld_stays_silent(
+    tmp_path, capsys
+):
+    """Only a LOST prompt is worth a line. An unattributable snapshot that lost
+    nothing costs the operator nothing."""
+    import config_sync
+
+    repo = tmp_path / "repo"
+    (repo / "machines").mkdir(parents=True)
+    (repo / "consolidated").mkdir(parents=True)
+    (repo / "machines" / "anonymous.json").write_text(
+        json.dumps({"timestamp": EXPORTED_AT, "files": {ADDRESS: "## Only\nonly\n"}}),
+        encoding="utf-8",
+    )
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    payload = json.loads(
+        (repo / "consolidated" / "snapshot.json").read_text(encoding="utf-8")
+    )
+    assert payload["provenance_warnings"] == []
