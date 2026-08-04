@@ -1726,6 +1726,19 @@ def cmd_plugins_apply(repo_path, host=None):
     )
 
 
+def _hooks_context():
+    """The SyncContext the hook commands need for their rejection policy.
+
+    `hooks-plan` and `hooks-apply` take no repo argument — they read declarations
+    from the root registry, not from the repo — so the context is built from the
+    conventional local clone at CONFIG_REPO. A network ledger that is not present
+    simply contributes nothing, which is the right answer for a machine that has
+    not cloned it.
+    """
+    _, context = _sync_context(CONFIG_REPO)
+    return context
+
+
 def cmd_hooks_plan():
     """Query: what declared hooks are missing from local settings.json."""
     registry = _root_registry()
@@ -1738,6 +1751,7 @@ def cmd_hooks_plan():
         checker=config_sync_hook_doctor.ProbingCommandChecker(
             config_sync_hook_doctor.FilesystemProbe()
         ),
+        policy=local_rejection_policy(_hooks_context()),
     )
     print(
         json.dumps(
@@ -1773,6 +1787,7 @@ def cmd_hooks_apply():
         checker=config_sync_hook_doctor.ProbingCommandChecker(
             config_sync_hook_doctor.FilesystemProbe()
         ),
+        policy=local_rejection_policy(_hooks_context()),
     )
     result = config_sync_hooks.execute_hook_plan(plan, host)
     print(
