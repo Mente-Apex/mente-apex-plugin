@@ -85,3 +85,20 @@ def test_the_stamper_is_injectable(tmp_path):
     context = _context(tmp_path)
     SnapshotPropagator(stamper=_FixedStamper()).export(context)
     assert "sentinel" in _exported(context)["provenance"]["snapshot-file"]
+
+
+def test_a_first_export_does_not_warn(tmp_path):
+    """No previous snapshot is normal, not degraded."""
+    context = _context(tmp_path)
+    result = SnapshotPropagator().export(context)
+    assert result.warnings == []
+
+
+def test_an_unreadable_previous_snapshot_warns(tmp_path):
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    machine_file = list((context.repo_dir / "machines").glob("*.json"))[0]
+    machine_file.write_text("{not json", encoding="utf-8")
+
+    result = SnapshotPropagator().export(context)
+    assert any("provenance" in warning for warning in result.warnings)
