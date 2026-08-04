@@ -102,3 +102,18 @@ def test_an_unreadable_previous_snapshot_warns(tmp_path):
 
     result = SnapshotPropagator().export(context)
     assert any("provenance" in warning for warning in result.warnings)
+
+
+def test_a_previous_snapshot_with_null_provenance_warns(tmp_path):
+    """`null` is a VALUE, not an absent key -- export never writes it, so its
+    presence is a defect (hand-edit or bug) and must warn like any other
+    malformed map, not be treated as a first export."""
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    machine_file = list((context.repo_dir / "machines").glob("*.json"))[0]
+    payload = json.loads(machine_file.read_text(encoding="utf-8"))
+    payload["provenance"] = None
+    machine_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = SnapshotPropagator().export(context)
+    assert any("provenance" in warning for warning in result.warnings)

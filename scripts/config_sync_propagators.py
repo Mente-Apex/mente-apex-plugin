@@ -847,11 +847,25 @@ def _previous_provenance(machines_dir, machine_id: str) -> tuple:
             f"{path.name} does not parse ({exc}); re-stamping all content "
             "provenance as now, which may re-add content rejected elsewhere"
         ]
-    provenance = payload.get("provenance") if isinstance(payload, dict) else None
-    if provenance is None:
+    if not isinstance(payload, dict):
+        # A snapshot whose JSON top level isn't even an object -- e.g. a list
+        # or a bare string. Not a shape `export` ever writes, so this is a
+        # defect (hand-edit or corruption), not a mixed-fleet machine. Warn
+        # and degrade rather than raise, same as every other malformed case
+        # here: provenance falls back, it never aborts a sync.
+        return {}, [
+            f"{path.name} is not a JSON object; re-stamping all content "
+            "provenance as now, which may re-add content rejected elsewhere"
+        ]
+    if "provenance" not in payload:
         return {}, []
+    provenance = payload["provenance"]
     if not isinstance(provenance, dict):
-        return {}, [f"{path.name} has a malformed provenance map; re-stamping"]
+        return {}, [
+            f"{path.name} has a malformed provenance map; re-stamping all "
+            "content provenance as now, which may re-add content rejected "
+            "elsewhere"
+        ]
     return provenance, []
 
 

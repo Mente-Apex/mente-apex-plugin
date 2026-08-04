@@ -294,19 +294,7 @@ def test_a_snapshot_without_provenance_does_not_warn(tmp_path, capsys):
     on every sync until the entire fleet upgrades."""
     import config_sync
 
-    repo = tmp_path / "repo"
-    (repo / "machines").mkdir(parents=True)
-    (repo / "consolidated").mkdir(parents=True)
-    (repo / "machines" / "machine-b.json").write_text(
-        json.dumps(
-            {
-                "machine_id": "machine-b",
-                "timestamp": EXPORTED_AT,
-                "files": {"rules/a.md": "## Only\nonly body\n"},
-            }
-        ),
-        encoding="utf-8",
-    )
+    repo = _repo_with(tmp_path, OMIT_PROVENANCE)
 
     config_sync.cmd_consolidate(str(repo))
     capsys.readouterr()
@@ -338,4 +326,23 @@ def test_a_malformed_provenance_map_still_consolidates(tmp_path, capsys):
     repo = _repo_with(tmp_path, "not a dict")
     config_sync.cmd_consolidate(str(repo))
     capsys.readouterr()
+    assert "rules/a.md" in _consolidated_files(repo)
+
+
+def test_a_null_provenance_value_warns_and_still_consolidates(tmp_path, capsys):
+    """`null` is a VALUE, not an absent key -- a genuinely un-upgraded machine
+    never writes the key at all (see OMIT_PROVENANCE above). A present-but-null
+    value is a defect and must warn, not be mistaken for the silent
+    mixed-fleet path."""
+    import config_sync
+
+    repo = _repo_with(tmp_path, None)
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    payload = json.loads(
+        (repo / "consolidated" / "snapshot.json").read_text(encoding="utf-8")
+    )
+    assert any("machine-b" in warning for warning in payload["provenance_warnings"])
     assert "rules/a.md" in _consolidated_files(repo)
