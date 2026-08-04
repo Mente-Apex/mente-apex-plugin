@@ -905,6 +905,23 @@ def local_rejection_policy(context) -> RejectionPolicy:
     )
 
 
+def _order_preserving_unique(items, key_of):
+    """`items` with later duplicates dropped, in first-seen order.
+
+    A set would lose the order, and the consolidated snapshot is committed — a
+    report whose order changes run to run makes every sync a git diff.
+    """
+    seen: set = set()
+    kept: list = []
+    for item in items:
+        key = key_of(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(item)
+    return kept
+
+
 def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> None:
     """Fold all machine snapshots (+ existing consolidated) into consolidated/snapshot.json.
 
@@ -950,6 +967,7 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
     budget = _LlmMergeBudget(MAX_LLM_MERGES)
     merge_log = []
     provenance_warnings = []
+    withheld = []
     for snapshot in snapshots:
         # Per-unit provenance, when the exporting machine wrote it. A machine
         # that has not upgraded has no map, and every unit falls back to this
@@ -984,6 +1002,23 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
         )
         rejected_addresses.extend(incoming_removed)
         rejected_addresses.extend(incoming_settings_removed)
+        # The per-machine attribution `rejected` cannot carry. Withholding here
+        # is what keeps rejected content from being resurrected -- and it is
+        # also why `SnapshotPropagator.apply` on the other machine has nothing
+        # left to filter and so nothing to report, which silently closed the
+        # Step 4e prompt. The holder named here is the machine whose snapshot
+        # still carried the content, which is exactly the operator who needs
+        # asking: their `machines/<id>.json` is the last live source a `keep`
+        # can revive from, until their next export overwrites it.
+        #
+        # `base_removed` is deliberately absent: the ratchet's own removals come
+        # from the prior consolidated snapshot, which names no machine, and
+        # blaming every machine for them would prompt operators who never held
+        # the content. They stay in `rejected`, the audit trail.
+        holding_machine = snapshot.get("machine_id")
+        if holding_machine:
+            for address in list(incoming_removed) + list(incoming_settings_removed):
+                withheld.append({"machine_id": holding_machine, "address": address})
         base_files, log = _merge_snapshot_files(base_files, incoming_files, budget)
         merge_log.extend(log)
 
@@ -999,12 +1034,14 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
     # prior consolidated snapshot AND by one or more incoming machine
     # snapshots — so dedupe order-preservingly rather than reporting it once
     # per removal.
-    seen_addresses: set[str] = set()
-    deduped_rejected_addresses: list[str] = []
-    for address in rejected_addresses:
-        if address not in seen_addresses:
-            seen_addresses.add(address)
-            deduped_rejected_addresses.append(address)
+    deduped_rejected_addresses = _order_preserving_unique(
+        rejected_addresses, lambda address: address
+    )
+    # Keyed on the PAIR: two machines that both held the same address are two
+    # operators with two recovery windows, and each has to be told.
+    deduped_withheld = _order_preserving_unique(
+        withheld, lambda entry: (entry["machine_id"], entry["address"])
+    )
     result = {
         "machine_id": "consolidated",
         "hostname": "consolidated",
@@ -1014,6 +1051,7 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
         "merge_log": merge_log,
         "rejected": deduped_rejected_addresses,
         "provenance_warnings": provenance_warnings,
+        "withheld": deduped_withheld,
     }
     _write(consolidated_path, json.dumps(result, indent=2, ensure_ascii=False))
     print(
@@ -1025,6 +1063,7 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
                 "conflicts": conflicts,
                 "rejected": deduped_rejected_addresses,
                 "provenance_warnings": provenance_warnings,
+                "withheld": deduped_withheld,
             }
         )
     )

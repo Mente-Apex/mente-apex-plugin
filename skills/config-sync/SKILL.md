@@ -420,8 +420,12 @@ the write; nothing was removed for it. Re-run `hooks-doctor`.
 ## Step 4e — Answer other machines' rejections
 
 `propagate-apply` reports a `rejection_removals` list under the `snapshot`
-propagator: the content a rejection withheld from this apply. Each entry is the
-full ledger record, e.g.
+propagator: the content a rejection kept off this machine. Two things reach it —
+content the consolidated snapshot still carried, which this apply filtered out,
+and content `consolidate` withheld from **this machine's own snapshot** before it
+ever reached the consolidated one. The second kind travels in the consolidated
+snapshot's `withheld` key, attributed to the machine that held it, so only that
+machine is asked. Each entry is the full ledger record, e.g.
 
 ```json
 {
@@ -449,23 +453,49 @@ py "$ENGINE" resolve-rejection "$REPO" <id> keep     # overrule: it returns for 
 ```
 
 `remove` records a **local** rejection for the same address, so this machine
-stops writing that content from the next apply onward. It does not erase the copy
-already on disk in this run — the next sync's apply rewrites the file without it,
-and only the sync after that exports a copy that no longer carries it.
+stops writing that content from the next apply onward. Where the content was
+still in the consolidated snapshot, it does not erase the copy already on disk in
+this run — the next sync's apply rewrites the file without it, and only the sync
+after that exports a copy that no longer carries it. Where `consolidate` withheld
+it upstream, the file has already been rewritten without it, and `remove` is only
+the record that keeps it gone if another machine later revives it.
 
 `keep` does not edit the rejecting machine's file. It records this machine's own
 newer revival, which wins on timestamp — so one machine can always overrule the
-network without a cross-machine write.
+network without a cross-machine write. It is not instant, and it does not wait:
+see the window below.
 
 > **A network rejection now converges without an answer here.** Phase 3's
 > per-content provenance stamps each unit's own `changed_at` from a hash
 > against that machine's last snapshot, not the export's wall clock (see the
 > Step 3 note) — so a machine that still holds the content but has not edited
 > it stops re-adding it on its own. `resolve-rejection` keeps a narrower
-> meaning: the content named above is still on this machine's disk (a
-> rejection withholds, it never deletes), and this command is for a machine
-> that actively disagrees. `remove` clears it here; `keep` still lets one
-> machine overrule the network, as above.
+> meaning: it is for a machine that actively disagrees. `remove` records that
+> agreement here; `keep` still lets one machine overrule the network — but
+> only inside the window below.
+>
+> **Answer before this machine's next export, and re-run `consolidate`.** What
+> `keep` revives from is this machine's last export,
+> `machines/<machine-id>.json`, which by this point is the only copy of the
+> content the network has. Answering only writes the revival record; the
+> **next** `consolidate` is what puts the content back into the consolidated
+> snapshot, and the apply after that puts it back on disk. So after a `keep`,
+> re-run `py "$ENGINE" consolidate "$REPO"` and
+> `py "$ENGINE" propagate-apply "$REPO"` before going on to Step 5. If this
+> machine exports again first, it overwrites `machines/<machine-id>.json` with
+> its post-apply state, the last copy is gone, and neither `keep` nor
+> `unreject` can bring it back — only git history can.
+>
+> **Whether the content is still on this machine's disk depends on the kind.**
+> A `snapshot-file` rejection withholds the whole file, so the consolidated
+> snapshot has no key for it, apply writes nothing, and this machine's copy
+> survives untouched (a rejection withholds, it never deletes) — so `keep` and
+> `unreject` keep a live local source indefinitely. A `snapshot-section` or
+> `settings-key` rejection leaves its container file in the snapshot: apply
+> rewrites `CLAUDE.md` or `settings.json` **without** the rejected unit, so
+> that content is already off this machine's disk by the time this prompt
+> appears. That is why the window above is what matters for sections and keys,
+> and why it does not bite for whole files.
 >
 > Editing content is the intended escape hatch — an operator who wants
 > rejected content back edits it, or runs `unreject`. A `snapshot-file`

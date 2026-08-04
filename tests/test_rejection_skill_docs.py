@@ -144,6 +144,53 @@ def test_step_4e_hands_the_operator_a_usable_rejection_id():
         assert field in step_4e, f"Step 4e never mentions {field}"
 
 
+def test_step_4e_states_the_window_a_keep_has_to_be_answered_in():
+    """`keep` revives from `machines/<id>.json` — this machine's last export —
+    and consolidate is what republishes from it. Apply has already stripped a
+    rejected section off local disk by the time the prompt appears, so once this
+    machine exports again that last copy is overwritten and no answer recovers
+    anything. Documenting `keep` as an escape hatch without its deadline offers
+    an escape hatch that may already have closed.
+    """
+    step_4e = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_4E_CONVERGENCE
+    )
+    assert (
+        "withheld" in step_4e
+    ), "Step 4e never names the channel the report arrives on"
+    assert (
+        "machines/<machine-id>.json" in step_4e
+    ), "Step 4e does not say what `keep` revives from"
+    assert re.search(
+        r"before this machine's next export", step_4e
+    ), "Step 4e does not state the deadline"
+    assert (
+        "git history" in step_4e
+    ), "Step 4e does not say what is left after the window"
+
+
+def test_step_4e_documents_the_disk_asymmetry_between_rejection_kinds():
+    """apply never deletes, so a whole-file rejection leaves this machine's copy
+    on disk and its recovery window never closes. A section or settings-key
+    rejection has its container file rewritten without the unit, so the content
+    is gone from disk before the operator is asked. One sentence covering both
+    ("the content named above is still on this machine's disk") was true for one
+    kind and false for the other.
+    """
+    step_4e = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_4E_CONVERGENCE
+    )
+    assert "snapshot-file" in step_4e
+    assert "snapshot-section" in step_4e
+    assert "settings-key" in step_4e
+    assert re.search(
+        r"survives untouched", step_4e
+    ), "Step 4e does not say a whole-file rejection leaves the local copy alone"
+    assert re.search(
+        r"off this machine's disk", step_4e
+    ), "Step 4e does not say a section rejection has already rewritten the file"
+
+
 def test_every_phase_2_kind_is_documented():
     text = SKILL.read_text(encoding="utf-8")
     for kind in ("settings-key", "plugin", "hook-registration"):

@@ -869,6 +869,35 @@ def _previous_provenance(machines_dir, machine_id: str) -> tuple:
     return provenance, []
 
 
+def _withheld_addresses_for(withheld_entries, machine_id: str) -> list:
+    """The addresses `cmd_consolidate` withheld from THIS machine's snapshot.
+
+    Consolidate subtracts rejected content from every incoming machine snapshot
+    before it can reach `consolidated/snapshot.json`, so by apply time there is
+    nothing left in `files` to filter and nothing to report — the withholding is
+    invisible to the one operator who can still act on it. The consolidated
+    snapshot's `withheld` key is consolidate's record of what it took and whose
+    snapshot it took it from, and this reads back only the entries naming this
+    machine: the machine that held the content is the machine whose
+    `machines/<id>.json` is still its last live source.
+
+    Degrades rather than raises on anything malformed. A corrupt rejection
+    ledger fails closed because it decides what gets written; this is a report
+    about a decision already made, and one machine writing a bad key must not
+    stop every other machine from applying its config.
+    """
+    if not isinstance(withheld_entries, (list, tuple)):
+        return []
+    addresses: list = []
+    for entry in withheld_entries:
+        if not isinstance(entry, dict) or entry.get("machine_id") != machine_id:
+            continue
+        address = entry.get("address")
+        if isinstance(address, str) and address not in addresses:
+            addresses.append(address)
+    return addresses
+
+
 class SnapshotPropagator:
     """Propagates the mergeable text config (CLAUDE.md, memory/, rules/, settings,
     keybindings). Skills/agents are deliberately out of scope — they are bundles.
@@ -980,6 +1009,7 @@ class SnapshotPropagator:
                 self._policy, settings_removed_addresses
             )
         )
+        self._report_withholdings(context, snapshot, result)
         # Which `${...}` in a hook command config-sync itself minted. Absent on
         # an older snapshot, which correctly means none are known to be ours.
         minted_tokens = snapshot.get("root_tokens", ())
@@ -998,6 +1028,42 @@ class SnapshotPropagator:
                 relative_path
             )
         return result
+
+    def _report_withholdings(self, context, snapshot, result) -> None:
+        """Report what consolidate withheld from THIS machine, for Step 4e.
+
+        The filters above can only report content that reached the consolidated
+        snapshot. Content a rejection kept out of it upstream is exactly the
+        content this machine is about to lose — apply rewrites the surviving
+        file without it, and this machine's next export then overwrites its own
+        last copy — so it is the case the prompt matters most for, and the only
+        one nothing else reports.
+        """
+        import config_sync_rejections as rejections_module
+
+        withheld_entries = snapshot.get("withheld")
+        if not withheld_entries:
+            return
+        local_machine_id = _machine_id(context)
+        addresses = _withheld_addresses_for(withheld_entries, local_machine_id)
+        if not addresses:
+            return
+        already_reported = {record.id for record in result.rejection_removals}
+        for record in rejections_module.records_for_addresses(self._policy, addresses):
+            if record.id in already_reported:
+                # The two paths can name the same address: another machine's
+                # copy can survive consolidate on fresher provenance while this
+                # machine's is withheld, putting the content in `files` AND in
+                # `withheld`. One prompt, not two.
+                continue
+            if record.machine_id == local_machine_id:
+                # This machine recorded the rejection itself. A rejection
+                # withholds and never deletes, so the rejecting machine is still
+                # holding the content it just rejected — asking its own operator
+                # to reconsider on their very next apply is noise, not an escape
+                # hatch. `unreject` is their route back.
+                continue
+            result.rejection_removals.append(record)
 
 
 def apply_propagators(context=None) -> list:
