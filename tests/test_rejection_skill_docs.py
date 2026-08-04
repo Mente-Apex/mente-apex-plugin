@@ -72,6 +72,16 @@ SPEC = (
 # to this section.
 STEP_4E_CONVERGENCE = "Step 4e — Answer other machines' rejections"
 
+# SPEC's own heading for the paragraph this test protects. Scoping to it, not
+# the whole file, matters here just as much as it does on the SKILL.md side:
+# "provenance" also appears at spec line 208 ("no new provenance tracking", a
+# ratchet-fix detail under "Enforcing it — three filter points") and "converge"
+# also appears at spec line 111 ("converges without merge conflicts", a
+# git-layout detail under "Two stores, one interface"). Both sit in different
+# sections from "### Converging other machines", so scoping here is what keeps
+# the assertions below from being satisfied by either of them by accident.
+SPEC_CONVERGING_OTHER_MACHINES = "Converging other machines"
+
 
 def test_the_convergence_limit_is_stated_rather_than_promised_away():
     """Phase 1 converged a network rejection only once no machine still carried
@@ -81,19 +91,24 @@ def test_the_convergence_limit_is_stated_rather_than_promised_away():
     keeps resurrecting rejected content until it upgrades. Shipping documentation
     that dropped that caveat would promise behaviour a mixed fleet does not have.
 
-    The SKILL.md assertion is scoped with `extract_section`, not a whole-file
+    Both assertions below are scoped with `extract_section`, not a whole-file
     substring check: this test used to assert `"[Pp]hase 2"` and `"converge"`
-    appear anywhere in the file, which kept passing after phase 3 shipped only
-    because an unrelated "phase 2" (SKILL.md's rejection-*kind* split, nothing to
-    do with convergence) happened to still be in the file. A whole-file substring
-    match satisfied by an unrelated sentence is the same failure mode the
-    scoped test added alongside this one exists to avoid -- this test needs the
-    same discipline.
+    appear anywhere in either document, which kept passing after phase 3 shipped
+    only because unrelated prose elsewhere in each file happened to contain the
+    same words -- SKILL.md's rejection-*kind* split ("phase 2 adds the rest of
+    what syncs") on one side, SPEC's git-layout and ratchet-fix asides
+    ("converges without merge conflicts", "no new provenance tracking") on the
+    other. A whole-file match satisfied by unrelated sentences is the same
+    failure mode on both sides of this test; both needed the same discipline,
+    not just the side that was first reported.
 
-    SPEC is a frozen design record of phase 1's bounded-convergence decision, not
-    living documentation the engine's current behaviour must match, so it keeps
-    the whole-file check: its job is only to confirm that history was not quietly
-    rewritten.
+    SPEC is a frozen design record of phase 1's bounded-convergence decision,
+    not living documentation the engine's current behaviour must match -- so
+    the SPEC-side assertions still check only that the historical paragraph is
+    still there, never anything about the shipped engine. Scoping to its
+    enclosing section is what makes that check real rather than coincidental:
+    see the module comment on SPEC_CONVERGING_OTHER_MACHINES for the two
+    unrelated matches elsewhere in the file this excludes.
     """
     skill_section = mutation_gate_prose.extract_section(
         SKILL.read_text(encoding="utf-8"), STEP_4E_CONVERGENCE
@@ -106,13 +121,15 @@ def test_the_convergence_limit_is_stated_rather_than_promised_away():
         r"converge", skill_section.lower()
     ), "Step 4e does not state the convergence behaviour"
 
-    spec_text = SPEC.read_text(encoding="utf-8")
-    assert "provenance" in spec_text, f"{SPEC.name} does not name the real fix"
+    spec_section = mutation_gate_prose.extract_section(
+        SPEC.read_text(encoding="utf-8"), SPEC_CONVERGING_OTHER_MACHINES
+    )
+    assert "provenance" in spec_section, f"{SPEC.name} does not name the real fix"
     assert re.search(
-        r"[Pp]hase 2", spec_text
+        r"[Pp]hase 2", spec_section
     ), f"{SPEC.name} does not say where the fix lives"
     assert re.search(
-        r"converge", spec_text
+        r"converge", spec_section
     ), f"{SPEC.name} does not state the convergence limit"
 
 
