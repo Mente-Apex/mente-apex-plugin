@@ -407,11 +407,14 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
     the input; the only fix that is exact for every untouched file is to never
     rewrite what nothing rejected.
     """
-    # Deferred import: config_sync_merge is a sibling script, not a package.
-    import config_sync_merge as merge
-
     file_addressor = SnapshotFileAddressor()
     section_addressor = SnapshotSectionAddressor()
+
+    sections_by_file: dict = {}
+    for unit in iter_addressable_units(files):
+        if unit.kind == section_addressor.kind:
+            sections_by_file.setdefault(unit.source_file, []).append(unit)
+
     kept: dict = {}
     removed: list = []
 
@@ -423,22 +426,22 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
             removed.append(file_target.address)
             continue
 
-        if not isinstance(content, str) or not file_key.endswith(".md"):
+        section_units = sections_by_file.get(file_key)
+        if not section_units:
             kept[file_key] = content
             continue
 
         surviving_sections = []
         any_section_was_rejected = False
-        for (heading_text, occurrence), heading, body in merge._parse_sections(content):
-            unit = (file_key, heading_text, occurrence)
+        for unit in section_units:
             section_target = RejectionTarget(
-                kind=section_addressor.kind, address=section_addressor.identify(unit)
+                kind=section_addressor.kind, address=unit.address
             )
             if policy.is_rejected(section_target, source_timestamp):
                 removed.append(section_target.address)
                 any_section_was_rejected = True
                 continue
-            surviving_sections.append(((heading_text, occurrence), heading, body))
+            surviving_sections.append(unit.source)
 
         if any_section_was_rejected:
             kept[file_key] = rejoin_sections(surviving_sections)

@@ -124,3 +124,40 @@ def test_the_iterator_and_the_filters_agree_on_every_address():
 
     iterated = {(unit.kind, unit.address) for unit in iter_addressable_units(FILES)}
     assert iterated == policy.asked
+
+
+def test_a_file_with_no_rejected_section_is_passed_through_unchanged():
+    """The round-trip invariant: `_parse_sections` is not injective for a
+    document ending in a bodiless heading, so an untouched file must never be
+    rebuilt. Object identity is the assertion — equality would not catch a
+    lossless-looking rebuild."""
+
+    class _RejectsNothing:
+        def all(self):
+            return []
+
+        def is_rejected(self, target, source_timestamp):
+            return False
+
+    content = "## Foo"
+    files = {"rules/a.md": content}
+    kept, removed = rejections.filter_snapshot_files(files, _RejectsNothing(), "")
+    assert kept["rules/a.md"] is content
+    assert removed == []
+
+
+def test_rejecting_one_section_still_rebuilds_the_rest():
+    target_address = rejections.section_address("rules/a.md", "## Beta", 0)
+
+    class _RejectsBeta:
+        def all(self):
+            return []
+
+        def is_rejected(self, target, source_timestamp):
+            return target.address == target_address
+
+    files = {"rules/a.md": "## Alpha\nalpha\n\n## Beta\nbeta\n"}
+    kept, removed = rejections.filter_snapshot_files(files, _RejectsBeta(), "")
+    assert "## Alpha" in kept["rules/a.md"]
+    assert "## Beta" not in kept["rules/a.md"]
+    assert removed == [target_address]
