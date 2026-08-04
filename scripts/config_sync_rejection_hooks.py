@@ -113,6 +113,21 @@ class HookRegistrationAddressor:
             f"(index {site.group_index}/{site.hook_index}) at any tier"
         )
 
+    def matches(self, address: str, tier: int, site) -> bool:
+        """Does `site` carry `address` at `tier`?
+
+        Only the recorded tier is recomputed — no resolution, no ambiguity pass.
+        `RejectionRecord.tier` exists precisely so this stays a single cheap
+        comparison, and so a candidate that is not in the settings block at all
+        (a hook the wiring is merely PROPOSING) can still be matched.
+
+        A tier that cannot apply to `site` is a non-match, not an error: asking
+        whether an opaque command carries a script-tier address is a fair
+        question with the answer "no".
+        """
+        computed = hook_address_at_tier(site, tier)
+        return computed is not None and computed == address
+
 
 def _same_site(left, right) -> bool:
     """Identity by position in the hooks block, not by command — two entries can
