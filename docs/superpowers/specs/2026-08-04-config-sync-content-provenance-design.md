@@ -291,3 +291,18 @@ can pass vacuously.
   final review; a refactor, not a defect.
 - Phase 1's design doc says automatic convergence "needs per-content provenance, which is
   phase 2". Phase 2 deferred it here. That sentence is corrected as part of this work.
+
+### Known limitation: section addresses are positional
+
+A `snapshot-section` address embeds `occurrence`, phase 1's addressing semantics, so
+inserting a *duplicate* heading earlier in a file shifts every later occurrence of that
+heading by one. Each shifted section then looks like a unit that has never been seen
+before: it gets a fresh `changed_at`, and any rejection pointed at the old occurrence
+number is orphaned — it now names a different section, or none.
+
+Nothing here introduces that; phase 1 and phase 2 behaved identically. Per-content
+provenance only makes the consequence easier to notice, because a shifted section is now
+visibly restamped rather than silently sharing the whole file's export stamp. Addressing
+is deliberately unchanged: a content-derived section identity is a phase-1 redesign, not a
+provenance concern. The operator-visible workaround is unchanged too — `rejections` lists
+the orphaned record and `unreject` retires it.
