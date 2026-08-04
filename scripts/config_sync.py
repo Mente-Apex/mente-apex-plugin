@@ -955,9 +955,10 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
         # that has not upgraded has no map, and every unit falls back to this
         # snapshot's export timestamp -- exactly today's behaviour, per machine.
         raw_provenance = snapshot.get("provenance")
-        if raw_provenance is not None and not isinstance(raw_provenance, dict):
+        if "provenance" in snapshot and not isinstance(raw_provenance, dict):
             # A machine with NO provenance key is simply un-upgraded — the
-            # expected mixed-fleet path, and silent. A malformed one is a real
+            # expected mixed-fleet path, and silent. A machine whose key IS
+            # present but not a dict (including explicit `null`) is a real
             # defect worth naming, but still not fatal: falling back costs one
             # avoidable prompt, while aborting would halt the whole fleet.
             provenance_warnings.append(
