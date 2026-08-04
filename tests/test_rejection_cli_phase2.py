@@ -198,3 +198,35 @@ def test_an_exact_hash_subject_addresses_one_of_two_twins(
     payload = json.loads(capsys.readouterr().out)
     assert payload["tier"] == "3"
     assert payload["address"].endswith(suffix)
+
+
+def test_rejecting_a_whole_synced_config_file_is_refused(tmp_path):
+    """settings.json, CLAUDE.md and keybindings.json are the files the whole sync
+    exists to carry — rejecting one wholesale is almost never what was meant."""
+    repo = tmp_path / "repo3"
+    (repo / "consolidated").mkdir(parents=True)
+    (repo / "consolidated" / "snapshot.json").write_text(
+        json.dumps({"files": {"settings.json": json.dumps(SETTINGS)}}), encoding="utf-8"
+    )
+    with pytest.raises(config_sync.MassRejectionRefusedError):
+        config_sync.cmd_reject(str(repo), "snapshot-file", "settings.json")
+
+
+def test_force_overrides_the_synced_config_file_guard(tmp_path, capsys):
+    repo = tmp_path / "repo4"
+    (repo / "consolidated").mkdir(parents=True)
+    (repo / "consolidated" / "snapshot.json").write_text(
+        json.dumps({"files": {"settings.json": json.dumps(SETTINGS)}}), encoding="utf-8"
+    )
+    config_sync.cmd_reject(str(repo), "snapshot-file", "settings.json", "--force")
+    assert json.loads(capsys.readouterr().out)["address"] == "settings.json"
+
+
+def test_rejecting_an_ordinary_file_is_not_guarded(tmp_path, capsys):
+    repo = tmp_path / "repo5"
+    (repo / "consolidated").mkdir(parents=True)
+    (repo / "consolidated" / "snapshot.json").write_text(
+        json.dumps({"files": {"rules/a.md": "hi"}}), encoding="utf-8"
+    )
+    config_sync.cmd_reject(str(repo), "snapshot-file", "rules/a.md")
+    assert json.loads(capsys.readouterr().out)["address"] == "rules/a.md"
