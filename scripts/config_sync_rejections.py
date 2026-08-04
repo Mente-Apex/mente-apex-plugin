@@ -291,23 +291,23 @@ def provenance_map_defects(provenance_map) -> list:
     path; the caller keeps that distinction by testing key presence before
     calling this.
 
-    Each line states what is wrong and what it costs, but never whose snapshot
-    it is: naming the machine is the caller's job, so one caller owns how the
-    operator-facing line reads.
+    Each line states WHAT is wrong and nothing else -- not whose snapshot it is,
+    and not what the defect costs. Both callers supply those, because both
+    differ: `cmd_consolidate` names a machine and the affected units fall back to
+    its export timestamp, while `SnapshotPropagator.export` names a file and the
+    affected units are re-stamped as now. A consequence baked in here would be
+    wrong at one of the two call sites.
     """
     if not isinstance(provenance_map, dict):
-        return [
-            "has a malformed provenance map; every unit falls back to its "
-            "export timestamp"
-        ]
+        return ["has a malformed provenance map, so no unit in it is usable"]
 
     defects: list = []
     unusable_entries: list = []
     for kind, by_address in provenance_map.items():
         if not isinstance(by_address, dict):
             defects.append(
-                f"has a malformed provenance section for {kind!r}; every unit "
-                "of that kind falls back to its export timestamp"
+                f"has a malformed provenance section for {kind!r}, so no unit "
+                "of that kind is usable"
             )
             continue
         for address, entry in by_address.items():
@@ -322,8 +322,7 @@ def provenance_map_defects(provenance_map) -> list:
         noun = "entry" if len(unusable_entries) == 1 else "entries"
         defects.append(
             f"has {len(unusable_entries)} provenance {noun} with no usable "
-            f"changed_at (first: {unusable_entries[0]}); those units fall back "
-            "to its export timestamp"
+            f"changed_at (first: {unusable_entries[0]})"
         )
     return defects
 

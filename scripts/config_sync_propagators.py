@@ -836,6 +836,15 @@ def _previous_provenance(machines_dir, machine_id: str) -> tuple:
     is silent -- warning there would fire on every new machine. An unreadable one
     is genuinely degraded: everything restamps as now, which can cost one
     avoidable resurrection, and the operator should know why.
+
+    Malformed shapes BELOW the top level warn too, via the same
+    `provenance_map_defects` scan `cmd_consolidate` runs, because this is the
+    only end that ever sees them. Export consumes the previous snapshot and then
+    overwrites `machines/<id>.json` with a freshly stamped, well-formed map, so a
+    defect here is erased in the same breath it does its damage -- the
+    consolidate-side scan never gets a look at it. Staying quiet would mean
+    nobody is told at either end, while every affected unit silently restamps as
+    now and may re-add content another machine rejected. Spec §9's export row.
     """
     path = machines_dir / f"{machine_id}.json"
     if not path.exists():
@@ -866,7 +875,17 @@ def _previous_provenance(machines_dir, machine_id: str) -> tuple:
             "content provenance as now, which may re-add content rejected "
             "elsewhere"
         ]
-    return provenance, []
+    # Deferred import: config_sync_rejections is a sibling script, not a package.
+    import config_sync_rejections as rejections_module
+
+    # The map is still USED even where it is partly malformed: the defective
+    # units restamp, the intact ones carry forward. Reporting is what changes,
+    # not the fallback.
+    return provenance, [
+        f"{path.name} {defect}; re-stamping those units as now, which may "
+        "re-add content rejected elsewhere"
+        for defect in rejections_module.provenance_map_defects(provenance)
+    ]
 
 
 def _write_snapshot_atomically(path, payload: str) -> None:
