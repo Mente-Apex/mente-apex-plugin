@@ -210,19 +210,24 @@ def _main_exit_code(monkeypatch, capsys, *argv):
     return exit_info.value.code, capsys.readouterr().err
 
 
-def test_a_phase_2_kind_exits_2_with_a_message_not_a_traceback(
+def test_a_bare_valueerror_refusal_exits_2_with_a_message_not_a_traceback(
     tmp_path, monkeypatch, capsys
 ):
-    """`plugin` passes the `REJECTION_KINDS` check — phase 2 kinds are named
-    there deliberately — and is then refused by `_resolve_rejection_address`
-    with a bare `ValueError`. That is a refusal, so it must exit 2 like every
-    other refusal, not 1 with a stack trace."""
+    """`settings-key` passes the `REJECTION_KINDS` check and is then refused by
+    `_resolve_rejection_address` with a bare `ValueError` when no `--key` is
+    given. That is a refusal, so it must exit 2 like every other refusal, not 1
+    with a stack trace.
+
+    Phase 2 implemented the three remaining kinds, so an unimplemented kind is
+    no longer available as the probe. The guarantee under test — a bare
+    `ValueError` out of address resolution reaches the operator as a message —
+    is unchanged."""
     repo = _repo(tmp_path)
     code, stderr = _main_exit_code(
-        monkeypatch, capsys, "reject", str(repo), "plugin", "foo@bar"
+        monkeypatch, capsys, "reject", str(repo), "settings-key", "-"
     )
     assert code == 2
-    assert "phase 1" in stderr
+    assert "at least one --key" in stderr
 
 
 def test_a_missing_subject_exits_2_rather_than_raising_indexerror(

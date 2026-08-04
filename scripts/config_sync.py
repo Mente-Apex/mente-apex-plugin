@@ -1028,8 +1028,23 @@ def _consolidated_files(repo_dir):
     return json.loads(path.read_text(encoding="utf-8")).get("files", {})
 
 
-def _resolve_rejection_address(repo_dir, kind, subject, section_heading, occurrence):
-    """The address for `subject`, proven to exist in the consolidated snapshot."""
+def _resolve_rejection_address(
+    repo_dir,
+    kind,
+    subject,
+    section_heading,
+    occurrence,
+    key_path=None,
+    event=None,
+    matcher=None,
+):
+    """The `(address, tier)` for `subject`, proven to exist.
+
+    `tier` is empty for every kind but `hook-registration`, which is the only one
+    whose identity is resolved rather than read. Every kind is checked against
+    real state and refuses when nothing matches, so a typo cannot sit in the
+    ledger forever suppressing nothing.
+    """
     import config_sync_merge as merge
     import config_sync_rejections as rejections_module
 
@@ -1039,7 +1054,7 @@ def _resolve_rejection_address(repo_dir, kind, subject, section_heading, occurre
             raise UnknownRejectionTargetError(
                 f"no snapshot file {subject!r}; known files: {sorted(files)}"
             )
-        return subject
+        return subject, ""
     if kind == "snapshot-section":
         if subject not in files:
             raise UnknownRejectionTargetError(
@@ -1051,8 +1066,111 @@ def _resolve_rejection_address(repo_dir, kind, subject, section_heading, occurre
                 f"no section {section_heading!r} occurrence {occurrence} in "
                 f"{subject}; found: {keys}"
             )
-        return rejections_module.section_address(subject, section_heading, occurrence)
-    raise ValueError(f"kind {kind!r} is not addressable in phase 1")
+        return (
+            rejections_module.section_address(subject, section_heading, occurrence),
+            "",
+        )
+
+    if kind == "settings-key":
+        settings = _snapshot_settings(files)
+        node = settings
+        for key in key_path or ():
+            if not isinstance(node, dict) or key not in node:
+                raise UnknownRejectionTargetError(
+                    f"no settings key {list(key_path)!r}; "
+                    f"{key!r} is not present under {sorted(node) if isinstance(node, dict) else node!r}"
+                )
+            node = node[key]
+        if not key_path:
+            raise ValueError("settings-key needs at least one --key")
+        return rejections_module.settings_key_address(tuple(key_path)), ""
+
+    if kind == "plugin":
+        enabled = _snapshot_settings(files).get("enabledPlugins", {})
+        if subject not in enabled:
+            raise UnknownRejectionTargetError(
+                f"no enabled plugin {subject!r}; known: {sorted(enabled)}"
+            )
+        return rejections_module.PluginAddressor().identify(subject), ""
+
+    if kind == "hook-registration":
+        return _resolve_hook_rejection_address(subject, event, matcher)
+
+    raise ValueError(f"kind {kind!r} is not addressable")
+
+
+def _snapshot_settings(files) -> dict:
+    """The parsed `settings.json` carried inside a snapshot `files` mapping.
+
+    It travels as a JSON *string* there, which is why it needs unwrapping before
+    a key path can be checked against it.
+    """
+    blob = files.get("settings.json")
+    if not isinstance(blob, str):
+        return {}
+    try:
+        parsed = json.loads(blob)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise UnknownRejectionTargetError(
+            f"the consolidated settings.json does not parse ({exc}); "
+            "run clean-settings before rejecting a key"
+        ) from exc
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _resolve_hook_rejection_address(subject, event, matcher):
+    """Address one registration in the LIVE settings hooks block.
+
+    The live file, not the snapshot: the operator is rejecting a registration
+    they can see on this machine, and tier resolution needs the whole local block
+    to detect ambiguity.
+    """
+    import config_sync_hooks as hooks_module
+    import config_sync_rejection_hooks as rejection_hooks_module
+
+    if event is None or matcher is None:
+        raise ValueError(
+            "hook-registration needs --event and --matcher; a script basename is "
+            "only unique within one event and matcher"
+        )
+
+    settings_path = CLAUDE_DIR / "settings.json"
+    settings = json.loads(_read(settings_path)) if settings_path.exists() else {}
+    sites = hooks_module.hook_sites(settings)
+    addressor = rejection_hooks_module.HookRegistrationAddressor()
+
+    scoped = [site for site in sites if site.event == event and site.matcher == matcher]
+    chosen = [
+        site
+        for site in scoped
+        if hooks_module.script_name_of(site.command) == subject
+        or (
+            subject.startswith("#")
+            and rejection_hooks_module.hook_address_at_tier(
+                site, rejection_hooks_module.HOOK_TIER_EXACT
+            ).endswith(subject)
+        )
+    ]
+    if not chosen:
+        raise UnknownRejectionTargetError(
+            f"no hook under {event}/{matcher!r} matching {subject!r}; "
+            f"found: {[hooks_module.script_name_of(site.command) for site in scoped]}"
+        )
+    if len(chosen) > 1:
+        # Never guess between two matches -- the same rule `registrations_by_script`
+        # states outright. `identify` would resolve these to distinct tier-3
+        # addresses, but it cannot know WHICH one the operator meant, and silently
+        # rejecting the wrong copy is worse than refusing. Point them at the
+        # discriminator instead.
+        raise UnknownRejectionTargetError(
+            f"{subject!r} matches {len(chosen)} registrations under "
+            f"{event}/{matcher!r}: "
+            f"{[site.command for site in chosen]}. "
+            f"Reject one by its exact-match address instead — take the `#<hash>` "
+            f"suffix from `hooks-doctor` and pass it as the subject."
+        )
+    address, tier = addressor.identify(chosen[0], sites)
+    return address, str(tier)
 
 
 def _rejection_policy(repo_path):
@@ -1070,11 +1188,27 @@ def _rejection_policy(repo_path):
     )
 
 
-KNOWN_REJECT_OPTIONS = ("--scope", "--section", "--occurrence", "--reason", "--force")
+KNOWN_REJECT_OPTIONS = (
+    "--scope",
+    "--section",
+    "--occurrence",
+    "--reason",
+    "--force",
+    "--key",
+    "--event",
+    "--matcher",
+)
 
 # The one option that takes no value. Kept beside the known-options tuple so the
 # parser below never has to guess whether the next token is a value or a flag.
 VALUELESS_REJECT_OPTIONS = ("--force",)
+
+# The options that may be given more than once, collected into a list in the
+# order they were passed. `--key` is one because a settings key path IS a
+# sequence: joining the segments on a delimiter would reintroduce exactly the
+# ambiguity `settings_key_address` exists to avoid, so each segment arrives as
+# its own token and last-wins would silently discard all but the final one.
+REPEATABLE_REJECT_OPTIONS = ("--key",)
 
 
 def _parse_reject_options(options: list) -> dict:
@@ -1107,7 +1241,10 @@ def _parse_reject_options(options: list) -> dict:
             continue
         if index + 1 >= len(options):
             raise ValueError(f"option {flag!r} expects a value")
-        parsed[flag] = options[index + 1]
+        if flag in REPEATABLE_REJECT_OPTIONS:
+            parsed.setdefault(flag, []).append(options[index + 1])
+        else:
+            parsed[flag] = options[index + 1]
         index += 2
     return parsed
 
@@ -1133,9 +1270,19 @@ def cmd_reject(repo_path, *args):
     occurrence = int(options.get("--occurrence", "0"))
     reason = options.get("--reason", "")
     force = "--force" in options
+    key_path = options.get("--key", [])
+    event = options.get("--event")
+    matcher = options.get("--matcher")
 
-    address = _resolve_rejection_address(
-        repo_path, kind, subject, section_heading, occurrence
+    address, tier = _resolve_rejection_address(
+        repo_path,
+        kind,
+        subject,
+        section_heading,
+        occurrence,
+        key_path=key_path,
+        event=event,
+        matcher=matcher,
     )
 
     if kind == "snapshot-section" and not force:
@@ -1173,6 +1320,7 @@ def cmd_reject(repo_path, *args):
         rejected_at=datetime.now(UTC).isoformat(),
         machine_id=_machine_id(),
         reason=reason,
+        tier=tier,
     )
     _rejection_policy(repo_path).record(record)
     print(json.dumps(vars(record), indent=2, ensure_ascii=False))
