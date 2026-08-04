@@ -467,16 +467,45 @@ class SettingsKeyAddressor:
         return address == self.identify(key_path)
 
 
+def addresses_of_interest(policy, kind: str):
+    """The addresses `policy` holds ANY record for under `kind`, or None when the
+    policy cannot say.
+
+    A cheap prefilter, never an answer. `is_rejected` is still the only thing that
+    decides — revivals, timestamps and the suppression rule all live there — but
+    an address with no record at all can only ever answer False, so a caller that
+    would otherwise ask per candidate can bind this once and skip the question
+    entirely for the overwhelming majority. That turned a 200-key settings.json
+    across four machines from ~1000 full ledger reads per consolidate into one.
+
+    Returns None, meaning "no prefilter available", when the policy does not
+    expose `all()` or raises from it: a test double or a partial implementation
+    must degrade to the old per-candidate path, never to a wrong answer.
+    """
+    fetch_all = getattr(policy, "all", None)
+    if not callable(fetch_all):
+        return None
+    try:
+        records = fetch_all()
+    except Exception:
+        return None
+    return {record.address for record in records if record.kind == kind}
+
+
 def filter_settings_keys(settings: dict, policy, source_timestamp: str) -> tuple:
     """Subtract rejected key paths from a parsed settings dict.
 
     Returns `(kept_settings, removed_addresses)`. Pure: the input is never
-    mutated and nothing is read from disk, so a caller can use this to preview.
-    A rejected subtree is dropped whole — rejecting `permissions` means the
-    operator does not want any of it.
+    mutated and this function reads nothing from disk itself, so a caller can use
+    it to preview. A rejected subtree is dropped whole — rejecting `permissions`
+    means the operator does not want any of it.
     """
     addressor = SettingsKeyAddressor()
     removed: list = []
+    # Bound once, before the walk. See `addresses_of_interest`: without it this
+    # asked the policy — and so re-read every ledger file — once per key, at
+    # every depth, for every machine snapshot.
+    of_interest = addresses_of_interest(policy, addressor.kind)
 
     def prune(node, prefix: tuple):
         if not isinstance(node, dict):
@@ -484,9 +513,11 @@ def filter_settings_keys(settings: dict, policy, source_timestamp: str) -> tuple
         kept: dict = {}
         for key, value in node.items():
             key_path = prefix + (key,)
-            target = RejectionTarget(
-                kind=addressor.kind, address=addressor.identify(key_path)
-            )
+            address = addressor.identify(key_path)
+            if of_interest is not None and address not in of_interest:
+                kept[key] = prune(value, key_path)
+                continue
+            target = RejectionTarget(kind=addressor.kind, address=address)
             if policy.is_rejected(target, source_timestamp):
                 removed.append(target.address)
                 continue
@@ -510,9 +541,8 @@ def filter_settings_blob(files: dict, policy, source_timestamp: str) -> tuple:
     if not isinstance(blob, str):
         return files, []
     # fmt: off
-    # PEP 758 lets black strip these parens (Python 3.14). Kept explicit: the
-    # unparenthesized form reads as a Python 2 `except X, name:` bind and has
-    # already been misread once in review.
+    # PEP 758 lets black strip these parens (Python 3.14). Kept parenthesized
+    # for explicitness -- black would otherwise write the bare tuple form.
     try:
         parsed = json.loads(blob)
     except (json.JSONDecodeError, ValueError):

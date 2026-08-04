@@ -2167,9 +2167,9 @@ def main():
         MassRejectionRefusedError,
         # `ValueError` and `IndexError` are how the argument-validating commands
         # already say no, and a variadic command gets no arity check from the
-        # table above. `reject <repo> plugin foo@bar` names a kind
-        # `REJECTION_KINDS` deliberately lists for phase 2 and dies on
-        # `_resolve_rejection_address`'s ValueError; `reject <repo>
+        # table above. `reject <repo> settings-key -` with no `--key` has
+        # nothing to address and dies on `_resolve_rejection_address`'s bare
+        # ValueError; `reject <repo>
         # snapshot-file` with no subject dies on an IndexError; a non-numeric
         # `--occurrence` dies inside `int()`. All three are refusals the
         # operator can act on, and all three exited 1 with a stack trace while

@@ -191,6 +191,24 @@ def test_identify_refuses_a_site_that_is_not_among_the_sites_given():
         addressor.identify(OPAQUE, [MARKED, UNMARKED])
 
 
+def test_identify_refuses_a_stranger_that_only_shares_an_event():
+    """Membership is POSITIONAL, not by event. A site whose event and matcher
+    match a block it is not actually in must still be refused, or a stranger
+    would resolve its ambiguity against registrations it is not among."""
+    import pytest
+
+    addressor = HookRegistrationAddressor()
+    stranger = HookSite(
+        event=MARKED.event,
+        group_index=99,
+        hook_index=99,
+        matcher=MARKED.matcher,
+        command=MARKED.command,
+    )
+    with pytest.raises(ValueError):
+        addressor.identify(stranger, [MARKED])
+
+
 def test_matches_recomputes_only_the_recorded_tier():
     addressor = HookRegistrationAddressor()
     address, tier = addressor.identify(UNMARKED, [UNMARKED])
