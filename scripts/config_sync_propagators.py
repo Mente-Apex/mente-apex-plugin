@@ -829,6 +829,26 @@ class ContentBundlePropagator:
             raise ValueError(f"winner must be 'local' or 'repo', got {winner!r}")
 
 
+def _previous_provenance(machines_dir, machine_id: str) -> dict:
+    """This machine's provenance map from its own last export, or `{}`.
+
+    `{}` restamps everything as now, which can cost one avoidable resurrection
+    but can never cause a wrong suppression -- the safe direction. Reading the
+    machine's own previous snapshot is what makes a separate index file
+    unnecessary, and so makes an index that disagrees with the snapshot
+    impossible.
+    """
+    path = machines_dir / f"{machine_id}.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return {}
+    provenance = payload.get("provenance") if isinstance(payload, dict) else None
+    return provenance if isinstance(provenance, dict) else {}
+
+
 class SnapshotPropagator:
     """Propagates the mergeable text config (CLAUDE.md, memory/, rules/, settings,
     keybindings). Skills/agents are deliberately out of scope — they are bundles.
@@ -837,12 +857,20 @@ class SnapshotPropagator:
 
     name = "snapshot"
 
-    def __init__(self, policy=None):
-        # Deferred: sibling script, not a package.
+    def __init__(self, policy=None, stamper=None):
+        # Deferred: sibling scripts, not a package.
+        import config_sync_provenance as provenance_module
         import config_sync_rejections as rejections_module
 
         self._policy = (
             policy if policy is not None else rejections_module.NullRejectionPolicy()
+        )
+        # Injected like `policy`, so a test can substitute the clock-and-hash
+        # decision without reaching into export.
+        self._stamper = (
+            stamper
+            if stamper is not None
+            else provenance_module.ContentProvenanceStamper()
         )
 
     def export(self, context: SyncContext) -> ExportResult:
@@ -866,14 +894,17 @@ class SnapshotPropagator:
             files.update(config_sync._collect_dir(context.claude_dir, directory))
 
         machine_id = _machine_id(context)
+        machines_dir = context.repo_dir / "machines"
+        previous_provenance = _previous_provenance(machines_dir, machine_id)
+        now = datetime.now(UTC).isoformat()
         snapshot = {
             "machine_id": machine_id,
             "hostname": platform.node(),
             "platform": platform.system(),
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": now,
             "files": files,
+            "provenance": self._stamper.stamp(files, previous_provenance, now),
         }
-        machines_dir = context.repo_dir / "machines"
         machines_dir.mkdir(parents=True, exist_ok=True)
         (machines_dir / f"{machine_id}.json").write_text(
             config_sync.json.dumps(snapshot, indent=2, ensure_ascii=False),
