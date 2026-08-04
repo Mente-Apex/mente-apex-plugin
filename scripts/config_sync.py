@@ -1285,6 +1285,13 @@ def cmd_reject(repo_path, *args):
         matcher=matcher,
     )
 
+    if kind == "snapshot-file" and subject in SNAPSHOT_FILES and not force:
+        raise MassRejectionRefusedError(
+            f"rejecting {subject!r} wholesale would stop syncing it entirely; "
+            f"reject a section with kind snapshot-section, or a key with kind "
+            f"settings-key, or pass --force if that is really what you want"
+        )
+
     if kind == "snapshot-section" and not force:
         import config_sync_merge as merge
 
