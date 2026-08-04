@@ -950,12 +950,24 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
     budget = _LlmMergeBudget(MAX_LLM_MERGES)
     merge_log = []
     for snapshot in snapshots:
+        # Per-unit provenance, when the exporting machine wrote it. A machine
+        # that has not upgraded has no map, and every unit falls back to this
+        # snapshot's export timestamp -- exactly today's behaviour, per machine.
+        snapshot_provenance = rejections_module.SnapshotProvenance(
+            snapshot.get("provenance", {})
+        )
         incoming_files, incoming_removed = rejections_module.filter_snapshot_files(
-            snapshot.get("files", {}), policy, snapshot.get("timestamp", "")
+            snapshot.get("files", {}),
+            policy,
+            snapshot.get("timestamp", ""),
+            provenance=snapshot_provenance,
         )
         incoming_files, incoming_settings_removed = (
             rejections_module.filter_settings_blob(
-                incoming_files, policy, snapshot.get("timestamp", "")
+                incoming_files,
+                policy,
+                snapshot.get("timestamp", ""),
+                provenance=snapshot_provenance,
             )
         )
         rejected_addresses.extend(incoming_removed)
