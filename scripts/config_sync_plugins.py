@@ -253,6 +253,47 @@ class MarketplacePlan:
     skipped: list = field(default_factory=list)  # list[str] human reasons
 
 
+def read_manifests(repo_dir: Path) -> tuple:
+    """Union every `plugins/*.json` manifest in the repo into
+    `(desired_marketplaces, desired_plugins)`.
+
+    Its own function because two callers now need the same answer: the planner,
+    which diffs it against the live registry, and the rejection CLI, which proves
+    a plugin id exists before letting it into the ledger. The set the CLI
+    validates against and the set the filter enforces on must be the same set, or
+    a plugin that is merely PROPOSED cannot be declined. Unreadable or
+    wrong-shaped manifests are skipped, never fatal — one bad file on one machine
+    must not stop the others converging.
+    """
+    desired_marketplaces: dict = {}  # name -> source (or None)
+    desired_plugins: dict = {}  # key -> meta
+    manifests_dir = Path(repo_dir) / "plugins"
+    if not manifests_dir.exists():
+        return desired_marketplaces, desired_plugins
+    for manifest_path in sorted(manifests_dir.glob("*.json")):
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError, OSError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        marketplaces_section = data.get("marketplaces", {})
+        plugins_section = data.get("plugins", {})
+        if not isinstance(marketplaces_section, dict) or not isinstance(
+            plugins_section, dict
+        ):
+            continue
+        for marketplace_name, marketplace_meta in marketplaces_section.items():
+            if marketplace_meta is not None and not isinstance(marketplace_meta, dict):
+                continue
+            desired_marketplaces.setdefault(
+                marketplace_name, (marketplace_meta or {}).get("source")
+            )
+        for plugin_key, plugin_meta in plugins_section.items():
+            desired_plugins[plugin_key] = plugin_meta
+    return desired_marketplaces, desired_plugins
+
+
 def plan_convergence(
     context: propagators.SyncContext, reader: PluginRegistryReader, policy=None
 ) -> MarketplacePlan:
@@ -268,33 +309,7 @@ def plan_convergence(
     import config_sync_rejections as rejections_module
 
     policy = policy if policy is not None else rejections_module.NullRejectionPolicy()
-    desired_marketplaces: dict = {}  # name -> source (or None)
-    desired_plugins: dict = {}  # key -> meta
-    manifests_dir = context.repo_dir / "plugins"
-    if manifests_dir.exists():
-        for manifest_path in sorted(manifests_dir.glob("*.json")):
-            try:
-                data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError, OSError:
-                continue
-            if not isinstance(data, dict):
-                continue
-            marketplaces_section = data.get("marketplaces", {})
-            plugins_section = data.get("plugins", {})
-            if not isinstance(marketplaces_section, dict) or not isinstance(
-                plugins_section, dict
-            ):
-                continue
-            for marketplace_name, marketplace_meta in marketplaces_section.items():
-                if marketplace_meta is not None and not isinstance(
-                    marketplace_meta, dict
-                ):
-                    continue
-                desired_marketplaces.setdefault(
-                    marketplace_name, (marketplace_meta or {}).get("source")
-                )
-            for plugin_key, plugin_meta in plugins_section.items():
-                desired_plugins[plugin_key] = plugin_meta
+    desired_marketplaces, desired_plugins = read_manifests(context.repo_dir)
 
     local_marketplaces = reader.known_marketplaces()
     installed = reader.installed_plugins()

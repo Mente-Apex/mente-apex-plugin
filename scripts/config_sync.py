@@ -1086,10 +1086,20 @@ def _resolve_rejection_address(
         return rejections_module.settings_key_address(tuple(key_path)), ""
 
     if kind == "plugin":
+        # The UNION of what the repo manifests propose and what is already
+        # enabled. `filter_plugin_actions` enforces against the manifests, so
+        # validating against `enabledPlugins` alone refused the very plugin an
+        # operator most wants to decline: one being proposed but not yet
+        # installed. A plugin in either set is a legitimate target.
+        import config_sync_plugins as plugins_module
+
+        _marketplaces, proposed = plugins_module.read_manifests(Path(repo_dir))
         enabled = _snapshot_settings(files).get("enabledPlugins", {})
-        if subject not in enabled:
+        known_plugins = set(proposed) | set(enabled)
+        if subject not in known_plugins:
             raise UnknownRejectionTargetError(
-                f"no enabled plugin {subject!r}; known: {sorted(enabled)}"
+                f"no plugin {subject!r} proposed by the repo manifests or enabled "
+                f"in the consolidated settings; known: {sorted(known_plugins)}"
             )
         return rejections_module.PluginAddressor().identify(subject), ""
 
