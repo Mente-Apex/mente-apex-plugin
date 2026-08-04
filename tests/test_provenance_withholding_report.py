@@ -175,8 +175,12 @@ def test_a_withholding_from_the_prior_consolidated_snapshot_names_nobody(
 
 
 def test_the_withholding_report_is_echoed_on_stdout(tmp_path, capsys):
-    """The skill parses consolidate's stdout; a key only in the file is invisible
-    to the machine running the sync."""
+    """Parity with `rejected`, `merge_log` and `provenance_warnings`: every other
+    key consolidate reports reaches stdout as well as the file, and a report the
+    operator can only find by opening `consolidated/snapshot.json` is not one
+    they will find. The skill does not read this output today -- Step 3 runs
+    `consolidate` and consumes nothing from it -- so this pins the shape, not a
+    consumer."""
     repo = _repo(tmp_path)
     _machine_snapshot(repo, "machine-b", {"CLAUDE.md": DOCUMENT})
     _reject(repo, "snapshot-section", SECTION_ADDRESS)

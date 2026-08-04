@@ -19,12 +19,15 @@ from config_sync_rejections import (
 
 CONTENT = "## Alpha\nalpha body\n\n## Beta\nbeta body\n"
 FILE_ADDRESS = "CLAUDE.md"
+# Held only by the upgraded machine in the mixed-fleet walk, so its fate in the
+# consolidated snapshot attributes to that machine and nothing else.
+UPGRADED_ADDRESS = "rules/shared.md"
 
 
-def _machine(tmp_path, repo, name, content=CONTENT):
+def _machine(tmp_path, repo, name):
     claude_dir = tmp_path / name
     claude_dir.mkdir(parents=True, exist_ok=True)
-    (claude_dir / "CLAUDE.md").write_text(content, encoding="utf-8")
+    (claude_dir / "CLAUDE.md").write_text(CONTENT, encoding="utf-8")
     return SyncContext(claude_dir=claude_dir, repo_dir=repo)
 
 
@@ -148,9 +151,39 @@ def test_editing_a_sibling_section_does_not_resurrect_a_rejected_section(
 
 
 def test_an_unupgraded_machine_still_resurrects_until_it_upgrades(tmp_path, capsys):
-    """Mixed fleet, end to end: the fallback is per-machine, not fleet-wide."""
+    """Mixed fleet, end to end: the fallback is per-machine, not fleet-wide.
+
+    Spec §10 asks for the discriminating shape, and a fold containing only the
+    un-upgraded machine cannot supply it -- nothing in it could tell a
+    per-machine fallback from a fleet-wide one. So this fold holds BOTH: an
+    un-upgraded `machine-old` with no `provenance` key at all, and an upgraded
+    `machine-b` that exports through the real `SnapshotPropagator`. One
+    rejection covers content on each, and one `consolidate` run decides both.
+
+    The upgraded machine's half is what discriminates. `machine-b` exports,
+    THEN the rejection is recorded, THEN it re-exports untouched -- so its
+    snapshot `timestamp` is strictly newer than `rejected_at` while its
+    per-unit `changed_at` is strictly older. Under the fallback its content
+    would resurrect exactly as `machine-old`'s does; only provenance keeps it
+    withheld. Delete the `provenance` stamping and this test fails on
+    `rules/shared.md`, not just on the un-upgraded machine.
+    """
     repo = _repo(tmp_path)
     (repo / "machines").mkdir(parents=True, exist_ok=True)
+
+    upgraded = _machine(tmp_path, repo, "machine-b")
+    (upgraded.claude_dir / "rules").mkdir(parents=True, exist_ok=True)
+    (upgraded.claude_dir / "rules" / "shared.md").write_text(
+        "## Shared\nshared body\n", encoding="utf-8"
+    )
+    SnapshotPropagator().export(upgraded)
+
+    _reject_file(repo)  # CLAUDE.md, which machine-old still carries
+    _reject_file(repo, address=UPGRADED_ADDRESS)  # only machine-b carries it
+
+    # Unchanged re-export: the wall clock moves on, the content hash does not.
+    SnapshotPropagator().export(upgraded)
+
     (repo / "machines" / "machine-old.json").write_text(
         json.dumps(
             {
@@ -159,7 +192,7 @@ def test_an_unupgraded_machine_still_resurrects_until_it_upgrades(tmp_path, caps
                 # exists to catch, one layer up: this timestamp is the ONLY
                 # thing making the no-provenance fallback observable (see
                 # the comment on `_reject_file` above for the general
-                # failure mode). `_reject_file` below records `rejected_at`
+                # failure mode). `_reject_file` above records `rejected_at`
                 # as real "now"; this snapshot must stay strictly after that
                 # for as long as the suite exists, so it is anchored to the
                 # same clock rather than a date that will eventually be in
@@ -171,9 +204,12 @@ def test_an_unupgraded_machine_still_resurrects_until_it_upgrades(tmp_path, caps
         ),
         encoding="utf-8",
     )
-    _reject_file(repo)
 
     config_sync.cmd_consolidate(str(repo))
     capsys.readouterr()
 
-    assert FILE_ADDRESS in _consolidated(repo)
+    consolidated = _consolidated(repo)
+    # The un-upgraded machine falls back to its export stamp and resurrects.
+    assert FILE_ADDRESS in consolidated
+    # The upgraded machine, in the SAME fold, does not.
+    assert UPGRADED_ADDRESS not in consolidated
