@@ -794,8 +794,14 @@ def iter_addressable_units(files: dict) -> Iterator[AddressableUnit]:
 def _iter_settings_units(
     node: dict, prefix: tuple, addressor, file_key: str
 ) -> Iterator[AddressableUnit]:
-    """Settings-key units at every depth, in the same order `filter_settings_keys`
-    walks them: a key is yielded before its children."""
+    """Settings-key units at every depth, parent and children alike.
+
+    Deliberately promises nothing about ORDER. Both consumers collect this into
+    a dict keyed by address (`ContentProvenanceStamper.stamp`,
+    `filter_snapshot_files`) and the drift guard compares address SETS, so
+    nothing observes the sequence -- and an ordering contract nothing enforces
+    is one a later refactor breaks silently.
+    """
     for key, value in node.items():
         key_path = prefix + (key,)
         yield AddressableUnit(
