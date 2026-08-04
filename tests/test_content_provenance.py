@@ -99,3 +99,33 @@ def test_a_malformed_previous_entry_is_restamped_rather_than_trusted():
 def test_a_previous_map_of_the_wrong_shape_is_ignored():
     provenance = _stamp(FILES, {"snapshot-file": "not a dict"}, now=NOW)
     assert provenance["snapshot-file"]["rules/a.md"]["changed_at"] == NOW
+
+
+def test_a_previous_of_none_restamps_everything_without_raising():
+    """Covers the top-level `isinstance(previous, dict)` guard: a caller that
+    passes `None` instead of `{}` degrades to a full restamp, not an exception."""
+    provenance = _stamp(FILES, None, now=NOW)
+    assert provenance["snapshot-file"]["rules/a.md"]["changed_at"] == NOW
+
+
+def test_a_non_dict_entry_for_an_address_restamps_that_unit():
+    """Covers the `isinstance(entry, dict)` guard: `previous[kind][address]` is
+    a dict (so `test_a_previous_map_of_the_wrong_shape_is_ignored` does not
+    reach here), but the per-address value itself is a scalar, not an entry
+    dict."""
+    previous = {"snapshot-file": {"rules/a.md": "not a dict"}}
+    provenance = _stamp(FILES, previous, now=NOW)
+    assert provenance["snapshot-file"]["rules/a.md"]["changed_at"] == NOW
+
+
+def test_a_matching_hash_with_no_changed_at_restamps_rather_than_carrying_a_bad_value():
+    """Covers the `changed_at` extraction guard: the hash matches (so the
+    function reaches past the mismatch check, unlike
+    `test_a_malformed_previous_entry_is_restamped_rather_than_trusted`, whose
+    `hash` does not match and returns earlier), but `changed_at` itself is
+    missing -- so it must not be trusted."""
+    previous = {
+        "snapshot-file": {"rules/a.md": {"hash": hash_payload(FILES["rules/a.md"])}}
+    }
+    provenance = _stamp(FILES, previous, now=NOW)
+    assert provenance["snapshot-file"]["rules/a.md"]["changed_at"] == NOW
