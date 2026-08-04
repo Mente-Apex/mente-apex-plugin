@@ -18,8 +18,19 @@ import hashlib
 def hash_payload(payload: str) -> str:
     """A content hash for one addressable unit.
 
-    sha1 is not a security boundary here -- this only answers "is this byte-for-byte
-    what we saw last export?", where a collision costs one spurious carry-forward.
+    sha1 is not a security boundary here -- this only answers "is this
+    byte-for-byte what we saw last export?" -- but the blast radius of a
+    collision is not free either, and the two directions are NOT symmetric. A
+    restamp (`_previous_changed_at` answering None) costs at most one avoidable
+    resurrection. A collision is the other direction: genuinely changed content
+    would carry an old `changed_at` forward, so a re-add the operator meant
+    would read as older than the rejection and stay withheld -- the wrong
+    suppression `_previous_changed_at` is written never to cause.
+
+    sha1 stays anyway, matching `config_sync_rejections.rejection_id_of` and
+    `config_sync_hooks.hook_id_of`: reaching that case needs an adversarially
+    constructed pair of config files, which is not a threat model for content
+    this machine wrote itself.
     """
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
