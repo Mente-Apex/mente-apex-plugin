@@ -94,3 +94,28 @@ def test_step_4e_hands_the_operator_a_usable_rejection_id():
     )
     for field in ("id", "machine_id", "rejected_at", "address", "scope"):
         assert field in step_4e, f"Step 4e never mentions {field}"
+
+
+def test_every_phase_2_kind_is_documented():
+    text = SKILL.read_text(encoding="utf-8")
+    for kind in ("settings-key", "plugin", "hook-registration"):
+        assert kind in text, f"{kind} is not documented in SKILL.md"
+
+
+def test_the_hook_addressing_options_are_documented():
+    text = SKILL.read_text(encoding="utf-8")
+    for option in ("--event", "--matcher", "--key"):
+        assert option in text, f"{option} is not documented in SKILL.md"
+
+
+def test_the_documented_kinds_match_the_engine():
+    import config_sync_rejections as rejections
+
+    text = SKILL.read_text(encoding="utf-8")
+    for kind in rejections.REJECTION_KINDS:
+        assert kind in text, f"{kind} is advertised by the engine but undocumented"
+
+
+def test_the_skill_says_rejection_does_not_delete_an_existing_hook():
+    text = SKILL.read_text(encoding="utf-8")
+    assert "hooks-prune" in text
