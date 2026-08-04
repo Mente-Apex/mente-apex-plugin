@@ -108,6 +108,36 @@ def test_the_hook_addressing_options_are_documented():
         assert option in text, f"{option} is not documented in SKILL.md"
 
 
+STEP_3 = "Step 3 — Consolidate all machine snapshots"
+
+
+def test_the_force_guard_on_whole_file_rejection_is_documented():
+    """`cmd_reject` refuses `snapshot-file` on every name in `SNAPSHOT_FILES`
+    unless `--force` is passed (`MassRejectionRefusedError`). An operator who
+    hits that refusal with nothing in the docs explaining it has no way to
+    know `--force` is the escape hatch."""
+    step_3 = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_3
+    )
+    assert "--force" in step_3
+    for synced_file in config_sync.SNAPSHOT_FILES:
+        assert synced_file in step_3, f"{synced_file} not named near the --force guard"
+
+
+def test_the_scope_asymmetry_between_writers_is_documented():
+    """`network_rejection_policy` (used by `cmd_consolidate`, a shared-state
+    writer) checks network scope only; `local_rejection_policy` (used by the
+    local-state writers) checks both. The docs must say *why*, not just name
+    the scopes: a local veto reaching shared state would impose one machine's
+    taste on the whole network."""
+    step_4 = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"),
+        "Step 4 — Backup, then apply through the propagator seam",
+    )
+    assert re.search(r"network[- ]only", step_4)
+    assert "impose" in step_4
+
+
 def test_the_documented_kinds_match_the_engine():
     import config_sync_rejections as rejections
 

@@ -194,6 +194,12 @@ py "$ENGINE" consolidate "$REPO"
 > `--scope network` strips it from the consolidated snapshot and prompts every
 > other machine, `--scope local` withholds it here without touching shared state.
 >
+> **Whole-file rejection of a synced config file is refused by default.**
+> `reject ... snapshot-file` on `CLAUDE.md`, `settings.json`, or `keybindings.json`
+> raises rather than applying, because rejecting one wholesale would silently
+> stop syncing it entirely. Reject a `snapshot-section` or a `settings-key`
+> instead, or pass `--force` if a whole synced file really is what you want gone.
+>
 > **A network rejection converges only once no machine still carries the
 > content.** Every machine exports (Step 1) before anyone consolidates (Step 3),
 > and an export is stamped with the time it ran — so a machine that still holds
@@ -280,6 +286,14 @@ one specific copy.
 > config-sync only ever edits its own marked entries, so a registration already
 > in `settings.json` stays until `hooks-prune` removes it. The two compose:
 > `reject` stops it coming back, `hooks-prune` takes out what is already there.
+
+> **Where a rejection is checked depends on what it writes.** Consolidate
+> (Step 3) writes the shared consolidated snapshot, so it uses a network-only
+> policy — a local veto leaking in there would impose one machine's private
+> taste on every other machine. Plugin convergence and hook wiring (Step 4b,
+> Step 4c) write only this machine's local state, so they use the composite
+> policy: your local rejections and the network's, both checked. `settings-key`
+> is filtered at both points, because it is written in both places.
 
 A rejection is timestamped: content re-added *later* than the rejection is
 proposed again as fresh intent. Review or undo with `py "$ENGINE" rejections "$REPO"`
