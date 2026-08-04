@@ -829,24 +829,30 @@ class ContentBundlePropagator:
             raise ValueError(f"winner must be 'local' or 'repo', got {winner!r}")
 
 
-def _previous_provenance(machines_dir, machine_id: str) -> dict:
-    """This machine's provenance map from its own last export, or `{}`.
+def _previous_provenance(machines_dir, machine_id: str) -> tuple:
+    """This machine's provenance map from its own last export, plus any warnings.
 
-    `{}` restamps everything as now, which can cost one avoidable resurrection
-    but can never cause a wrong suppression -- the safe direction. Reading the
-    machine's own previous snapshot is what makes a separate index file
-    unnecessary, and so makes an index that disagrees with the snapshot
-    impossible.
+    Returns `(map, warnings)`. An ABSENT previous snapshot is a first export and
+    is silent -- warning there would fire on every new machine. An unreadable one
+    is genuinely degraded: everything restamps as now, which can cost one
+    avoidable resurrection, and the operator should know why.
     """
     path = machines_dir / f"{machine_id}.json"
     if not path.exists():
-        return {}
+        return {}, []
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        return {}
+    except (OSError, ValueError) as exc:
+        return {}, [
+            f"{path.name} does not parse ({exc}); re-stamping all content "
+            "provenance as now, which may re-add content rejected elsewhere"
+        ]
     provenance = payload.get("provenance") if isinstance(payload, dict) else None
-    return provenance if isinstance(provenance, dict) else {}
+    if provenance is None:
+        return {}, []
+    if not isinstance(provenance, dict):
+        return {}, [f"{path.name} has a malformed provenance map; re-stamping"]
+    return provenance, []
 
 
 class SnapshotPropagator:
@@ -895,7 +901,9 @@ class SnapshotPropagator:
 
         machine_id = _machine_id(context)
         machines_dir = context.repo_dir / "machines"
-        previous_provenance = _previous_provenance(machines_dir, machine_id)
+        previous_provenance, provenance_warnings = _previous_provenance(
+            machines_dir, machine_id
+        )
         now = datetime.now(UTC).isoformat()
         snapshot = {
             "machine_id": machine_id,
@@ -910,7 +918,11 @@ class SnapshotPropagator:
             config_sync.json.dumps(snapshot, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        return ExportResult(self.name, written=[f"machines/{machine_id}.json"])
+        return ExportResult(
+            self.name,
+            written=[f"machines/{machine_id}.json"],
+            warnings=provenance_warnings,
+        )
 
     def apply(self, context: SyncContext) -> ApplyResult:
         # Deferred: two-way dep with config_sync; call-time keeps it acyclic (SOLID M2).
