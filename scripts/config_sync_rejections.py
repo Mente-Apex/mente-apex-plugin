@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -616,7 +617,7 @@ class AddressableUnit:
     source: object = None
 
 
-def iter_addressable_units(files: dict):
+def iter_addressable_units(files: dict) -> Iterator[AddressableUnit]:
     """Every unit in a snapshot `files` mapping that a rejection can address.
 
     Yields file units for every key, section units for every `.md` whose content
@@ -655,7 +656,7 @@ def iter_addressable_units(files: dict):
                     address=section_addressor.identify(
                         (file_key, heading_text, occurrence)
                     ),
-                    payload=heading + "\n" + body,
+                    payload=rejoin_sections([(key, heading, body)]),
                     source_file=file_key,
                     source=(key, heading, body),
                 )
@@ -670,7 +671,9 @@ def iter_addressable_units(files: dict):
             yield from _iter_settings_units(parsed, (), settings_addressor, file_key)
 
 
-def _iter_settings_units(node: dict, prefix: tuple, addressor, file_key: str):
+def _iter_settings_units(
+    node: dict, prefix: tuple, addressor, file_key: str
+) -> Iterator[AddressableUnit]:
     """Settings-key units at every depth, in the same order `filter_settings_keys`
     walks them: a key is yielded before its children."""
     for key, value in node.items():
