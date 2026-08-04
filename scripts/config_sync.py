@@ -911,15 +911,18 @@ def _order_preserving_unique(items, key_of):
     A set would lose the order, and the consolidated snapshot is committed — a
     report whose order changes run to run makes every sync a git diff.
     """
-    seen: set = set()
-    kept: list = []
+    # Unannotated deliberately: `key_of` is caller-supplied and its return type
+    # is whatever the caller finds identifying, so a bare `set`/`list` would say
+    # nothing a reader cannot see from the initialiser.
+    seen_keys = set()
+    first_seen_items = []
     for item in items:
         key = key_of(item)
-        if key in seen:
+        if key in seen_keys:
             continue
-        seen.add(key)
-        kept.append(item)
-    return kept
+        seen_keys.add(key)
+        first_seen_items.append(item)
+    return first_seen_items
 
 
 def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> None:
@@ -973,16 +976,17 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
         # that has not upgraded has no map, and every unit falls back to this
         # snapshot's export timestamp -- exactly today's behaviour, per machine.
         raw_provenance = snapshot.get("provenance")
-        if "provenance" in snapshot and not isinstance(raw_provenance, dict):
+        if "provenance" in snapshot:
             # A machine with NO provenance key is simply un-upgraded — the
-            # expected mixed-fleet path, and silent. A machine whose key IS
-            # present but not a dict (including explicit `null`) is a real
-            # defect worth naming, but still not fatal: falling back costs one
-            # avoidable prompt, while aborting would halt the whole fleet.
-            provenance_warnings.append(
-                f"{snapshot.get('machine_id', 'unknown')} has a malformed "
-                "provenance map; falling back to its export timestamp"
-            )
+            # expected mixed-fleet path, and silent; warning there would fire on
+            # every sync until the whole fleet upgrades. A machine whose key IS
+            # present but malformed at any depth is a real defect worth naming
+            # (spec §9), but still not fatal: falling back costs one avoidable
+            # prompt, while aborting would halt the whole fleet.
+            for defect in rejections_module.provenance_map_defects(raw_provenance):
+                provenance_warnings.append(
+                    f"{snapshot.get('machine_id', 'unknown')} {defect}"
+                )
         snapshot_provenance = rejections_module.SnapshotProvenance(
             raw_provenance if isinstance(raw_provenance, dict) else {}
         )
@@ -1016,9 +1020,22 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
         # blaming every machine for them would prompt operators who never held
         # the content. They stay in `rejected`, the audit trail.
         holding_machine = snapshot.get("machine_id")
+        withheld_here = list(incoming_removed) + list(incoming_settings_removed)
         if holding_machine:
-            for address in list(incoming_removed) + list(incoming_settings_removed):
+            for address in withheld_here:
                 withheld.append({"machine_id": holding_machine, "address": address})
+        elif withheld_here:
+            # A snapshot with no `machine_id` cannot be attributed, so nothing
+            # can be added to `withheld` and no operator is ever prompted about
+            # content this run just took off them. Say so, on the same channel
+            # and for the same reason as the malformed-provenance warning above:
+            # a defect in one machine's file degrades that machine's reporting,
+            # it does not abort the fold for everyone.
+            provenance_warnings.append(
+                f"a machine snapshot with no machine_id held {len(withheld_here)} "
+                f"withheld address(es) (first: {withheld_here[0]}); nobody can be "
+                "prompted about them at Step 4e"
+            )
         base_files, log = _merge_snapshot_files(base_files, incoming_files, budget)
         merge_log.extend(log)
 
