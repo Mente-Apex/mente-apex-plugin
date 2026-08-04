@@ -949,12 +949,23 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
 
     budget = _LlmMergeBudget(MAX_LLM_MERGES)
     merge_log = []
+    provenance_warnings = []
     for snapshot in snapshots:
         # Per-unit provenance, when the exporting machine wrote it. A machine
         # that has not upgraded has no map, and every unit falls back to this
         # snapshot's export timestamp -- exactly today's behaviour, per machine.
+        raw_provenance = snapshot.get("provenance")
+        if raw_provenance is not None and not isinstance(raw_provenance, dict):
+            # A machine with NO provenance key is simply un-upgraded — the
+            # expected mixed-fleet path, and silent. A malformed one is a real
+            # defect worth naming, but still not fatal: falling back costs one
+            # avoidable prompt, while aborting would halt the whole fleet.
+            provenance_warnings.append(
+                f"{snapshot.get('machine_id', 'unknown')} has a malformed "
+                "provenance map; falling back to its export timestamp"
+            )
         snapshot_provenance = rejections_module.SnapshotProvenance(
-            snapshot.get("provenance", {})
+            raw_provenance if isinstance(raw_provenance, dict) else {}
         )
         incoming_files, incoming_removed = rejections_module.filter_snapshot_files(
             snapshot.get("files", {}),
@@ -1001,6 +1012,7 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
         "files": base_files,
         "merge_log": merge_log,
         "rejected": deduped_rejected_addresses,
+        "provenance_warnings": provenance_warnings,
     }
     _write(consolidated_path, json.dumps(result, indent=2, ensure_ascii=False))
     print(
@@ -1011,6 +1023,7 @@ def cmd_consolidate(repo_path: str, policy: RejectionPolicy | None = None) -> No
                 "merge_log": merge_log,
                 "conflicts": conflicts,
                 "rejected": deduped_rejected_addresses,
+                "provenance_warnings": provenance_warnings,
             }
         )
     )

@@ -287,3 +287,55 @@ def test_a_snapshot_without_provenance_falls_back_to_its_export_stamp(tmp_path, 
     capsys.readouterr()
 
     assert ADDRESS in _consolidated_files(repo)
+
+
+def test_a_snapshot_without_provenance_does_not_warn(tmp_path, capsys):
+    """The mixed-fleet path is expected, not degraded — warning here would fire
+    on every sync until the entire fleet upgrades."""
+    import config_sync
+
+    repo = tmp_path / "repo"
+    (repo / "machines").mkdir(parents=True)
+    (repo / "consolidated").mkdir(parents=True)
+    (repo / "machines" / "machine-b.json").write_text(
+        json.dumps(
+            {
+                "machine_id": "machine-b",
+                "timestamp": EXPORTED_AT,
+                "files": {"rules/a.md": "## Only\nonly body\n"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    payload = json.loads(
+        (repo / "consolidated" / "snapshot.json").read_text(encoding="utf-8")
+    )
+    assert payload["provenance_warnings"] == []
+
+
+def test_a_malformed_provenance_map_warns_and_names_the_machine(tmp_path, capsys):
+    import config_sync
+
+    repo = _repo_with(tmp_path, "not a dict")
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    payload = json.loads(
+        (repo / "consolidated" / "snapshot.json").read_text(encoding="utf-8")
+    )
+    assert any("machine-b" in warning for warning in payload["provenance_warnings"])
+
+
+def test_a_malformed_provenance_map_still_consolidates(tmp_path, capsys):
+    """Degrades, never aborts — unlike a corrupt rejection ledger."""
+    import config_sync
+
+    repo = _repo_with(tmp_path, "not a dict")
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+    assert "rules/a.md" in _consolidated_files(repo)
