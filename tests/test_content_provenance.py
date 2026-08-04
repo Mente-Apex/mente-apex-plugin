@@ -90,7 +90,7 @@ def test_the_input_is_never_mutated():
     assert json.dumps(previous, sort_keys=True) == before
 
 
-def test_a_malformed_previous_entry_is_restamped_rather_than_trusted():
+def test_a_previous_entry_whose_hash_does_not_match_is_restamped():
     previous = {"snapshot-file": {"rules/a.md": {"hash": "deadbeef"}}}
     provenance = _stamp(FILES, previous, now=NOW)
     assert provenance["snapshot-file"]["rules/a.md"]["changed_at"] == NOW
@@ -121,7 +121,7 @@ def test_a_non_dict_entry_for_an_address_restamps_that_unit():
 def test_a_matching_hash_with_no_changed_at_restamps_rather_than_carrying_a_bad_value():
     """Covers the `changed_at` extraction guard: the hash matches (so the
     function reaches past the mismatch check, unlike
-    `test_a_malformed_previous_entry_is_restamped_rather_than_trusted`, whose
+    `test_a_previous_entry_whose_hash_does_not_match_is_restamped`, whose
     `hash` does not match and returns earlier), but `changed_at` itself is
     missing -- so it must not be trusted."""
     previous = {
