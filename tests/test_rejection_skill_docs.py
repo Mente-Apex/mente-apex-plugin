@@ -67,22 +67,53 @@ SPEC = (
     / "2026-08-03-config-sync-rejection-ledger-design.md"
 )
 
+# No leading `##`, same reason as STEP_5 above. Hoisted here (rather than left
+# by the test that first needed it) because two tests in this file now scope
+# to this section.
+STEP_4E_CONVERGENCE = "Step 4e — Answer other machines' rejections"
+
 
 def test_the_convergence_limit_is_stated_rather_than_promised_away():
-    """Phase 1 converges a network rejection only once no machine still carries
-    the content: every machine exports before anyone consolidates, and an export
-    is stamped "now", so an unchanged re-export is indistinguishable from a
-    deliberate re-add. Shipping documentation that promised unconditional
-    convergence would promise behaviour the engine does not have."""
-    for document in (SKILL, SPEC):
-        text = document.read_text(encoding="utf-8")
-        assert "provenance" in text, f"{document.name} does not name the real fix"
-        assert re.search(
-            r"[Pp]hase 2", text
-        ), f"{document.name} does not say where the fix lives"
-        assert re.search(
-            r"converge", text
-        ), f"{document.name} does not state the convergence limit"
+    """Phase 1 converged a network rejection only once no machine still carried
+    the content, and phase 3's per-content provenance closed that gap -- SKILL.md's
+    Step 4e callout now says so. That is not the same as unconditional convergence,
+    though: a machine on an engine older than phase 3 has no provenance map, so it
+    keeps resurrecting rejected content until it upgrades. Shipping documentation
+    that dropped that caveat would promise behaviour a mixed fleet does not have.
+
+    The SKILL.md assertion is scoped with `extract_section`, not a whole-file
+    substring check: this test used to assert `"[Pp]hase 2"` and `"converge"`
+    appear anywhere in the file, which kept passing after phase 3 shipped only
+    because an unrelated "phase 2" (SKILL.md's rejection-*kind* split, nothing to
+    do with convergence) happened to still be in the file. A whole-file substring
+    match satisfied by an unrelated sentence is the same failure mode the
+    scoped test added alongside this one exists to avoid -- this test needs the
+    same discipline.
+
+    SPEC is a frozen design record of phase 1's bounded-convergence decision, not
+    living documentation the engine's current behaviour must match, so it keeps
+    the whole-file check: its job is only to confirm that history was not quietly
+    rewritten.
+    """
+    skill_section = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_4E_CONVERGENCE
+    )
+    assert "provenance" in skill_section, "Step 4e does not name the real fix"
+    assert re.search(
+        r"upgrade", skill_section
+    ), "Step 4e drops the caveat that an unupgraded machine still resurrects"
+    assert re.search(
+        r"converge", skill_section.lower()
+    ), "Step 4e does not state the convergence behaviour"
+
+    spec_text = SPEC.read_text(encoding="utf-8")
+    assert "provenance" in spec_text, f"{SPEC.name} does not name the real fix"
+    assert re.search(
+        r"[Pp]hase 2", spec_text
+    ), f"{SPEC.name} does not say where the fix lives"
+    assert re.search(
+        r"converge", spec_text
+    ), f"{SPEC.name} does not state the convergence limit"
 
 
 def test_step_4e_hands_the_operator_a_usable_rejection_id():
@@ -149,9 +180,6 @@ def test_the_documented_kinds_match_the_engine():
 def test_the_skill_says_rejection_does_not_delete_an_existing_hook():
     text = SKILL.read_text(encoding="utf-8")
     assert "hooks-prune" in text
-
-
-STEP_4E_CONVERGENCE = "Step 4e — Answer other machines' rejections"
 
 
 def test_the_skill_documents_that_convergence_no_longer_needs_resolve_rejection():
