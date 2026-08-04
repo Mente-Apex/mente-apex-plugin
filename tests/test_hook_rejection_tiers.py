@@ -189,3 +189,85 @@ def test_identify_refuses_a_site_that_is_not_among_the_sites_given():
     addressor = HookRegistrationAddressor()
     with pytest.raises(ValueError):
         addressor.identify(OPAQUE, [MARKED, UNMARKED])
+
+
+def test_matches_recomputes_only_the_recorded_tier():
+    addressor = HookRegistrationAddressor()
+    address, tier = addressor.identify(UNMARKED, [UNMARKED])
+    relocated = HookSite(
+        event="PreToolUse",
+        group_index=7,
+        hook_index=3,
+        matcher="Bash",
+        command="/new/uv/bin/python /completely/different/enforce_gates.py",
+    )
+    assert addressor.matches(address, tier, relocated)
+
+
+def test_a_tier_2_address_does_not_match_a_different_script():
+    addressor = HookRegistrationAddressor()
+    address, tier = addressor.identify(UNMARKED, [UNMARKED])
+    other = HookSite(
+        event="PreToolUse",
+        group_index=0,
+        hook_index=0,
+        matcher="Bash",
+        command="python3 /somewhere/other_script.py",
+    )
+    assert not addressor.matches(address, tier, other)
+
+
+def test_a_tier_2_address_does_not_match_under_a_different_matcher():
+    addressor = HookRegistrationAddressor()
+    address, tier = addressor.identify(UNMARKED, [UNMARKED])
+    elsewhere = HookSite(
+        event="PreToolUse",
+        group_index=0,
+        hook_index=0,
+        matcher="Write",
+        command="python3 /somewhere/enforce_gates.py",
+    )
+    assert not addressor.matches(address, tier, elsewhere)
+
+
+def test_a_tier_3_address_stops_matching_once_the_command_changes():
+    """Deliberate: tier 3 is the exact-match floor. The operator rejected one
+    specific command, so a changed command is a different registration."""
+    addressor = HookRegistrationAddressor()
+    address, tier = addressor.identify(OPAQUE, [OPAQUE])
+    changed = HookSite(
+        event="SessionStart",
+        group_index=0,
+        hook_index=0,
+        matcher="",
+        command="echo hello && exit 1",
+    )
+    assert addressor.matches(address, tier, OPAQUE)
+    assert not addressor.matches(address, tier, changed)
+
+
+def test_a_tier_1_address_survives_everything_but_losing_the_marker():
+    addressor = HookRegistrationAddressor()
+    address, tier = addressor.identify(MARKED, [MARKED])
+    moved = HookSite(
+        event="Stop",
+        group_index=4,
+        hook_index=1,
+        matcher="Other",
+        command="/anything/at/all.sh  # config-sync:abc123def456",
+    )
+    unmarked_now = HookSite(
+        event="PreToolUse",
+        group_index=0,
+        hook_index=0,
+        matcher="Bash",
+        command="/abs/bin/py /abs/scripts/enforce_gates.py",
+    )
+    assert addressor.matches(address, tier, moved)
+    assert not addressor.matches(address, tier, unmarked_now)
+
+
+def test_matching_a_tier_that_cannot_apply_is_false_not_an_error():
+    addressor = HookRegistrationAddressor()
+    address, tier = addressor.identify(UNMARKED, [UNMARKED])
+    assert not addressor.matches(address, tier, OPAQUE)
