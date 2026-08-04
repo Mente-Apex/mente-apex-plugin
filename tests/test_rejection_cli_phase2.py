@@ -93,10 +93,26 @@ def test_rejecting_a_plugin_records_its_id(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["address"] == "open-memory@open-memory"
 
 
-def test_a_plugin_that_is_not_enabled_anywhere_is_refused(tmp_path):
+def test_a_proposed_but_not_yet_enabled_plugin_can_be_rejected(tmp_path, capsys):
+    """The plugin an operator most wants to decline: one a repo manifest PROPOSES
+    but that is not in `enabledPlugins` yet. `filter_plugin_actions` enforces
+    against the manifests, so validating against `enabledPlugins` alone made
+    exactly this case unrejectable."""
     repo = _repo(tmp_path)
-    with pytest.raises(config_sync.UnknownRejectionTargetError):
+    (repo / "plugins").mkdir()
+    (repo / "plugins" / "machine-a.json").write_text(
+        json.dumps({"plugins": {"keep-me@open-memory": {"version": "1.0"}}}),
+        encoding="utf-8",
+    )
+    config_sync.cmd_reject(str(repo), "plugin", "keep-me@open-memory")
+    assert json.loads(capsys.readouterr().out)["address"] == "keep-me@open-memory"
+
+
+def test_a_plugin_in_neither_the_manifests_nor_enabled_is_refused(tmp_path):
+    repo = _repo(tmp_path)
+    with pytest.raises(config_sync.UnknownRejectionTargetError) as refusal:
         config_sync.cmd_reject(str(repo), "plugin", "never-heard-of@it")
+    assert "open-memory@open-memory" in str(refusal.value)
 
 
 def test_rejecting_a_hook_records_its_address_and_tier(tmp_path, capsys, claude_home):
@@ -140,6 +156,7 @@ def test_a_hook_rejection_without_an_event_is_refused(tmp_path, claude_home):
 
 def test_the_new_options_are_in_the_known_vocabulary(tmp_path):
     """Phase 1 made an unrecognised flag fail closed — these must be recognised."""
+    assert {"--key", "--event", "--matcher"} <= set(config_sync.KNOWN_REJECT_OPTIONS)
     repo = _repo(tmp_path)
     config_sync.cmd_reject(str(repo), "settings-key", "-", "--key", "model")
 

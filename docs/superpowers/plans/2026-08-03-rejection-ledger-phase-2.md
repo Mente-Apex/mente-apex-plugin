@@ -1581,7 +1581,7 @@ Each kind resolves against real state and **errors when nothing matches**, exact
 | Kind | Subject | Extra options | Resolved against |
 |---|---|---|---|
 | `settings-key` | ignored | `--key a --key b …` (repeatable, in order) | the `settings.json` blob in the consolidated snapshot |
-| `plugin` | the plugin id | none | `enabledPlugins` in that same blob |
+| `plugin` | the plugin id | none | the UNION of the `plugins/*.json` manifest keys and `enabledPlugins` in that same blob (amended after the whole-branch review: validating against `enabledPlugins` alone made a *proposed* plugin — the one an operator most wants to decline — unrejectable, since `filter_plugin_actions` enforces against the manifests) |
 | `hook-registration` | the script basename, or `#<sha1>` | `--event`, `--matcher` | the live `settings.json` hooks block |
 
 `hook-registration` addresses the **live** settings, not the snapshot: the operator is rejecting a registration they can see on this machine, and the tier resolution needs the whole local hooks block to detect ambiguity.
