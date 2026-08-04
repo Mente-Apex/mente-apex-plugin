@@ -254,3 +254,68 @@ def test_the_skill_documents_that_convergence_no_longer_needs_resolve_rejection(
     )
     assert "resolve-rejection" in section
     assert "converge" in section.lower()
+
+
+STEP_1 = "Step 1 — Scan for secrets, then export and push local state"
+
+
+def test_step_1_surfaces_snapshot_warnings_not_only_marketplace_ones():
+    """`SnapshotPropagator.export` routes provenance degradation through
+    `ExportResult.warnings`, which `propagate-export` prints under the
+    `snapshot` key. The runbook's extractor read only `marketplace`, so the new
+    warnings landed as unremarked keys in a JSON dump — most of the way back to
+    the silent fallback spec §9 exists to prevent."""
+    step_1 = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_1
+    )
+    assert "'marketplace'" in step_1
+    assert "'snapshot'" in step_1, "Step 1 never extracts the snapshot warnings"
+
+
+def test_the_extracted_warning_keys_match_the_propagators_that_emit_them():
+    """The extractor names propagators by their `name` attribute, which is what
+    `cmd_propagate_export` keys the payload on. A rename on either side must not
+    silently stop surfacing a warning."""
+    import config_sync_propagators as propagators
+
+    step_1 = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_1
+    )
+    assert f"'{propagators.SnapshotPropagator.name}'" in step_1
+
+
+def test_step_3_tells_the_agent_to_relay_provenance_warnings():
+    """`cmd_consolidate` prints `provenance_warnings` beside `rejected` and
+    `withheld`. A warning nobody is told to read is not a warning."""
+    step_3 = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_3
+    )
+    assert "provenance_warnings" in step_3
+
+
+def test_step_4e_does_not_claim_a_withheld_whole_file_was_already_rewritten():
+    """`apply` never deletes, and a whole-file withholding leaves no key in the
+    consolidated snapshot at all, so nothing rewrites the file — the local copy
+    is untouched. The `remove` paragraph said the file "has already been
+    rewritten without it" for every kind, contradicting the callout below it."""
+    step_4e = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_4E_CONVERGENCE
+    )
+    remove_paragraph = step_4e.split("`keep` does not edit")[0]
+    assert "snapshot-file" in remove_paragraph, "the `remove` text is not split by kind"
+    assert re.search(
+        r"untouched on disk", remove_paragraph
+    ), "the `remove` text still claims a withheld whole file was rewritten"
+
+
+def test_step_4e_says_the_rejecting_machine_is_not_prompted_either():
+    """`SnapshotPropagator._report_withholdings` skips a record this machine
+    authored. An operator on the rejecting machine would otherwise expect a
+    prompt about their own network rejection and never see one."""
+    step_4e = mutation_gate_prose.extract_section(
+        SKILL.read_text(encoding="utf-8"), STEP_4E_CONVERGENCE
+    )
+    assert "unreject" in step_4e
+    assert re.search(
+        r"recorded the rejection|that ran `reject`", step_4e
+    ), "Step 4e does not say the rejecting machine is not asked"

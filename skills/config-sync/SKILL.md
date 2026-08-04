@@ -120,22 +120,30 @@ py "$ENGINE" reconcile
 EXPORT_OUT=$(py "$ENGINE" propagate-export "$REPO")
 printf '%s\n' "$EXPORT_OUT"
 
-# Surface plugin-provenance warnings: plugins that can't reach your other machines
-# because their marketplace isn't a shareable git/GitHub remote.
+# Surface export warnings:
+#   marketplace — plugins that can't reach your other machines because their
+#                 marketplace isn't a shareable git/GitHub remote.
+#   snapshot    — content provenance degraded (this machine's previous snapshot
+#                 was unreadable or malformed), so every unit was re-stamped as
+#                 now and content another machine rejected may come back.
 printf '%s\n' "$EXPORT_OUT" | py -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
 except (json.JSONDecodeError, ValueError):
     data = {}
-for warning in data.get('marketplace', {}).get('warnings', []):
-    print('⚠ ' + warning)
+for section in ('marketplace', 'snapshot'):
+    for warning in data.get(section, {}).get('warnings', []):
+        print('⚠ ' + warning)
 "
 ```
 
-> If any `⚠` lines appeared, tell the user those plugins won't sync to their other
-> machines and suggest publishing each to a GitHub marketplace. This is advisory
-> only — **do not** stop the sync; continue to the next step.
+> If any `⚠` lines appeared, relay them. A **marketplace** warning means those
+> plugins won't sync to their other machines — suggest publishing each to a
+> GitHub marketplace. A **snapshot** warning means this export could not read its
+> own previous provenance, so a rejection another machine recorded may be
+> re-proposed at Step 4e; tell the user which file is unreadable. Both are
+> advisory — **do not** stop the sync; continue to the next step.
 >
 > If `propagate-export` reported any `content-bundle.tombstoned` entries, tell the
 > user which skills/agents were retired and will be proposed for removal on other
@@ -186,6 +194,15 @@ files get combined intelligently.
 py "$ENGINE" consolidate "$REPO"
 ```
 
+> **Relay any `provenance_warnings`.** `consolidate` prints a
+> `provenance_warnings` list beside `rejected` and `withheld`. Each line names a
+> machine whose `provenance` map is malformed, so that machine's content fell
+> back to its export timestamp and a rejection it should have converged on may
+> be re-proposed at Step 4e instead. Prefix each with `⚠` and tell the user
+> which machine to re-export. Advisory only — **do not** stop the sync. An
+> empty list is the normal case; a machine that has simply not upgraded yet
+> produces nothing here by design.
+>
 > **Bundle deletions propagate; config deletions need `reject`.** Skill/agent
 > **bundles** carry deletion tombstones. **Snapshot config** (CLAUDE.md,
 > `memory/`, `rules/`) is union-only, so a deletion alone is *resurrected* from
@@ -425,7 +442,13 @@ content the consolidated snapshot still carried, which this apply filtered out,
 and content `consolidate` withheld from **this machine's own snapshot** before it
 ever reached the consolidated one. The second kind travels in the consolidated
 snapshot's `withheld` key, attributed to the machine that held it, so only that
-machine is asked. Each entry is the full ledger record, e.g.
+machine is asked — and **not even that machine, if it is the one that recorded
+the rejection**. A rejection withholds and never deletes, so the rejecting
+machine is still holding the content it just rejected; asking its own operator
+to reconsider on their very next apply would be noise. If you are on the machine
+that ran `reject` and expected a prompt about your own network rejection, that
+is why there is none: `unreject` is the route back. Each entry is the full
+ledger record, e.g.
 
 ```json
 {
@@ -456,9 +479,17 @@ py "$ENGINE" resolve-rejection "$REPO" <id> keep     # overrule: it returns for 
 stops writing that content from the next apply onward. Where the content was
 still in the consolidated snapshot, it does not erase the copy already on disk in
 this run — the next sync's apply rewrites the file without it, and only the sync
-after that exports a copy that no longer carries it. Where `consolidate` withheld
-it upstream, the file has already been rewritten without it, and `remove` is only
-the record that keeps it gone if another machine later revives it.
+after that exports a copy that no longer carries it.
+
+Where `consolidate` withheld it upstream, what is already on disk depends on the
+kind, exactly as the callout below sets out. For a `snapshot-section` or a
+`settings-key` the container file still reaches apply, so `CLAUDE.md` or
+`settings.json` has already been rewritten without the unit and `remove` is only
+the record that keeps it gone if another machine later revives it. For a
+`snapshot-file` the consolidated snapshot has **no key** for the file at all, so
+apply wrote nothing and this machine's copy is untouched on disk — `remove` is
+what stops the next export re-publishing it, and the file itself stays until you
+delete it yourself. A rejection withholds; it never deletes.
 
 `keep` does not edit the rejecting machine's file. It records this machine's own
 newer revival, which wins on timestamp — so one machine can always overrule the
