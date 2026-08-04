@@ -189,3 +189,96 @@ def test_settings_keys_honour_provenance_too():
     )
     assert "model" not in json.loads(kept["settings.json"])
     assert removed == [address]
+
+
+def _repo_with(tmp_path, provenance, content="## Only\nonly body\n"):
+    repo = tmp_path / "repo"
+    (repo / "machines").mkdir(parents=True)
+    (repo / "consolidated").mkdir(parents=True)
+    (repo / "machines" / "machine-b.json").write_text(
+        json.dumps(
+            {
+                "machine_id": "machine-b",
+                "timestamp": EXPORTED_AT,
+                "files": {"rules/a.md": content},
+                "provenance": provenance,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return repo
+
+
+def _consolidated_files(repo):
+    payload = json.loads(
+        (repo / "consolidated" / "snapshot.json").read_text(encoding="utf-8")
+    )
+    return payload["files"]
+
+
+def _record_network_rejection(repo):
+    from config_sync_rejections import SharedRejectionStore
+
+    SharedRejectionStore(repo, "machine-a").record(
+        RejectionRecord(
+            id=rejection_id_of("snapshot-file", ADDRESS),
+            kind="snapshot-file",
+            address=ADDRESS,
+            scope="network",
+            rejected_at=REJECTED_AT,
+            machine_id="machine-a",
+        )
+    )
+
+
+def test_consolidate_honours_a_snapshots_provenance(tmp_path, capsys):
+    import config_sync
+
+    repo = _repo_with(
+        tmp_path, {"snapshot-file": {ADDRESS: {"changed_at": OLDER, "hash": "x"}}}
+    )
+    _record_network_rejection(repo)
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    assert ADDRESS not in _consolidated_files(repo)
+
+
+def test_consolidate_lets_a_genuine_readd_through(tmp_path, capsys):
+    import config_sync
+
+    repo = _repo_with(
+        tmp_path, {"snapshot-file": {ADDRESS: {"changed_at": NEWER, "hash": "x"}}}
+    )
+    _record_network_rejection(repo)
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    assert ADDRESS in _consolidated_files(repo)
+
+
+def test_a_snapshot_without_provenance_falls_back_to_its_export_stamp(tmp_path, capsys):
+    """Mixed fleet: an un-upgraded machine behaves exactly as it does today."""
+    import config_sync
+
+    repo = tmp_path / "repo"
+    (repo / "machines").mkdir(parents=True)
+    (repo / "consolidated").mkdir(parents=True)
+    (repo / "machines" / "machine-b.json").write_text(
+        json.dumps(
+            {
+                "machine_id": "machine-b",
+                "timestamp": EXPORTED_AT,
+                "files": {"rules/a.md": "## Only\nonly body\n"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    _record_network_rejection(repo)
+
+    config_sync.cmd_consolidate(str(repo))
+    capsys.readouterr()
+
+    assert ADDRESS in _consolidated_files(repo)
