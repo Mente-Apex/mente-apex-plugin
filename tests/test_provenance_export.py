@@ -1,10 +1,9 @@
 """Export records when each unit last changed, using its own previous snapshot."""
 
+import contextlib
 import json
 
 from config_sync_propagators import SnapshotPropagator, SyncContext
-
-MACHINE_FILE = "machines/{machine_id}.json"
 
 
 def _context(tmp_path):
@@ -117,3 +116,114 @@ def test_a_previous_snapshot_with_null_provenance_warns(tmp_path):
 
     result = SnapshotPropagator().export(context)
     assert any("provenance" in warning for warning in result.warnings)
+
+
+def test_a_previous_snapshot_that_is_not_a_json_object_warns(tmp_path):
+    """A snapshot whose JSON top level is a list or a scalar is not a shape
+    export ever writes, so it is a defect rather than an un-upgraded machine --
+    and an unpinned warn path is how a warning silently disappears in a later
+    refactor."""
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    machine_file = list((context.repo_dir / "machines").glob("*.json"))[0]
+    machine_file.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
+
+    result = SnapshotPropagator().export(context)
+    assert any("provenance" in warning for warning in result.warnings)
+
+
+def test_a_previous_snapshot_that_is_not_a_json_object_restamps(tmp_path):
+    """Degrades rather than aborting, like every other malformed shape here."""
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    machine_file = list((context.repo_dir / "machines").glob("*.json"))[0]
+    machine_file.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
+
+    SnapshotPropagator().export(context)
+    assert _exported(context)["provenance"]["snapshot-file"]["CLAUDE.md"]["changed_at"]
+
+
+# ---------------------------------------------------------------------------
+# The snapshot is written atomically: consolidate reads every machines/*.json
+# with a bare json.loads, so a half-written one aborts the whole network.
+# ---------------------------------------------------------------------------
+
+
+def test_an_interrupted_export_leaves_the_previous_snapshot_intact(
+    tmp_path, monkeypatch
+):
+    """A crash between writing the bytes and publishing them must not destroy
+    the snapshot already on disk -- it is the last live source a
+    `resolve-rejection ... keep` can revive from, and the file every other
+    machine's consolidate parses."""
+    import config_sync_propagators as propagators
+
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    machine_file = list((context.repo_dir / "machines").glob("*.json"))[0]
+    before = machine_file.read_text(encoding="utf-8")
+
+    def _explode(source, destination):
+        raise OSError("interrupted")
+
+    monkeypatch.setattr(propagators.os, "replace", _explode)
+    (context.claude_dir / "CLAUDE.md").write_text("## Alpha\nNEW\n", encoding="utf-8")
+
+    # Tolerated, not asserted: whether the interruption surfaces as an exception
+    # is not the claim. The claim is that the published file survives it, which
+    # is what fails against a straight `write_text` onto the live path.
+    with contextlib.suppress(OSError):
+        SnapshotPropagator().export(context)
+
+    assert machine_file.read_text(encoding="utf-8") == before
+    assert "NEW" not in machine_file.read_text(encoding="utf-8")
+
+
+def test_the_snapshot_is_published_through_an_atomic_replace(tmp_path, monkeypatch):
+    """Pins the mechanism, not just the outcome: a future rewrite that goes back
+    to writing the live path directly has to fail here."""
+    import config_sync_propagators as propagators
+
+    replaced = []
+    monkeypatch.setattr(
+        propagators.os,
+        "replace",
+        lambda source, destination: replaced.append((str(source), str(destination))),
+    )
+
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+
+    assert len(replaced) == 1
+    source, destination = replaced[0]
+    assert source.endswith(".json.tmp")
+    assert destination.endswith(".json")
+
+
+def test_a_completed_export_leaves_no_temp_file_behind(tmp_path):
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    assert list((context.repo_dir / "machines").glob("*.tmp")) == []
+
+
+def test_a_leftover_temp_file_is_not_mistaken_for_a_machine_snapshot(tmp_path, capsys):
+    """The temp name ends in `.json.tmp`, not `.json`: a crash between write and
+    replace must not leave a file `cmd_consolidate`'s `machines/*.json` glob
+    folds in as if it were a real machine."""
+    import config_sync
+
+    context = _context(tmp_path)
+    SnapshotPropagator().export(context)
+    machines_dir = context.repo_dir / "machines"
+    (machines_dir / "half-written.json.tmp").write_text("{truncated", encoding="utf-8")
+    (context.repo_dir / "consolidated").mkdir(parents=True, exist_ok=True)
+
+    config_sync.cmd_consolidate(str(context.repo_dir))
+    capsys.readouterr()
+
+    consolidated = json.loads(
+        (context.repo_dir / "consolidated" / "snapshot.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "CLAUDE.md" in consolidated["files"]
