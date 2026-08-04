@@ -201,6 +201,9 @@ py "$ENGINE" consolidate "$REPO"
 > `remove` at Step 4e on each such machine is what finishes the job. Telling an
 > unchanged re-export apart from a deliberate re-add needs per-content
 > provenance, which is Phase 2 and not in the engine today.
+>
+> `settings.json` keys are rejectable individually (see Step 4 below), so
+> retiring one setting no longer means rejecting the whole file.
 
 ## Step 4 — Backup, then apply through the propagator seam
 
@@ -246,11 +249,37 @@ offer a third answer beyond apply/skip: reject it durably. Ask with
 **AskUserQuestion** whether the rejection is for this machine only or for the
 whole network, then record it:
 
+Phase 1 kinds address the snapshot; phase 2 adds the rest of what syncs:
+
 ```bash
 # scope is `local` (this machine only) or `network` (tombstone for everyone)
+# a section of a markdown file, or a whole file
 py "$ENGINE" reject "$REPO" snapshot-section CLAUDE.md --section "## Memory protocol" --scope network
 py "$ENGINE" reject "$REPO" snapshot-file rules/unwanted.md --scope local
+
+# one key inside settings.json -- --key is repeatable and gives the path in order
+py "$ENGINE" reject "$REPO" settings-key - --key permissions --key defaultMode
+
+# a marketplace plugin, by the id plugins-plan uses
+py "$ENGINE" reject "$REPO" plugin open-memory@open-memory
+
+# one hook registration -- a script basename is only unique within an
+# event and matcher, so both are required
+py "$ENGINE" reject "$REPO" hook-registration enforce_gates.py \
+  --event PreToolUse --matcher Bash
 ```
+
+A hook rejection records the **identity tier** it resolved to. Tier 2 (event +
+matcher + script name) survives an interpreter change or a relocation, which is
+what stops a reinstalled hook coming back under a new identity. When two
+registrations share an event, a matcher and a script name, resolution falls to
+tier 3 — an exact match on the command — because at that point you are rejecting
+one specific copy.
+
+> **Rejecting a hook stops it being wired; it does not unregister it.**
+> config-sync only ever edits its own marked entries, so a registration already
+> in `settings.json` stays until `hooks-prune` removes it. The two compose:
+> `reject` stops it coming back, `hooks-prune` takes out what is already there.
 
 A rejection is timestamped: content re-added *later* than the rejection is
 proposed again as fresh intent. Review or undo with `py "$ENGINE" rejections "$REPO"`
