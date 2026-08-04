@@ -191,19 +191,24 @@ def test_settings_keys_honour_provenance_too():
     assert removed == [address]
 
 
-def _repo_with(tmp_path, provenance, content="## Only\nonly body\n"):
+OMIT_PROVENANCE = object()
+
+
+def _repo_with(
+    tmp_path, provenance, content="## Only\nonly body\n", timestamp=EXPORTED_AT
+):
     repo = tmp_path / "repo"
     (repo / "machines").mkdir(parents=True)
     (repo / "consolidated").mkdir(parents=True)
+    snapshot = {
+        "machine_id": "machine-b",
+        "timestamp": timestamp,
+        "files": {"rules/a.md": content},
+    }
+    if provenance is not OMIT_PROVENANCE:
+        snapshot["provenance"] = provenance
     (repo / "machines" / "machine-b.json").write_text(
-        json.dumps(
-            {
-                "machine_id": "machine-b",
-                "timestamp": EXPORTED_AT,
-                "files": {"rules/a.md": content},
-                "provenance": provenance,
-            }
-        ),
+        json.dumps(snapshot),
         encoding="utf-8",
     )
     return repo
@@ -246,10 +251,17 @@ def test_consolidate_honours_a_snapshots_provenance(tmp_path, capsys):
 
 
 def test_consolidate_lets_a_genuine_readd_through(tmp_path, capsys):
+    """The source timestamp is STALE (older than REJECTED_AT) so the two
+    paths diverge: ignoring provenance would suppress on the stale fallback,
+    honouring it keeps on the fresher recorded `changed_at`. See
+    test_genuinely_readded_content_overrides_the_rejection for the unit-level
+    version of the same discrimination."""
     import config_sync
 
     repo = _repo_with(
-        tmp_path, {"snapshot-file": {ADDRESS: {"changed_at": NEWER, "hash": "x"}}}
+        tmp_path,
+        {"snapshot-file": {ADDRESS: {"changed_at": NEWER, "hash": "x"}}},
+        timestamp=STALE_EXPORT,
     )
     _record_network_rejection(repo)
 
@@ -260,22 +272,15 @@ def test_consolidate_lets_a_genuine_readd_through(tmp_path, capsys):
 
 
 def test_a_snapshot_without_provenance_falls_back_to_its_export_stamp(tmp_path, capsys):
-    """Mixed fleet: an un-upgraded machine behaves exactly as it does today."""
+    """Mixed fleet: an un-upgraded machine behaves exactly as it does today.
+
+    `OMIT_PROVENANCE` must leave the `provenance` key genuinely absent from
+    the written snapshot, not present-and-null: Task 8 makes that distinction
+    load-bearing (a missing key is a silent un-upgraded machine, a malformed
+    value warns)."""
     import config_sync
 
-    repo = tmp_path / "repo"
-    (repo / "machines").mkdir(parents=True)
-    (repo / "consolidated").mkdir(parents=True)
-    (repo / "machines" / "machine-b.json").write_text(
-        json.dumps(
-            {
-                "machine_id": "machine-b",
-                "timestamp": EXPORTED_AT,
-                "files": {"rules/a.md": "## Only\nonly body\n"},
-            }
-        ),
-        encoding="utf-8",
-    )
+    repo = _repo_with(tmp_path, OMIT_PROVENANCE)
     _record_network_rejection(repo)
 
     config_sync.cmd_consolidate(str(repo))
