@@ -234,6 +234,42 @@ class NullRejectionPolicy:
         return []
 
 
+class NullProvenance:
+    """No per-unit provenance: every unit answers with the caller's fallback.
+
+    The default for all three filters, so every pre-provenance caller keeps its
+    exact behaviour and the module never branches on a None provenance.
+    """
+
+    def timestamp_for(self, kind: str, address: str, fallback: str) -> str:
+        return fallback
+
+
+class SnapshotProvenance:
+    """Per-unit `changed_at` read from one machine snapshot's `provenance` map.
+
+    A unit with no usable entry answers with the fallback -- which is the
+    snapshot's own export timestamp, i.e. exactly today's behaviour. That one
+    rule covers both a machine that has not upgraded yet (no map at all) and a
+    map that is present but malformed, deliberately: provenance is an
+    optimisation over a fallback that is already correct-if-conservative, so it
+    degrades rather than aborting. A corrupt REJECTION ledger still raises.
+    """
+
+    def __init__(self, provenance_map: dict):
+        self._map = provenance_map if isinstance(provenance_map, dict) else {}
+
+    def timestamp_for(self, kind: str, address: str, fallback: str) -> str:
+        by_address = self._map.get(kind)
+        if not isinstance(by_address, dict):
+            return fallback
+        entry = by_address.get(address)
+        if not isinstance(entry, dict):
+            return fallback
+        changed_at = entry.get("changed_at")
+        return changed_at if isinstance(changed_at, str) and changed_at else fallback
+
+
 class CompositeRejectionPolicy:
     """Fans a query across stores. Callers cannot tell which store answered.
 
@@ -388,7 +424,9 @@ def records_for_addresses(policy, addresses: list) -> list[RejectionRecord]:
     return resolved
 
 
-def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
+def filter_snapshot_files(
+    files: dict, policy, source_timestamp: str, provenance=None
+) -> tuple:
     """Subtract rejected files and sections from a snapshot `files` mapping.
 
     Returns `(kept_files, removed_addresses)`. A file whose every section is
@@ -407,6 +445,7 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
     the input; the only fix that is exact for every untouched file is to never
     rewrite what nothing rejected.
     """
+    provenance = provenance if provenance is not None else NullProvenance()
     file_addressor = SnapshotFileAddressor()
     section_addressor = SnapshotSectionAddressor()
 
@@ -422,7 +461,12 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
         file_target = RejectionTarget(
             kind=file_addressor.kind, address=file_addressor.identify(file_key)
         )
-        if policy.is_rejected(file_target, source_timestamp):
+        if policy.is_rejected(
+            file_target,
+            provenance.timestamp_for(
+                file_target.kind, file_target.address, source_timestamp
+            ),
+        ):
             removed.append(file_target.address)
             continue
 
@@ -437,7 +481,12 @@ def filter_snapshot_files(files: dict, policy, source_timestamp: str) -> tuple:
             section_target = RejectionTarget(
                 kind=section_addressor.kind, address=unit.address
             )
-            if policy.is_rejected(section_target, source_timestamp):
+            if policy.is_rejected(
+                section_target,
+                provenance.timestamp_for(
+                    section_target.kind, section_target.address, source_timestamp
+                ),
+            ):
                 removed.append(section_target.address)
                 any_section_was_rejected = True
                 continue
@@ -496,7 +545,9 @@ def addresses_of_interest(policy, kind: str):
     return {record.address for record in records if record.kind == kind}
 
 
-def filter_settings_keys(settings: dict, policy, source_timestamp: str) -> tuple:
+def filter_settings_keys(
+    settings: dict, policy, source_timestamp: str, provenance=None
+) -> tuple:
     """Subtract rejected key paths from a parsed settings dict.
 
     Returns `(kept_settings, removed_addresses)`. Pure: the input is never
@@ -504,6 +555,7 @@ def filter_settings_keys(settings: dict, policy, source_timestamp: str) -> tuple
     it to preview. A rejected subtree is dropped whole — rejecting `permissions`
     means the operator does not want any of it.
     """
+    provenance = provenance if provenance is not None else NullProvenance()
     addressor = SettingsKeyAddressor()
     removed: list = []
     # Bound once, before the walk. See `addresses_of_interest`: without it this
@@ -522,7 +574,10 @@ def filter_settings_keys(settings: dict, policy, source_timestamp: str) -> tuple
                 kept[key] = prune(value, key_path)
                 continue
             target = RejectionTarget(kind=addressor.kind, address=address)
-            if policy.is_rejected(target, source_timestamp):
+            if policy.is_rejected(
+                target,
+                provenance.timestamp_for(target.kind, target.address, source_timestamp),
+            ):
                 removed.append(target.address)
                 continue
             kept[key] = prune(value, key_path)
@@ -531,7 +586,9 @@ def filter_settings_keys(settings: dict, policy, source_timestamp: str) -> tuple
     return prune(settings, ()), removed
 
 
-def filter_settings_blob(files: dict, policy, source_timestamp: str) -> tuple:
+def filter_settings_blob(
+    files: dict, policy, source_timestamp: str, provenance=None
+) -> tuple:
     """Apply `filter_settings_keys` to the `settings.json` entry of a snapshot
     `files` mapping, which carries it as a JSON *string*.
 
@@ -555,7 +612,9 @@ def filter_settings_blob(files: dict, policy, source_timestamp: str) -> tuple:
     if not isinstance(parsed, dict):
         return files, []
 
-    kept_settings, removed = filter_settings_keys(parsed, policy, source_timestamp)
+    kept_settings, removed = filter_settings_keys(
+        parsed, policy, source_timestamp, provenance
+    )
     if not removed:
         return files, []
 
