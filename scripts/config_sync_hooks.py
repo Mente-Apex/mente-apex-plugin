@@ -369,6 +369,7 @@ def plan_hook_wiring(
     settings: dict,
     localize=identity,
     checker: CommandChecker | None = None,
+    policy=None,
 ) -> HookPlan:
     """Pure planner: register a declared hook that is not yet marked, and update
     one that is marked but no longer matches what the repo declares.
@@ -391,9 +392,45 @@ def plan_hook_wiring(
     deleted by prune as a dead target, and wired again by the next apply — a flap
     with no stable state. Declining to wire it breaks the cycle. Injected and
     defaulted to a null object, so the planner itself stays pure.
+
+    `policy` is the rejection ledger, injected and defaulted to a null object so
+    every existing caller is unaffected. A rejected declaration is never
+    registered — that is what stops it being proposed on every sync. It is NOT
+    unregistered if already present: config-sync only edits its own marked
+    entries, and removing a registration is `hooks-prune`'s job. The two compose.
     """
+    # Deferred imports: siblings, not a package.
+    import config_sync_rejection_hooks as rejection_hooks_module
+    import config_sync_rejections as rejections_module
+
+    policy = policy if policy is not None else rejections_module.NullRejectionPolicy()
+
     plan = HookPlan()
     declarations = list(declarations)
+
+    addressor = rejection_hooks_module.HookRegistrationAddressor()
+    kept_declarations = []
+    for declaration in declarations:
+        # A declaration has no position in the block, so its sentinel indices say
+        # "proposed, not present". Localized because this planner works in
+        # localized space -- see the note on `localize` above.
+        proposed = HookSite(
+            event=declaration.event,
+            group_index=-1,
+            hook_index=-1,
+            matcher=declaration.matcher,
+            command=localize(declaration.command),
+        )
+        rejected_record = _matching_hook_rejection(policy, addressor, proposed)
+        if rejected_record is not None:
+            plan.skipped.append(
+                f"{declaration.hook_id}: rejected in the config-sync ledger "
+                f"({rejected_record.address})"
+            )
+            continue
+        kept_declarations.append(declaration)
+    declarations = kept_declarations
+
     checker = checker or AssumeRunnable()
 
     # Two declarations that derive the same identity would take turns
@@ -493,6 +530,37 @@ def plan_hook_wiring(
             )
         )
     return plan
+
+
+def _matching_hook_rejection(policy, addressor, site):
+    """The first active hook-registration rejection whose address matches `site`
+    at its own recorded tier, or None.
+
+    Walks records rather than calling `policy.is_rejected`, because a hook
+    address alone is not enough to ask that question -- the tier that produced it
+    is part of the identity, and only the record knows it.
+    """
+    import config_sync_rejections as rejections_module
+
+    for record in policy.all():
+        if record.kind != "hook-registration" or record.revives is not None:
+            continue
+        # fmt: off
+        # PEP 758 lets black strip these parens (Python 3.14). Kept explicit: the
+        # unparenthesized form reads as a Python 2 `except X, name:` bind.
+        try:
+            tier = int(record.tier)
+        except (TypeError, ValueError):
+            continue
+        # fmt: on
+        if not addressor.matches(record.address, tier, site):
+            continue
+        target = rejections_module.RejectionTarget(
+            kind=record.kind, address=record.address
+        )
+        if policy.is_rejected(target, ""):
+            return record
+    return None
 
 
 def _timeout_of(settings: dict, site: HookSite):
