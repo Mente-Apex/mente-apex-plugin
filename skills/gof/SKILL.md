@@ -13,7 +13,7 @@ description: >
   detection, or any mention of creational / structural / behavioral patterns.
 user-invocable: true
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # gof — GoF pattern analysis & guided refactor
@@ -37,6 +37,18 @@ also pre-authorize in the same breath ("apply everything Critical", "doc
 only", "don't ask, use light verification"). **Pre-authorizations count as
 the human review for whatever they cover — don't re-ask.** This also makes
 the skill usable non-interactively.
+
+### When the scope is a pasted snippet with no path behind it
+
+The full workflow is the default and needs a real tree: Phase 0 inventories the
+codebase and takes a test baseline, and the report is the artifact the gate reads.
+A snippet pasted inline has neither — there is nothing to inventory, no suite to
+baseline, and no repo to write `docs/reports/gof/` into. **Answer it in chat**:
+the same two sub-passes against the same rubric, with the same "Don't suggest when"
+restraint and the same overlap cross-reference, but no report and no apply path.
+Say which mode you took and why in the first line, so a one-file answer is never
+mistaken for a skipped workflow. **Ambiguity resolves toward the full workflow** —
+if the scope names a path that exists on disk, run it, however short the file.
 
 ## Analyzer lens
 

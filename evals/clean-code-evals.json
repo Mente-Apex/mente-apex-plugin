@@ -1,5 +1,8 @@
 {
   "skill_name": "clean-code",
+  "reviewed_against_skill_versions": {
+    "clean-code": "0.2.0"
+  },
   "evals": [
     {
       "id": 1,

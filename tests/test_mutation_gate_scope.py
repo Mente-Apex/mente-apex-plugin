@@ -10,7 +10,7 @@ import subprocess
 import pytest
 
 import mutation_gate_scope
-from mutation_gate_scope import _parse_status_z, changed_paths
+from mutation_gate_scope import _parse_status_z, changed_paths, scope_label
 
 
 def test_merge_base_is_the_default_scope():
@@ -152,3 +152,63 @@ class TestADeletedFileIsNeverSelected:
 
         diff_call = next(call for call in captured["calls"] if call[0] == "diff")
         assert "--diff-filter=d" in diff_call
+
+
+class TestNarrowingAScopeToAPathspec:
+    """#149. On a stand-alone audit of an untouched tree the merge-base default
+    resolves to an empty diff, so the sweep mutates nothing -- precisely where
+    the born-vacuous test it exists to catch would live. `--scope full` reaches
+    those files but costs a whole-repo run, so a pathspec is what makes the
+    capability reachable at a cost the operator chose.
+    """
+
+    @staticmethod
+    def _recording_git(captured):
+        def fake_git(repo_root, *args, check=True):
+            captured.append(args)
+            if args[0] == "branch":
+                return "main\n"
+            if args[0] == "merge-base":
+                return "abc123\n"
+            return "a.py\0"
+
+        return fake_git
+
+    def test_the_full_scope_passes_the_pathspec_to_git(self, monkeypatch):
+        captured = []
+        monkeypatch.setattr(mutation_gate_scope, "_git", self._recording_git(captured))
+
+        changed_paths("/repo", scope="full", pathspec=("tests/orders",))
+
+        assert captured == [("ls-files", "-z", "--", "tests/orders")]
+
+    def test_every_scope_narrows_the_same_way(self, monkeypatch):
+        """Uniform rather than one scope growing a special case."""
+        captured = []
+        monkeypatch.setattr(mutation_gate_scope, "_git", self._recording_git(captured))
+
+        changed_paths("/repo", scope="merge-base", pathspec=("src/money.py",))
+        changed_paths("/repo", scope="working-tree", pathspec=("src/money.py",))
+
+        narrowing_calls = [call for call in captured if call[0] in ("diff", "status")]
+        assert all(call[-2:] == ("--", "src/money.py") for call in narrowing_calls)
+
+    def test_no_pathspec_leaves_the_query_exactly_as_it_was(self, monkeypatch):
+        """A bare trailing `--` is harmless to git but reads, in a logged
+        command line, exactly like a narrowing that selected nothing."""
+        captured = []
+        monkeypatch.setattr(mutation_gate_scope, "_git", self._recording_git(captured))
+
+        changed_paths("/repo", scope="full")
+
+        assert captured == [("ls-files", "-z")]
+
+    def test_a_narrowed_run_is_labelled_as_narrowed(self):
+        """`full` over a hundred files and `full` over one package produce the
+        same "No survivors in scope." line; only one of them earned it."""
+        assert scope_label("full", ("tests/orders", "tests/billing")) == (
+            "full (paths: tests/orders, tests/billing)"
+        )
+
+    def test_an_unnarrowed_run_keeps_its_plain_scope_name(self):
+        assert scope_label("merge-base") == "merge-base"

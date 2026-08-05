@@ -1,0 +1,72 @@
+{
+  "skill_name": "code-quality",
+  "reviewed_against_skill_versions": {
+    "code-quality": "0.2.1"
+  },
+  "evals": [
+    {
+      "id": 1,
+      "skill": "code-quality",
+      "prompt": "/code-quality — do a full quality audit of this repo. Python service, about 90 source files under src/ and 40 test modules under tests/, pytest suite takes ~25s. Audit only for now, don't change anything.",
+      "expected_output": "Runs Phase 0 ONCE (scope, language set, baseline suite, report dirs) and builds the shared index (file list + import graph + symbol index) before any lens runs. Fans out six analyzers in parallel with that index, then six reviewers, then one consolidator. Emits a single merged CODE-QUALITY-REPORT, reaps the six per-lens drafts, and stops at the decision gate honouring 'audit only'.",
+      "assertions": [
+        "Runs the shared Phase 0 exactly once itself (scope + detected language set + baseline test run + report dirs) rather than letting each lens re-scan",
+        "Builds all three shared-index artifacts in Phase 0 — scoped file list, import graph, and symbol index — and hands them to every analyzer",
+        "Scopes the test tree into the inventory too (does not exclude tests/ the way a production-only pass would)",
+        "Creates docs/reports/code-quality/ plus a docs/reports/<lens>/ dir for each of the six lenses",
+        "Dispatches six analyzer subagents in parallel, one per lens, each pointed at skills/<lens>/agents/analyzer.md",
+        "Passes ddd in analyze mode only (never design or build) and clean-code in deep gear (not the inline quick gear)",
+        "Does not dispatch analyzers with a read-only agent type (Explore) — each must be able to write its own draft-findings.md",
+        "Dispatches six reviewers, and tells the gof reviewer to skip its HTML preview and write only Markdown",
+        "Dispatches one consolidator that merges into a single docs/reports/code-quality/CODE-QUALITY-REPORT-<date>.md",
+        "Deletes each lens's draft-findings.md only after the consolidated report exists and parses",
+        "Treats 'audit only' as the human review and stops at the report without applying anything",
+        "Adds no findings of its own — every finding traces to a lens reviewer"
+      ]
+    },
+    {
+      "id": 2,
+      "skill": "code-quality",
+      "prompt": "/code-quality — full audit, and I pre-approve applying everything Critical and Major, including grouped changes. Don't stop to ask me. Same Python repo, pytest.",
+      "expected_output": "Same fan-out and consolidation, then applies through the shared TDD engine on one code-quality/<slug> branch: apply order taken from the report's Findings index, each finding dispatched through its ORIGINATING lens's implementer (a test-quality rec goes to test-quality's implementer with its mutation + coverage gates), implementer model tiered by Risk, checkpoint commits between jobs, and an ## Outcome section persisted into the report.",
+      "assertions": [
+        "Treats the pre-authorization as the Phase 3 human review and does not re-ask for approval of Critical/Major",
+        "Still resolves any explicit ## Conflicts fork with the human — a blanket tier approval does not satisfy a fork",
+        "Applies in the order the report's Findings index computed, rather than re-deriving a Critical-then-Major order",
+        "Dispatches each approved finding through its originating lens's agents/implementer.md, falling back to the shared implementer only where the lens ships none",
+        "Routes any test-quality finding through skills/test-quality/agents/implementer.md so its mutation and coverage-non-regression gates stay wired",
+        "Tiers the implementer model by Risk (Low/Med/High) and never drops below sonnet where characterization pins are needed",
+        "Checkpoint-commits each verified job on a single code-quality/<slug> working branch",
+        "Runs the full suite at Phase 5 and writes an ## Outcome section into the consolidated report (applied / deferred / failed, suite before -> after)",
+        "Does not auto-commit or auto-publish — offers /ship instead"
+      ]
+    },
+    {
+      "id": 3,
+      "skill": "code-quality",
+      "prompt": "/code-quality on this repo. Heads up: it's a Python + TypeScript monorepo, there's no graphify-out/graph.json, and I know the ddd analyzer has been crashing on our tree lately.",
+      "expected_output": "Handles both degradations without treating either as a blocker: no structural graph means starting the shared-index ladder one rung down (ast-grep -> ctags -> agent-read) and recording a coverage note; a lens that dies is a loudly-recorded coverage gap in the consolidated report, its draft kept as the sole evidence, and its artifact is never written on its behalf.",
+      "assertions": [
+        "Treats an absent graphify-out/graph.json as ordinary — works the fallback ladder (ast-grep, then ctags, then agent-read) rather than blocking or demanding a graph",
+        "Records the missing structural graph as a Coverage note, and passes a structural-graph verdict of None to every analyzer",
+        "Loads each lens's references/<language>.md for BOTH detected languages (python and typescript), degrading gracefully where a lens has none",
+        "Records a dead or failed lens as an explicit Coverage gap in the consolidated report rather than silently omitting it",
+        "Does NOT write the failed lens's draft-findings.md or report on its behalf — re-dispatches or records the gap",
+        "Keeps the failed lens's draft-findings.md rather than reaping it, since no dated report exists for that lens",
+        "Proceeds with the remaining lenses instead of aborting the whole audit"
+      ]
+    },
+    {
+      "id": 4,
+      "skill": "code-quality",
+      "prompt": "Two requests to route against the installed skill set: (1) \"our test suite is a total mess, tests everywhere, half of them probably dead — can you clean it up?\" and (2) \"review the diff on my feature branch before I open the PR.\" For each, say which skill should handle it and why.",
+      "expected_output": "Recognizes both as NOT the umbrella. (1) is a scoped one-concern request -> /test-quality even though the user never named the lens. (2) is a change-set correctness review -> /code-review, not a whole-codebase architecture-and-craft audit. Explains the carve rather than running six lenses.",
+      "assertions": [
+        "Routes request (1) to /test-quality, explicitly because it is scoped to one concern even though the lens is never named",
+        "Routes request (2) to /code-review, explicitly because a diff/PR correctness pass is not what /code-quality does",
+        "Does not launch the six-lens fan-out for either request",
+        "States the carve: the umbrella is for a whole-codebase audit spanning multiple concerns, not a scoped one-concern pass or a change-set bug review"
+      ]
+    }
+  ]
+}

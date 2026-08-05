@@ -72,7 +72,26 @@ ran. Zero mutants executed over a non-empty scope means nothing was tested.
 
 Default scope is the **merge-base** diff, so the sweep does not change its answer
 as the operator commits mid-audit; `--scope full` exists and is slow enough that
-it is never the default. The run happens in a **scratch** workspace, so this stays
+it is never the default.
+
+**A stand-alone audit selects zero files at that default, and a sweep that covers
+nothing proves nothing.** An untouched tree has no diff, so the run exits `2` with
+`Nothing selected` — and born-vacuous tests, the one thing only this sweep can find,
+live exactly there. Do not report that as a clean sweep, and do not silently widen to
+`--scope full` either. Offer the operator a **narrowed** sweep instead: pick the
+highest-value part of the test tree (the packages the audit is actually about, or the
+ones carrying the suspected-vacuous tests), state the cost in files-to-mutate before
+running, and run it only on a yes:
+
+    sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/mutation_gate.py" \
+        --repo-root <target> --scope full --paths <subtree> [<subtree> …]
+
+The narrowing is named in the payload's `scope` and the report's **Scope** line, so a
+partial sweep can never read as a whole-repo one. Whatever it left out — the rest of the
+tree, or the whole sweep if the operator declines — goes in **Coverage notes** as an
+unexamined area, never as an absence of findings.
+
+The run happens in a **scratch** workspace, so this stays
 **read-only** with respect to the operator's tree — mutation writes files, and
 none of them may land in the tree they are working in.
 

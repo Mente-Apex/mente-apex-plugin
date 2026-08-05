@@ -1,5 +1,8 @@
 {
   "skill_name": "tdd",
+  "reviewed_against_skill_versions": {
+    "tdd": "1.5.0"
+  },
   "evals": [
     {
       "id": 0,

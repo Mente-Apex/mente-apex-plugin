@@ -18,7 +18,7 @@ description: >-
   suite is a mess / only grows / never gets cleaned", "are these good tests?".
 user-invocable: true
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   source: "Kent Beck TDD + the plugin's tdd skill, read pragmatically"
 ---
 
@@ -64,8 +64,13 @@ Follows the shared workflow, Phases 0–3; apply (4–5) is opt-in and guarded.
 2. **Phase 1 — Analyzer** ([agents/analyzer.md](agents/analyzer.md); read-only over the
    suite, writes its own draft) reads
    `references/rubric.md` and the `tdd` references, drafts findings → `draft-findings.md`.
-   The analyzer also runs the **mutation sweep** over the diff — this is what
-   catches *born-vacuous* tests, which no post-refactor gate would ever reach.
+   The analyzer also runs the **mutation sweep** — the only thing that catches
+   *born-vacuous* tests, which no post-refactor gate would ever reach. By default it
+   covers the **diff** (`--scope merge-base`), so on a stand-alone audit of an untouched
+   tree it selects zero files and proves nothing. That case is reachable, not free: the
+   analyzer offers an explicit narrowed sweep (`--scope full --paths <subtree>`) over the
+   highest-value part of the test tree, quotes the cost, and records what was left
+   uncovered as a Coverage note. Whole-repo mutation stays too slow to be a default.
 3. **Phase 2 — Reviewer** ([agents/reviewer.md](agents/reviewer.md)) re-verifies every
    finding against the real tests, tiers Critical/Major/Minor, cross-references the hub,
    and writes `docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md` per
