@@ -47,6 +47,12 @@ no code and no tests** — you write the report only.
            --repo-root <target> --scope merge-base \
            --report "<target>/docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md"
 
+   **Use the same scope the analyzer's sweep used, not the default.** If it ran narrowed
+   (`--scope full --paths <subtree>`, the reachable sweep for a stand-alone audit on an
+   untouched tree — see [analyzer.md](analyzer.md)), pass those same flags here. Falling
+   back to `merge-base` on a tree with no diff writes a section covering zero files over
+   findings the analyzer drew from a sweep that covered real ones.
+
    The exit code is a verdict, not a crash signal: `0` clean, `1` survivors found, `2`
    the scope could not be verified (missing tool, crashed backend, broken baseline, zero
    mutants). A `2` still writes its section — read `unverified_reasons` in it and carry

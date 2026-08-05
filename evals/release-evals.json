@@ -1,5 +1,8 @@
 {
   "skill_name": "release",
+  "reviewed_against_skill_versions": {
+    "release": "0.3.0"
+  },
   "evals": [
     {
       "id": 0,

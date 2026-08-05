@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from mutation_gate_scope import changed_paths
+from mutation_gate_scope import changed_paths, scope_label
 from mutation_gate_workspace import scratch_workspace
 
 STACK_SUFFIXES = {
@@ -677,6 +677,20 @@ def main(argv=None):
         "--scope", choices=("merge-base", "working-tree", "full"), default="merge-base"
     )
     parser.add_argument(
+        "--paths",
+        nargs="+",
+        default=(),
+        metavar="PATH",
+        help=(
+            "Narrow the chosen scope to these paths (a git pathspec). This is "
+            "the reachable sweep for a stand-alone audit, where the default "
+            "merge-base scope resolves to an empty diff and mutates nothing: "
+            "pair it with `--scope full` to sweep a named subtree at a cost "
+            "you chose. The narrowing is named in the report's Scope line, so "
+            "a partial sweep never reads as a whole-repo one."
+        ),
+    )
+    parser.add_argument(
         "--report",
         default=None,
         help=(
@@ -697,7 +711,9 @@ def main(argv=None):
         splice_into_report,
     )
 
-    paths = changed_paths(arguments.repo_root, scope=arguments.scope)
+    pathspec = tuple(arguments.paths)
+    paths = changed_paths(arguments.repo_root, scope=arguments.scope, pathspec=pathspec)
+    label = scope_label(arguments.scope, pathspec)
     dirty = arguments.scope == "working-tree"
     with scratch_workspace(arguments.repo_root, dirty=dirty) as workspace:
         baseline_failures, baseline_error = _record_baseline(
@@ -710,7 +726,7 @@ def main(argv=None):
             baseline_failures=baseline_failures,
             baseline_error=baseline_error,
         )
-    print(json.dumps(as_report_payload(result, scope=arguments.scope), indent=2))
+    print(json.dumps(as_report_payload(result, scope=label), indent=2))
     if arguments.report is not None:
         # After the JSON, never before: a missing report file or a report with
         # no markers raises, and the analyzer's copy of the result must not be
@@ -721,7 +737,7 @@ def main(argv=None):
         report_path.write_text(
             splice_into_report(
                 report_path.read_text(encoding="utf-8"),
-                render_markdown(result, scope=arguments.scope),
+                render_markdown(result, scope=label),
             ),
             encoding="utf-8",
         )

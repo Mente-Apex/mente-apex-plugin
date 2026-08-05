@@ -1,0 +1,65 @@
+{
+  "skill_name": "test-quality",
+  "reviewed_against_skill_versions": {
+    "test-quality": "0.2.0"
+  },
+  "evals": [
+    {
+      "id": 1,
+      "skill": "test-quality",
+      "prompt": "/test-quality — our pytest suite has grown to ~180 tests over three years and nobody has ever cleaned it. It only ever gets added to. Have a look and tell me how bad it is.",
+      "expected_output": "Audit-first pass: Phase 0 scopes the TEST tree and detects the runner plus its coverage tool and runs the suite for a baseline; the analyzer reads references/rubric.md and the tdd standard and runs the mutation sweep; the reviewer re-verifies and tiers into a dated TEST-QUALITY-REPORT. Outcome is report-only — no test is touched.",
+      "assertions": [
+        "Phase 0 scopes the test tree (not src/) and detects both the test runner and its coverage tool, recording the coverage tool explicitly",
+        "Runs the suite once for a baseline before analysing",
+        "Analyzer reads references/rubric.md and the tdd skill's references as the standard, rather than inventing a rubric",
+        "Runs the mutation sweep as part of analysis to catch born-vacuous tests",
+        "Covers all four rubric areas: suite structure/organization, test craft, test strategy, and stale-test tending",
+        "Reviewer re-verifies findings against the real tests and tiers them Critical/Major/Minor",
+        "Writes docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md",
+        "Ends report-only — modifies no test file, and makes applying an explicit opt-in at the gate"
+      ]
+    },
+    {
+      "id": 2,
+      "skill": "test-quality",
+      "prompt": "/test-quality — find me the dead weight so I can delete it. Suite is unittest via plain `python -m unittest`; we have no coverage tooling installed at all. There is definitely at least one test module that imports a helper we deleted months ago.",
+      "expected_output": "Because Phase 0 records 'coverage tool: none', the coverage-non-regression gate cannot produce its proof — so the reviewer nominates NO deletions and records the gap as a Coverage note. The single exception is the test that fails to import a removed symbol, whose proof is the missing symbol rather than a coverage run; it is still surfaced for sign-off, never auto-deleted.",
+      "assertions": [
+        "Records 'coverage tool: none' in Phase 0 and states the consequence explicitly",
+        "Nominates no coverage-proved deletions at all, and records the missing coverage tool as a Coverage note instead of guessing",
+        "Still surfaces the dead test that fails to import a removed symbol, on the grounds that its proof is the missing symbol not a coverage run",
+        "Does not auto-delete anything — every deletion stays a per-test human decision",
+        "Prefers merge over delete where a narrow test could be folded into a parametrized case",
+        "Does not claim the suite is safe to prune merely because it is green"
+      ]
+    },
+    {
+      "id": 3,
+      "skill": "test-quality",
+      "prompt": "/test-quality on tests/billing/ — and go ahead and apply the test refactors you find (splitting the giant multi-assert tests, fixing the names). I pre-approve those. pytest with pytest-cov, mutmut is installed.",
+      "expected_output": "Audits, gates, then applies refactors via the opt-in implementer — which runs the TDD refactor engine PLUS the mutation gate (scripts/mutation_gate.py): mutate the code under test and confirm the refactored test fails. Green alone is explicitly rejected as proof. Deletions are not covered by a refactor pre-approval.",
+      "assertions": [
+        "Treats the pre-authorization as covering refactors only, and does not extend it to deletions",
+        "Applies through agents/implementer.md on the TDD refactor engine, one change at a time with the suite green after each",
+        "Runs the mutation gate (scripts/mutation_gate.py) after each refactor — mutating the code under test and confirming the refactored test FAILS",
+        "States that a still-green suite is not proof for a test change, and names why (a weakened or deleted test also leaves the suite green)",
+        "Falls back to the manual break-and-restore loop only where no mutation tool is reachable (here mutmut is available, so it is used)",
+        "Records apply status in the report, which stays the single source of truth"
+      ]
+    },
+    {
+      "id": 4,
+      "skill": "test-quality",
+      "prompt": "/test-quality — honestly our tests are 80% mock. Every service test patches the repository, the mailer, and three of our own domain classes. Is that the problem?",
+      "expected_output": "Names the test-side symptom (over-mocking, mocking your own domain, vacuous mock-only tests) but files the FIX as a solid/ddd finding via the lens-overlap hub — over-mocking of your own domain is a missing-port / DIP smell in the production design, not a test defect to be patched in the tests. Also holds the clean-code carve: line craft inside a test file is not this lens's.",
+      "assertions": [
+        "Identifies mocking your own domain classes as a DIP / missing-port smell in the production design, not merely a test-writing mistake",
+        "Files the fix as a solid or ddd finding via docs/lens-overlap.md and cross-references it, rather than duplicating the recommendation here",
+        "Still names the test-side symptom in its own report (vacuous mock-only tests, coupling to implementation detail)",
+        "Defers pure line-craft issues inside test files to clean-code rather than claiming them",
+        "Does not recommend simply deleting or rewriting the mocks without addressing the production-side seam"
+      ]
+    }
+  ]
+}

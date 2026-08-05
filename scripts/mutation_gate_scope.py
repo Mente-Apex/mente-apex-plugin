@@ -120,12 +120,22 @@ def _parse_status_z(output):
     return paths
 
 
-def changed_paths(repo_root, scope="merge-base"):
+def changed_paths(repo_root, scope="merge-base", pathspec=()):
     """The files this run mutates.
 
     merge-base is the default because it is stable: an operator committing
     mid-audit should not change what the sweep covers. Full-repo mutation is
     far too slow to be anyone's default in an interactive skill.
+
+    `pathspec` narrows whichever scope was asked for to a named subtree, and
+    exists for the case the two above leave unreachable: a stand-alone audit of
+    an untouched tree, where merge-base resolves to an empty diff and the sweep
+    covers nothing at all. `--scope full` reaches those files but costs a
+    whole-repo mutation run; `--scope full --paths tests/orders` reaches the
+    part the audit is actually about at a cost the operator chose. It is passed
+    to git verbatim after a `--` separator, so every scope narrows the same way
+    rather than one of them growing a special case, and an empty pathspec (the
+    default) leaves each query exactly as it was.
 
     Every git call here uses `-z` (NUL-separated, unquoted output) rather
     than the default newline/quoted format: a default-porcelain rename shows
@@ -139,6 +149,11 @@ def changed_paths(repo_root, scope="merge-base"):
     handing one to a backend as though it could poisons the run for every
     other file in the same partition.
     """
+    # Only ever appended when non-empty: a bare trailing `--` is harmless to
+    # git but says "no pathspec" in a way that reads, in a logged command line,
+    # exactly like a narrowing that selected nothing.
+    limit = ["--", *pathspec] if pathspec else []
+
     if scope == "merge-base":
         base = _default_branch(repo_root)
         fork_point = _git(repo_root, "merge-base", base, "HEAD").strip()
@@ -150,14 +165,36 @@ def changed_paths(repo_root, scope="merge-base"):
             "-z",
             fork_point,
             "HEAD",
+            *limit,
         )
         paths = [path for path in output.split("\0") if path]
     elif scope == "working-tree":
-        output = _git(repo_root, "status", "--porcelain", "-z", "--untracked-files=all")
+        output = _git(
+            repo_root,
+            "status",
+            "--porcelain",
+            "-z",
+            "--untracked-files=all",
+            *limit,
+        )
         paths = _parse_status_z(output)
     elif scope == "full":
-        output = _git(repo_root, "ls-files", "-z")
+        output = _git(repo_root, "ls-files", "-z", *limit)
         paths = [path for path in output.split("\0") if path]
     else:
         raise ValueError(f"unknown scope: {scope!r}")
     return tuple(paths)
+
+
+def scope_label(scope, pathspec=()):
+    """How this run's coverage is named in the JSON payload and the report.
+
+    A narrowed run must never read as the scope it narrowed: `full` on a
+    hundred-file repo and `full` limited to one test package produce the same
+    "No survivors in scope." line, and only one of them earned it. Naming the
+    pathspec in the label is what keeps the report honest, and it costs the
+    reporter nothing -- `scope` is already a free-form string there.
+    """
+    if not pathspec:
+        return scope
+    return f"{scope} (paths: {', '.join(pathspec)})"

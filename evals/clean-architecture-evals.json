@@ -1,5 +1,8 @@
 {
   "skill_name": "clean-architecture",
+  "reviewed_against_skill_versions": {
+    "clean-architecture": "0.1.0"
+  },
   "evals": [
     {
       "id": 1,

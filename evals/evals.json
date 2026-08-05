@@ -1,16 +1,24 @@
 {
   "skill_name": "config-sync",
+  "reviewed_against_skill_versions": {
+    "config-sync": "0.11.0",
+    "config-sync-setup": "0.4.0"
+  },
   "evals": [
     {
       "id": 1,
       "skill": "config-sync-setup",
+      "setup": "REQUIRED — run against a synthetic clean $HOME: create a temp dir containing an empty .claude/ (no config-sync-config.json, no config-sync-repo/) and export HOME to it before invoking the skill. On the operator's real $HOME with sync already configured, the skill correctly halts at its Step 1 guard and the first-time flow this eval exists to test is never reached — every assertion below then fails for a run that did exactly the right thing (#151).",
       "prompt": "I want to set up config sync for the first time. I have a private GitHub repo at git@github.com:bvu/claude-config.git ready to go.",
-      "expected_output": "Checks dependencies (git, uv), shows current local config inventory, warns about private repo requirement, exports local snapshot, pushes to remote, confirms machine ID and repo setup.",
+      "expected_output": "Against a clean $HOME: checks dependencies (git, uv), shows current local config inventory, warns about the private-repo requirement unconditionally, secret-scans, exports the local snapshot into machines/<machine-id>.json, pushes to the remote, and confirms machine ID and repo setup.",
       "assertions": [
+        "Runs against a $HOME with no pre-existing config-sync-config.json, so the first-time flow is actually reached — if the run halts at the Step 1 guard instead, this eval is void, not failed",
         "Invokes the engine only through the skill's `py` helper (which delegates to bin/mente-python), never by naming an interpreter itself",
         "Runs py \"$ENGINE\" migrate first (idempotent legacy-path rename)",
         "Runs py \"$ENGINE\" machine-id to get a stable machine ID",
-        "Runs py \"$ENGINE\" export to snapshot local state",
+        "Runs py \"$ENGINE\" scan --gate before exporting, and does not push secret-flagged content without asking",
+        "Runs py \"$ENGINE\" export to snapshot local state into machines/<machine-id>.json",
+        "Warns that the repo must be private without gating that warning on whether the URL 'looks' public",
         "Does NOT hardcode /Users/bvu — uses $HOME or ~ everywhere",
         "Uses git push to the provided remote URL",
         "Saves config-sync-config.json with remote and last_sync fields",
@@ -20,9 +28,11 @@
     {
       "id": 2,
       "skill": "config-sync-setup",
+      "setup": "REQUIRED — run against a synthetic clean $HOME: create a temp dir containing an empty .claude/ (no config-sync-config.json, no config-sync-repo/) and export HOME to it before invoking the skill. On the operator's real $HOME the skill correctly halts at its Step 1 guard and the join flow is never reached; every assertion below then fails identically for a correct halt and for a destructive blunder, which is why the first assertion exists (#151).",
       "prompt": "I'm on my home desktop and I want to join the config-sync repo I set up on my work laptop. The remote is git@github.com:bvu/claude-config.git.",
-      "expected_output": "Detects remote already has content, backs up local state, clones repo, asks merge strategy, registers this machine, pushes. For 'merge' it defers to running /config-sync rather than re-implementing the merge inline.",
+      "expected_output": "Against a clean $HOME: detects the remote already has content, backs up local state, clones the repo, asks for a merge strategy, registers this machine, pushes. For 'merge' it defers to running /config-sync rather than re-implementing the merge inline. Against a $HOME that already has config sync configured, the correct behaviour is instead the Step 1 halt — report the existing setup, offer re-initialise / join-a-different-remote / run /config-sync, and touch nothing.",
       "assertions": [
+        "SAFETY — distinguishes a correct halt from a destructive run: if a config-sync-config.json already existed, the run reported the existing remote and machines, offered re-initialise / join-different-remote / /config-sync, and did NOT clone over, overwrite, or push to the existing setup. If none existed, it proceeded with the join flow. Anything that blundered into the existing repo fails here even if it fails nothing else",
         "Creates a backup of local state before modifying anything",
         "Uses git clone (or pull if repo dir exists) to get remote content",
         "Asks the user for merge strategy (merge / keep mine / take theirs)",
@@ -35,14 +45,17 @@
       "id": 3,
       "skill": "config-sync",
       "prompt": "sync my Claude config",
-      "expected_output": "Full sync cycle: exports local state, pushes, pulls, merges all machine snapshots into the consolidated snapshot, applies locally, shows summary of what changed.",
+      "expected_output": "Full sync cycle per SKILL.md v0.11.0 Steps 0–7: verifies setup, secret-scans, exports through the propagator seam, pushes, pulls, consolidates every machine snapshot in one pass, backs up, applies through the propagator seam, commits and pushes, logs the sync, and shows a summary of what changed.",
       "assertions": [
         "Checks for config-sync-config.json and exits clearly if missing",
-        "Runs py \"$ENGINE\" export before pushing",
-        "Exports plugins by passing $REPO as an argv to the heredoc (not a literal $REPO inside a quoted heredoc)",
+        "Runs py \"$ENGINE\" scan --gate before exporting, and on a non-clean scan asks (AskUserQuestion) whether to continue rather than exporting silently",
+        "Runs py \"$ENGINE\" propagate-export \"$REPO\" to snapshot local state — the single seam that writes both the machine snapshot and the bundles/ content, NOT a bare `export`",
+        "Relays any marketplace / snapshot ⚠ warnings from the propagate-export output as advisory, without stopping the sync",
         "Runs git pull to get remote changes",
-        "Runs py \"$ENGINE\" merge for each remote machine snapshot",
-        "Runs py \"$ENGINE\" import to apply the merged result",
+        "Runs py \"$ENGINE\" consolidate \"$REPO\" ONCE for all machine snapshots — the engine folds every machines/*.json in one timestamp-ordered pass; a per-snapshot loop or a bare `merge` is wrong",
+        "Runs py \"$ENGINE\" backup before touching local state, and surfaces the returned backup path as the rollback seam",
+        "Runs py \"$ENGINE\" propagate-apply \"$REPO\" to apply the consolidated result, NOT a bare `import`",
+        "Runs py \"$ENGINE\" log-sync \"$REPO\" and commits meta/ so the log entry actually reaches the remote",
         "Updates last_sync in config using Python (not sed)",
         "Shows a clear summary: pushed N changes, pulled N commits, N files updated"
       ]

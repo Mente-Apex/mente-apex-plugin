@@ -89,7 +89,9 @@ class TestTheCliWritesTheReport:
             granularity="function",
         )
         monkeypatch.setattr(
-            mutation_gate, "changed_paths", lambda root, scope: ("src/money.py",)
+            mutation_gate,
+            "changed_paths",
+            lambda root, scope, pathspec: ("src/money.py",),
         )
         monkeypatch.setattr(
             mutation_gate, "_record_baseline", lambda root, run: ((), "")

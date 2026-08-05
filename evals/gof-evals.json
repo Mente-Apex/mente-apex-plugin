@@ -1,5 +1,8 @@
 {
   "skill_name": "gof",
+  "reviewed_against_skill_versions": {
+    "gof": "0.2.0"
+  },
   "evals": [
     {
       "id": 1,
@@ -10,7 +13,7 @@
         "Creates docs/reports/gof/ and git-excludes it via .git/info/exclude",
         "Detects the Singleton in Config and grades it with the full label (e.g. 'C — Structural issues'), not just a bare letter",
         "The grade reflects the thread-safety gap (unguarded __new__ race) — it is NOT graded 'A — Clean implementation'",
-        "Surfaces the Singleton⇄DIP tension per docs/solid-gof-overlap.md and reconciles it with the human rather than auto-recommending the pattern",
+        "Surfaces the Singleton⇄DIP tension per docs/lens-overlap.md and reconciles it with the human rather than auto-recommending the pattern",
         "Writes the final report via references/report-template.md (IDs/Risk/Status present) and a self-contained HTML preview per references/html-report.md",
         "Does not apply any change without the human decision gate"
       ]
@@ -19,23 +22,25 @@
       "id": 2,
       "skill": "gof",
       "prompt": "/gof — review src/payments/processor.py. process_payment(method, amount) has an if/elif chain: `if method == \"credit_card\": ... elif method == \"paypal\": ... elif method == \"bank_transfer\": ...`, each branch running a fully self-contained, interchangeable charging algorithm for that method.",
-      "expected_output": "The analyzer's opportunity pass, per references/patterns.md's Strategy 'Suggest when' trigger (large conditional selecting between algorithms), files a Recommendation to extract each branch into an interchangeable strategy (e.g. a PaymentStrategy per method) so process_payment delegates instead of branching; the reviewer cross-references docs/solid-gof-overlap.md and cites the Strategy row's SOLID principle in the write-up.",
+      "expected_output": "The analyzer's opportunity pass weighs references/patterns.md's Strategy 'Suggest when' trigger (large conditional selecting between interchangeable algorithms) against its 'Don't suggest when' clause, which names this exact shape — '2–3 stable branches a dict dispatch handles more readably; a strategy-class explosion for three cases is worse'. With three branches, the rubric-correct Recommendation is dict dispatch to per-method callables (references/python.md: 'a Callable parameter passed in or looked up from a dict … only build a class-based strategy hierarchy when strategies carry their own configuration/state'), so process_payment delegates instead of branching. A class-per-method PaymentStrategy hierarchy is equally acceptable only if the write-up justifies the extra ceremony. The reviewer cross-references docs/lens-overlap.md and cites the Strategy row's SOLID principle in the write-up.",
       "assertions": [
-        "A Recommendation entry proposes replacing the if/elif dispatch with interchangeable Strategy objects (one per payment method), not a rewrite of unrelated code",
+        "A Recommendation entry proposes replacing the if/elif dispatch with interchangeable per-method strategies — a dict of callables or a strategy class hierarchy both qualify — not a rewrite of unrelated code",
+        "If a class-per-method hierarchy is proposed over a dict of callables, the write-up justifies the extra ceremony against patterns.md's 'a strategy-class explosion for three cases is worse'; it is NOT penalised for choosing dict dispatch",
         "The recommendation's cross-reference names OCP — the overlap map's Strategy row ('OCP, DIP … the canonical overlap') — not just 'Strategy' with no principle link",
         "The recommendation is filed under the report's Recommendations section (apply-eligible) with an ID, Risk, and Status field per report-template.md, not folded into the Detected-patterns inventory",
-        "The suggestion is justified by patterns.md's Strategy 'Suggest when' clause (large conditional choosing between multiple algorithms), not asserted without a rubric citation"
+        "The suggestion is justified by a patterns.md citation — the Strategy 'Suggest when' clause, weighed against its 'Don't suggest when' 2–3-branch carve-out — not asserted without a rubric citation"
       ]
     },
     {
       "id": 3,
       "skill": "gof",
       "prompt": "/gof — should ReportOptions use a Builder? class ReportOptions: def __init__(self, title, date, include_summary=True): ... — only those 3 constructor parameters, nothing else.",
-      "expected_output": "The analyzer's opportunity pass checks ReportOptions against references/patterns.md's Builder 'Suggest when' (5+ constructor params) and 'Don't suggest when' (≤4 params, plain dataclass) clauses, finds 3 params, and returns N/A for this site — no Builder recommendation is filed, and the report records this as a considered-but-not-applicable outcome rather than staying silent about it.",
+      "expected_output": "The scope is a pasted snippet with no path behind it, so per SKILL.md's Invocation section this is answered in chat — same rubric, same restraint, no Phase 0 inventory, no docs/reports/gof/ artifact — and the answer says so. The opportunity pass checks ReportOptions against references/patterns.md's Builder 'Suggest when' (5+ constructor params) and 'Don't suggest when' (≤4 params, plain dataclass) clauses, finds 3 params, and returns N/A for this site: no Builder recommendation, recorded as considered-but-not-applicable rather than left silent.",
       "assertions": [
-        "No Builder recommendation is filed for ReportOptions anywhere in the Recommendations section",
+        "The answer is given in chat and names the mode it took, per SKILL.md's 'pasted snippet with no path behind it' clause — it does NOT create docs/reports/gof/ for a pathless snippet, and it is not penalised for the absence of a report",
+        "No Builder recommendation is filed for ReportOptions",
         "The stated reason explicitly invokes patterns.md's Builder 'Don't suggest when' clause (≤4 constructor params) — a keyword constructor reads better than a fluent builder here",
-        "ReportOptions is recorded as 'no opportunity' (N/A) in the Not applicable table rather than omitted outright, per SKILL.md treating N/A as a valid, trust-building outcome",
+        "ReportOptions is stated as 'no opportunity' (N/A) rather than passed over in silence, per SKILL.md treating N/A as a valid, trust-building outcome",
         "No alternative restructuring (e.g. forcing a dataclass rewrite) is proposed either — restraint means filing nothing, since 3 params need no construction pattern at all"
       ]
     },
@@ -43,10 +48,11 @@
       "id": 4,
       "skill": "gof",
       "prompt": "/gof — apply C1 (extract a Strategy for PaymentProcessor.process_payment) now that I've approved it at the decision gate.",
-      "expected_output": "Per docs/refactor-workflow.md Phase 4, the implementer/TDD-coordinator role (docs/refactor-agents/implementer.md) translates C1 into a TDD refactor-job call (targets, change, test_command + baseline_status, coverage) and dispatches it to skills/tdd/references/refactor-jobs.md's engine; it never edits process_payment's file directly. As a pure refactor (no new_behavior carve-out), the job pins the untested code with characterization tests where needed, applies the smallest faithful change, then verifies the suite stays green — it does not run a red-green cycle for new behavior. It returns a structured outcome; the coordinator writes C1's Status to 'applied' and appends the Apply log line in the report, with the full suite green after, matching or exceeding the Phase 0 baseline.",
+      "expected_output": "Per docs/refactor-workflow.md Phase 4, the implementer/TDD-coordinator role (docs/refactor-agents/implementer.md) translates C1 into a TDD refactor job with the calling contract's fields (targets, change, test_command + baseline_status, coverage) and executes that procedure itself — 'You do edit code — through that job, never ad hoc': the refactor job is a procedure with a calling contract (skills/tdd/references/refactor-jobs.md), not an agent to hand work to, so the edits it prescribes are the implementer's own to write, in its own context. Returning a plan instead of landing the edits is a failed run. As a pure refactor (no new_behavior carve-out), the job pins the untested code with characterization tests where needed, applies the smallest faithful change, then verifies the suite stays green — it does not run a red-green cycle for new behavior. C1's Status becomes 'applied' and the Apply log line is appended in the report, with the full suite green after, matching or exceeding the Phase 0 baseline.",
       "assertions": [
-        "The implementer dispatches a TDD refactor job with the calling contract's fields (targets/change/test_command+baseline_status/coverage) rather than calling Edit/Write on processor.py itself",
-        "No production code is modified outside of that dispatched refactor job — the coordinator's own hard rule ('You do NOT edit code directly; TDD is the engine') is respected",
+        "C1 is landed as an actual edit to processor.py, not returned as a plan — per implementer.md, 'returning a plan instead is a failed run'",
+        "The edit is made through the refactor job's procedure with its calling-contract fields stated (targets/change/test_command+baseline_status/coverage), not ad hoc — implementer.md: 'You do edit code — through that job, never ad hoc'",
+        "No production code outside C1's stated targets is modified",
         "After the job returns, the test suite is verified green (equal to or better than the Phase 0 baseline) before C1 is marked applied",
         "C1's Status line and the report's Apply log are updated in place (timestamp, ID, suite result, diffstat) rather than only reported in chat",
         "Apply-phase work happens on a gof/<slug> working branch created per docs/git-convention.md before any file changes"

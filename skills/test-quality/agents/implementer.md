@@ -47,12 +47,23 @@ as "keep". **Prefer merge over delete**: if the rec is "fold narrow test into a 
 case", that is a Gate-A refactor (with the mutation gate on the merged case), not a deletion.
 Record the coverage result in the safety clause.
 
-**No coverage tool declared (Phase 0 recorded `coverage tool: none`) ⇒ no deletion recs
-reach you at all.** Without a coverage tool there is no way to produce the re-confirmed
-proof this gate requires, so a deletion candidate can never clear it — the reviewer does
-not hand you one. Treat any deletion rec that does arrive under `coverage tool: none` as
-a report defect, not something to force through: refuse it and record the gap as a
-Coverage note rather than skip it silently.
+**No coverage tool declared (Phase 0 recorded `coverage tool: none`) ⇒ no coverage-proved
+deletion recs reach you at all.** Without a coverage tool there is no way to produce the
+re-confirmed proof this gate requires, so such a candidate can never clear it — the reviewer
+does not hand you one. Treat a coverage-proved deletion rec that does arrive under
+`coverage tool: none` as a report defect, not something to force through: refuse it and
+record the gap as a Coverage note rather than skip it silently.
+
+**The one exception — a dead test that fails to import.** Its proof is the missing symbol,
+not a coverage measurement, so it survives `coverage tool: none` and is admissible here.
+Re-confirm it the same way you would any other rec, substituting the import failure for the
+coverage run: on the clean tree, run the test file and confirm it fails at collection on a
+symbol the source no longer defines (grep the SUT tree for that symbol to confirm it is gone,
+not merely moved — a moved symbol is a broken import to *fix*, not a test to delete). If it
+collects, or the symbol still exists anywhere in the source, **abort the deletion** and mark
+the rec `skipped` with that reason. Record the collection error and the absent-symbol search
+in the safety clause in place of the coverage result. This is still **never** an auto-delete:
+it takes the same per-test human sign-off as every other deletion.
 
 ## Hard rules
 
