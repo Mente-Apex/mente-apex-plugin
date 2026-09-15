@@ -24,7 +24,7 @@ description: >-
   (design principles, patterns, dependency structure, domain model, line craft).
 user-invocable: true
 metadata:
-  version: "0.2.1"
+  version: "0.3.0"
 ---
 
 # code-quality — the six-lens umbrella audit
@@ -112,7 +112,22 @@ stays available; it just shouldn't be the silent default when the repo is large.
 ### Phase 1 — Fan out the six analyzers (parallel)
 
 Dispatch **six analyzer subagents at once** (Agent tool, `general-purpose`), one per
-lens. Each is read-only **over the code it audits** but must be able to write its own
+lens, **each with `isolation: "worktree"`** — six agents sharing one tree cannot be
+told apart the moment any of them writes. Isolation is yours to request; an agent
+cannot put itself in a worktree, and cannot tell that it is in one except by finding
+its inputs missing. That makes three things your job at dispatch, per
+**"Isolation and artifact collection"** in
+[../../docs/refactor-workflow.md](../../docs/refactor-workflow.md):
+give the scoped file list and every code path **repo-relative**; name the **artifact
+root** as one absolute path (this checkout's git-excluded `docs/reports/`) and tell the
+lens to write `<artifact-root>/<lens>/draft-findings.md` there; and require each
+analyzer to **assert its scoped files resolve under its own working directory** before
+it starts, reporting a named coverage gap if they do not. Skip any of the three and the
+failure is silent: a worktree cut at the merge-base carries none of the branch's code,
+and an analyzer handed absolute paths will quietly audit *your* checkout from inside
+its sandbox while reporting a clean isolated run (issue #156).
+
+Each is read-only **over the code it audits** but must be able to write its own
 `draft-findings.md`. The filename constraint that governs that write is documented in
 [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md) — read the
 blockquote there (a basename check, not a permission, not a hook, unaffected by agent
@@ -161,7 +176,11 @@ next wave; a lens that errors is a recorded coverage gap, not a blocker.
 ### Phase 2 — Fan out the six reviewers (parallel)
 
 Dispatch **six reviewer subagents**, one per lens (`skills/<lens>/agents/reviewer.md`),
-each given only its own lens's draft. They run their normal verified pass and write
+each with `isolation: "worktree"` and the same three dispatch rules as Phase 1
+(repo-relative code paths, injected artifact root, assert-the-subject-is-present).
+Each is given only its own lens's draft — by a path under the artifact root, which is
+where Phase 1 actually wrote it; a reviewer resolving the draft inside its own fresh
+worktree finds nothing there. They run their normal verified pass and write
 their lens's own report (e.g. `docs/reports/solid/SOLID-REPORT-<YYYY-MM-DD>.md`). They
 need **not** cross-reference each other here — because dedup is deferred to the
 consolidator, the six reviewers are independent and run concurrently. (If a

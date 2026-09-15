@@ -29,8 +29,23 @@ and output path.
   usable `graphify-out/graph.json`. "None" is an ordinary answer — work the
   fallback ladder and record one Coverage line, per
   [docs/structural-queries.md](../structural-queries.md).
-- **Report output path** — where to write your draft, e.g.
-  `docs/reports/<lens>/draft-findings.md`.
+- **Report output path** — where to write your draft. Take it from the brief
+  verbatim (an **artifact root** plus `<lens>/draft-findings.md` when the brief
+  names one, e.g. under an orchestrator's `docs/reports/`; the repo-relative
+  `docs/reports/<lens>/draft-findings.md` when it does not). **Never derive
+  one.** If you are in a worktree, an artifact you write inside it can be
+  cleaned up with the worktree, and a path you construct into another checkout
+  defeats the isolation you were given — see "Isolation and artifact
+  collection" in [../refactor-workflow.md](../refactor-workflow.md).
+
+**Before you read a line of the subject, confirm it is here.** Resolve the
+brief's scoped files against **your own working directory**. If they are not
+there, stop and report it as a named coverage gap — "the worktree does not carry
+the code under audit" — and do **not** re-resolve them against another checkout,
+even when the brief or an earlier phase mentions an absolute path that would
+work. An audit that silently reads a tree other than the one it was pointed at
+produces findings nobody can attribute to a ref, and it reports success while
+having proved nothing (issue #156).
 
 ## Process
 

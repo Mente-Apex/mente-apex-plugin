@@ -82,6 +82,56 @@ durable (end of Phase 2). Only the dated `<LENS>-REPORT-<YYYY-MM-DD>.md`
 persists. An edit that leaves the draft on disk between runs reintroduces the
 stale-collision bug this rule exists to prevent.
 
+### Isolation and artifact collection (every parallel wave)
+
+**Isolation is the dispatcher's call, never the agent's.** A subagent cannot put
+itself in a worktree — it gets one only if the Agent call asked for it
+(`isolation: "worktree"`), and once running it has no way to tell which regime it
+is in except by finding its inputs missing. So the orchestrator decides once per
+wave and says so in the brief. **Dispatch every parallel wave isolated** —
+analyzers, reviewers and apply chains alike: a shared tree makes concurrent
+writes unattributable, and an audit cannot tell an agent's own edit from the code
+it was auditing.
+
+A worktree carries **tracked files at the ref it was created at, and nothing
+else.** Two consequences, both of which have failed silently in a real run
+(issue #156):
+
+- **Git-excluded paths are absent.** `docs/reports/`, `graphify-out/`,
+  `node_modules` — none exist in a fresh worktree, so an artifact written there
+  has nowhere to land. Worse, a worktree git sees as unchanged is auto-cleaned,
+  and a git-ignored file written inside it is invisible to git: the draft goes
+  with the worktree.
+- **The code under audit may be absent.** A worktree created at a branch's
+  merge-base does not contain that branch's commits. Five of six analyzers then
+  re-resolved their scoped files against the orchestrator's checkout by absolute
+  path and audited *that* from inside their sandbox; the sixth — whose gate has
+  to **execute** the code — could not fall back at all and reported nothing.
+
+The contract that closes both:
+
+1. **Code paths in a brief are repo-relative.** Absolute paths into the
+   orchestrator's checkout are precisely what let five analyzers read outside
+   their sandbox without noticing. A relative path resolves against whatever
+   tree the agent is actually in, which is the entire point of giving it one.
+2. **Artifact paths are injected, absolute, and outside the worktree.** The
+   dispatcher names one **artifact root** — its own git-excluded `docs/reports/`
+   — and every role writes beneath it (`<artifact-root>/<lens>/draft-findings.md`).
+   *Injected*, because an agent must never **derive** a path into a tree it is not
+   in; *outside the worktree*, because a draft written inside one can vanish with
+   it. Writing there does not dirty the orchestrator's tree: the artifact root is
+   git-excluded by construction.
+3. **Assert the subject is present before working.** Confirm the scoped files
+   resolve **under your own working directory**. If they do not, stop and report a
+   named coverage gap — "the worktree does not carry the code under audit" — and
+   never re-resolve them against another checkout. An audit that quietly reads
+   someone else's tree yields findings nobody can attribute to a ref, and it
+   reports success while proving nothing.
+
+The asymmetry is deliberate: **read the subject where you stand, write the
+artifact where you were told.** One injected absolute path, named by the
+dispatcher; everything else relative.
+
 ## Invocation
 
 `/<lens> [path]` — `path` scopes the analysis (default: repo root). The user
@@ -348,8 +398,12 @@ back at the last green commit, exactly the clean baseline the next job needs.
 
 **Parallel option** — for large approvals (roughly 6+ recs across disjoint
 files) independent chains may run concurrently, each in its own git worktree
-(`isolation: worktree`). Two hard rules: recs touching the same file never run
-in parallel, and per-worktree green proves nothing about the combination —
+(`isolation: worktree`, per "Isolation and artifact collection" above — the
+chain asserts the code it is about to change is present in its own worktree
+before touching anything, since a worktree at the wrong ref would have it
+editing code that is not under review). Two hard rules: recs touching the same
+file never run in parallel, and per-worktree green proves nothing about the
+combination —
 after merging, run the full suite once on the merged tree yourself. Merged
 suite red → fall back to the sequential contract: revert the merge and re-land
 chains one at a time until blame is attributable. Parallelism is an
