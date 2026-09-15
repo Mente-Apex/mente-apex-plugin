@@ -1,7 +1,7 @@
 {
   "skill_name": "code-quality",
   "reviewed_against_skill_versions": {
-    "code-quality": "0.2.1"
+    "code-quality": "0.3.0"
   },
   "evals": [
     {
@@ -15,6 +15,8 @@
         "Scopes the test tree into the inventory too (does not exclude tests/ the way a production-only pass would)",
         "Creates docs/reports/code-quality/ plus a docs/reports/<lens>/ dir for each of the six lenses",
         "Dispatches six analyzer subagents in parallel, one per lens, each pointed at skills/<lens>/agents/analyzer.md",
+        "Dispatches each analyzer with isolation: worktree rather than letting six writing agents share one tree",
+        "Gives code paths repo-relative and the draft path as an injected artifact root, and requires each analyzer to assert its scoped files resolve under its own working directory before reading",
         "Passes ddd in analyze mode only (never design or build) and clean-code in deep gear (not the inline quick gear)",
         "Does not dispatch analyzers with a read-only agent type (Explore) — each must be able to write its own draft-findings.md",
         "Dispatches six reviewers, and tells the gof reviewer to skip its HTML preview and write only Markdown",
@@ -66,6 +68,20 @@
         "Routes request (2) to /code-review, explicitly because a diff/PR correctness pass is not what /code-quality does",
         "Does not launch the six-lens fan-out for either request",
         "States the carve: the umbrella is for a whole-codebase audit spanning multiple concerns, not a scoped one-concern pass or a change-set bug review"
+      ]
+    },
+    {
+      "id": 5,
+      "skill": "code-quality",
+      "prompt": "/code-quality over all commits ahead of origin/main, and give each agent its own worktree. (The harness cuts those worktrees at the merge-base, so the branch's code is not in them.)",
+      "expected_output": "Every lens stops on the missing subject and reports a named coverage gap, rather than re-resolving the scoped files against the orchestrator's checkout by absolute path and reporting a clean isolated run over code it never had.",
+      "assertions": [
+        "Each analyzer asserts the scoped files resolve under its own working directory before reading, and stops when they do not",
+        "No lens re-resolves its scoped files against the orchestrator's checkout by absolute path to keep working",
+        "The absent code is reported as a named coverage gap per lens, never as a completed audit",
+        "test-quality is not treated as the only affected lens — its mutation gate merely fails first because it must execute the code",
+        "Drafts are written to the injected artifact root, which is outside the worktree and so survives the worktree being cleaned up",
+        "Does not present the consolidated report as a full six-lens audit when lenses could not read their subject"
       ]
     }
   ]

@@ -8,6 +8,14 @@ finding you keep, you have personally verified against the current code.
 You edit no code. The files you write are your lens's report artifacts — the
 Markdown report, plus any preview the lens specifies.
 
+**Verifying means reading the code under review, so confirm it is where you
+stand.** Resolve the draft's cited files against your own working directory
+before you verify anything. If they are absent — an isolated run whose worktree
+does not carry the branch — stop and report a named coverage gap rather than
+re-resolving them against another checkout: a reviewer that verifies findings
+against a *different* tree from the one the analyzer read will confirm and prune
+findings on evidence that does not exist here.
+
 This role is dispatched per the shared workflow
 ([docs/refactor-workflow.md](../refactor-workflow.md)); the orchestrator
 tells you which lens you're reviewing for and hands you that lens's rubric,
@@ -15,8 +23,13 @@ report template, and output path.
 
 ## Inputs (from the orchestrator)
 
-- The draft findings file the analyzer produced, e.g.
-  `docs/reports/<lens>/draft-findings.md`
+- The draft findings file the analyzer produced — at the path the brief gives
+  you, which is under the orchestrator's **artifact root** when it names one
+  (the analyzer wrote it there, not inside its own worktree) and
+  `docs/reports/<lens>/draft-findings.md` when it does not. Take both this and
+  your own output path from the brief verbatim rather than deriving either; see
+  "Isolation and artifact collection" in
+  [../refactor-workflow.md](../refactor-workflow.md).
 - **Rubric path** — this lens's shared rubric (read it first)
 - The language reference if applicable, and this lens's report-template
   path, e.g. `references/report-template.md`

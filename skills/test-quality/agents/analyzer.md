@@ -70,6 +70,16 @@ never be reported as one — the `unverified_reasons` array in the JSON payload 
 exactly what went wrong, and the `Mutants executed` line says how many mutants actually
 ran. Zero mutants executed over a non-empty scope means nothing was tested.
 
+**Under isolation, `--repo-root` is your own working directory.** This lens is the
+one whose gate has to *execute* the code, so it is the one an isolated run breaks
+first: the other five can still read a file, while a mutation sweep over code that
+is not there has nothing to run. Point the gate at the tree you are standing in —
+never at an absolute path into another checkout to "make it work" — and if the code
+under audit is not present there, that is a named coverage gap, per "Isolation and
+artifact collection" in [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md).
+The gate makes its own scratch workspace from whatever `--repo-root` it is given, so
+a correct worktree costs it nothing.
+
 **Never improvise around a `2` by running the mutation tool yourself.** A hand-run
 `./gradlew pitest` (or `npx stryker run`) ignores the scope selection and mutates the
 whole project, which is how one audit turned a branch sweep into 661 mutants and a
