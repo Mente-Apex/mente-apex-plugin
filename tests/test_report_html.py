@@ -73,7 +73,9 @@ class TestStructure:
         first = parse_report(SAMPLE)
         second = parse_report(SAMPLE)
 
-        assert [s.anchor for s in first] == [s.anchor for s in second]
+        assert [section.anchor for section in first] == [
+            section.anchor for section in second
+        ]
         assert all(" " not in section.anchor for section in first)
 
 

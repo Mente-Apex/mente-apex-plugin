@@ -11,6 +11,7 @@ These tests are mostly about the two failures that are expensive: an order
 jumped without a reason, and work that happened but was never stamped.
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from report_index import (
+    STATUS_PATTERNS,
     Violation,
     check_report,
     parse_report,
@@ -141,7 +143,6 @@ class TestStampingIsChecked:
             "failed (reverted)",
             "skipped (not approved)",
             "skipped (lost conflict to gof/major-2)",
-            "deferred",
         ],
     )
     def test_every_canonical_status_is_accepted(self, status):
@@ -191,7 +192,9 @@ class TestTheApplyOrderIsAQueue:
         violations = check_report(text)
 
         assert "order-jumped" in rule_names(violations)
-        jumped = next(v for v in violations if v.rule == "order-jumped")
+        jumped = next(
+            violation for violation in violations if violation.rule == "order-jumped"
+        )
         assert jumped.finding_id == "clean-code/minor-1"
 
     def test_the_violation_names_the_remedy_not_just_the_problem(self):
@@ -208,9 +211,16 @@ class TestTheApplyOrderIsAQueue:
             apply_log="2026-09-15T10:00Z [gof/minor-1] applied — covered — green",
         )
 
-        jumped = next(v for v in check_report(text) if v.rule == "order-jumped")
+        jumped = next(
+            violation
+            for violation in check_report(text)
+            if violation.rule == "order-jumped"
+        )
 
-        assert "record the reason in the Apply log" in jumped.detail
+        # Both remedies, and both reachable: restamp the blocker, or note the
+        # deliberate reorder where the rule can see it.
+        assert "skipped (not approved)" in jumped.detail
+        assert "out of turn" in jumped.detail
 
     def test_a_skipped_finding_does_not_block_the_ones_after_it(self):
         """Skipped is resolved. Treating it as a blocker would stall the queue on
@@ -281,19 +291,19 @@ class TestTheProgressLine:
             rows=[
                 (1, "solid/major-1", "First", "applied"),
                 (2, "gof/major-1", "Second", "pending"),
-                (3, "ddd/minor-1", "Third", "deferred"),
+                (3, "ddd/minor-1", "Third", "skipped (not approved)"),
             ],
             findings=[
                 ("solid/major-1", "First", "applied"),
                 ("gof/major-1", "Second", "pending"),
-                ("ddd/minor-1", "Third", "deferred"),
+                ("ddd/minor-1", "Third", "skipped (not approved)"),
             ],
             apply_log="2026-09-15T10:00Z [solid/major-1] applied — covered — green",
         )
 
         assert (
             progress_line(parse_report(text))
-            == "1 of 3 applied · 1 pending · 1 deferred"
+            == "1 of 3 applied · 1 pending · 1 skipped"
         )
 
     def test_it_omits_the_buckets_that_are_empty(self):
@@ -479,3 +489,67 @@ class TestThePhasesRunTheChecker:
         text = self.umbrella()
 
         assert "report_index.py --strict" in text
+
+
+class TestTheVocabularyIsNotTranscribed:
+    """`deferred` got into this module because the vocabulary was retyped here
+    instead of being read from the document that defines it. The result was a
+    status the checker accepted, the template advertised, and the canonical
+    document had never heard of — which made the queue rule incoherent, since a
+    `deferred` row was neither resolved nor pending."""
+
+    @staticmethod
+    def declared_in_the_doc():
+        """The statuses docs/refactor-workflow.md actually defines."""
+        workflow = (
+            Path(__file__).resolve().parents[1] / "docs/refactor-workflow.md"
+        ).read_text(encoding="utf-8")
+        bullet = workflow.split("**Status values**", 1)[1].split("- **Apply-log", 1)[0]
+        return set(re.findall(r"`([a-z]+(?: \([^`]+\))?)`", bullet))
+
+    def test_the_doc_still_declares_a_vocabulary_this_test_can_read(self):
+        """Guard on the guard: if the bullet is reworded past recognition, the
+        comparison below would compare two empty sets and pass forever."""
+        declared = self.declared_in_the_doc()
+
+        assert "pending" in declared and "applied" in declared
+
+    def test_the_module_accepts_nothing_the_doc_does_not_define(self):
+        for status in self.declared_in_the_doc():
+            spelled = status.replace("<winner-id>", "gof/major-2")
+            assert any(
+                re.match(pattern, spelled) for pattern in STATUS_PATTERNS
+            ), f"the doc defines {status!r} and this module rejects it"
+
+    def test_deferred_is_rejected_because_the_doc_never_defined_it(self):
+        assert "deferred" not in self.declared_in_the_doc()
+        assert not any(re.match(pattern, "deferred") for pattern in STATUS_PATTERNS)
+
+
+class TestTheProgressLineDoesNotFlatterTheRun:
+    def test_reverted_work_is_never_counted_as_applied(self):
+        """Three attempts, all reverted, used to read "3 of 3 applied" — to the
+        reader at the gate and to the Outcome synthesis built from the same
+        statuses."""
+        text = report(
+            rows=[
+                (index, f"solid/major-{index}", "Tried", "failed (reverted)")
+                for index in (1, 2, 3)
+            ],
+            findings=[
+                (f"solid/major-{index}", "Tried", "failed (reverted)")
+                for index in (1, 2, 3)
+            ],
+        )
+
+        assert progress_line(parse_report(text)) == "0 of 3 applied · 3 reverted"
+
+    def test_an_unreadable_status_is_not_silently_called_pending(self):
+        """ "we cannot read this row" and "this row is queued" are different
+        facts, and only one of them is the reader's problem."""
+        text = report(
+            rows=[(1, "solid/major-1", "Odd", "in progress")],
+            findings=[("solid/major-1", "Odd", "in progress")],
+        )
+
+        assert "1 unstamped" in progress_line(parse_report(text))

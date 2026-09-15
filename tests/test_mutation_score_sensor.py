@@ -136,7 +136,9 @@ class TestWhenThereMustBeNoNumber:
         worst possible suite, and it must not be hidden by the guard that hides
         "we could not tell"."""
         result = run_with(
-            survivors=tuple(survivor(artifact=f"{n}.py") for n in range(10))
+            survivors=tuple(
+                survivor(artifact=f"module_{index}.py") for index in range(10)
+            )
         )
 
         assert mutation_score(result) == 0.0
@@ -151,12 +153,31 @@ class TestWhatCountsAsKilled:
 
         assert mutation_score(result) == 100.0
 
-    def test_an_inconclusive_result_does_not_count_against_the_suite(self):
-        """A mutant whose covering tests were already red proves nothing in
-        either direction."""
-        result = run_with(survivors=(survivor(status="unreliable_baseline"),))
+    @pytest.mark.parametrize(
+        "status",
+        ["survived", "no_coverage", "timeout", "non_viable", "unreliable_baseline"],
+    )
+    def test_every_executed_row_counts_against_the_score(self, status):
+        """The gate records a row only for a mutant it did not cleanly kill, so
+        any EXECUTED row is a mutant the suite did not kill.
 
-        assert mutation_score(result) == 100.0
+        Counting only the literal `survived` status scored the other four as
+        kills: 75 uncovered mutants out of 100 reported 100% — a perfect reading
+        on code nothing tests. `no_coverage` especially: no test touched it.
+        """
+        result = run_with(survivors=(survivor(status=status),))
+
+        assert mutation_score(result) == 90.0
+
+    def test_an_inconclusive_row_understates_health_rather_than_overstating_it(self):
+        """`unreliable_baseline` proves nothing in either direction, so it has to
+        fall one way or the other. It falls against the score, because this
+        number is read as reassurance and the survivors stay enumerated with
+        their statuses for anyone who needs the distinction."""
+        clean = run_with(survivors=())
+        inconclusive = run_with(survivors=(survivor(status="unreliable_baseline"),))
+
+        assert mutation_score(inconclusive) < mutation_score(clean)
 
 
 class TestItReachesBothConsumers:

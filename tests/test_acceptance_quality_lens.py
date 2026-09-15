@@ -14,9 +14,9 @@ mostly pin. The rest is the carve: `atdd` builds acceptance suites, this lens
 audits one that exists, and neither does the other's job.
 """
 
+import json
 from pathlib import Path
 
-import json
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -155,15 +155,11 @@ class TestProseConsistencyIsNotDryness:
         assert "held to consistency, not to DRY" in text
 
     def test_the_rubric_says_why_de_duplicating_prose_is_wrong(self):
-        text = read("references/rubric.md")
-
         assert "examples this layer exists to give" in flat("references/rubric.md")
 
     def test_it_names_the_cost_to_the_occasional_reader(self):
         """An occasional reader cannot tell deliberate variation from accidental
         variation, so every inconsistency reads as a distinction."""
-        text = read("references/rubric.md")
-
         assert "cannot tell deliberate variation from accidental" in flat(
             "references/rubric.md"
         )
@@ -184,16 +180,14 @@ class TestProseConsistencyIsNotDryness:
     def test_variation_that_carries_meaning_is_not_a_finding(self):
         """ "the customer" and "the guest" are two actors; flattening them would
         be worse than the inconsistency."""
-        text = read("references/rubric.md")
+        rubric = read("references/rubric.md")
 
-        assert "variation that carries meaning" in text.lower()
-        assert "the guest" in text
+        assert "variation that carries meaning" in rubric.lower()
+        assert "the guest" in rubric
 
     def test_house_style_is_not_this_lens_business(self):
         """Consistency is the standard; a particular choice is not."""
-        text = read("references/rubric.md")
-
-        assert "house-style" in text
+        assert "house-style" in read("references/rubric.md")
         assert "does not have opinions about anyone's house style" in flat(
             "references/rubric.md"
         )

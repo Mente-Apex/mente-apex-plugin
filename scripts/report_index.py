@@ -32,9 +32,18 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# The canonical vocabulary, defined in docs/refactor-workflow.md and transcribed
+# The canonical vocabulary, DEFINED in docs/refactor-workflow.md and transcribed
 # here as patterns. Kept as regexes rather than a set because two values carry a
 # payload: the winner of a conflict fork, and the primary that subsumed a rider.
+#
+# `deferred` is deliberately NOT here. The vocabulary is
+# `pending -> applied | failed (reverted) | skipped (not approved) |
+# skipped (lost conflict to <winner-id>)`, and the consolidated template's
+# "Deferred / not approved" Outcome bucket is narrative prose for ids LEFT
+# PENDING -- not a fifth status. Accepting one here let a run stamp `deferred`,
+# which then read as neither resolved nor pending and made the queue rule
+# incoherent. tests/test_report_index.py pins this list against the doc, so the
+# two cannot drift apart again.
 STATUS_PATTERNS = (
     r"^pending$",
     r"^applied$",
@@ -42,10 +51,17 @@ STATUS_PATTERNS = (
     r"^failed \(reverted\)$",
     r"^skipped \(not approved\)$",
     r"^skipped \(lost conflict to [^)]+\)$",
-    r"^deferred(?: \(.+\))?$",
 )
 
-RESOLVED_STATUSES = ("applied", "failed", "skipped", "deferred")
+# Everything except `pending`. A finding the human declined is `skipped (not
+# approved)` and therefore resolved -- leaving it `pending` is the stamping miss
+# the queue rule below reports, not a state the queue should wait on forever.
+RESOLVED_STATUSES = ("applied", "failed", "skipped")
+
+# An Apply-log line carrying this phrase is an explicit, deliberate reorder. It
+# is the remedy the queue rule names, so the rule has to be able to SEE it --
+# naming a remedy a check cannot observe is how a violation becomes unclearable.
+OUT_OF_TURN = "out of turn"
 
 FINDING_ID = re.compile(r"[a-z-]+/(?:critical|major|minor)-\d+", re.I)
 INDEX_ROW = re.compile(r"^\|\s*(?P<order>[^|]+?)\s*\|(?P<rest>.*)\|\s*$")
@@ -98,6 +114,9 @@ class ConsolidatedReport:
     index_rows: list = field(default_factory=list)
     findings: list = field(default_factory=list)
     apply_log_ids: list = field(default_factory=list)
+    # Findings whose Apply-log line explicitly says the order was jumped on
+    # purpose. Read by the queue rule, which offers exactly this as its remedy.
+    out_of_turn_ids: set = field(default_factory=set)
     has_index: bool = False
     has_apply_log: bool = False
 
@@ -170,8 +189,11 @@ def parse_report(text):
     for line in apply_log.splitlines():
         for match in APPLY_LOG_LINE.finditer(line):
             candidate = FINDING_ID.search(match.group("id"))
-            if candidate:
-                report.apply_log_ids.append(candidate.group(0))
+            if not candidate:
+                continue
+            report.apply_log_ids.append(candidate.group(0))
+            if OUT_OF_TURN in line.lower():
+                report.out_of_turn_ids.add(candidate.group(0))
 
     return report
 
@@ -272,6 +294,12 @@ def the_apply_order_is_a_queue(report):
     # that actually happened, and it is the one whose reason is missing.
     violations = []
     for jumper in (row for row in ordered if is_resolved(row)):
+        if jumper.finding_id in report.out_of_turn_ids:
+            # Reordering deliberately is allowed; it just has to be visible. The
+            # Apply log said so, which is the remedy this rule names, so the rule
+            # has to honour it -- a remedy a check cannot observe is a violation
+            # nobody can clear.
+            continue
         blocking = [
             row
             for row in ordered
@@ -286,8 +314,10 @@ def the_apply_order_is_a_queue(report):
                 f"resolved at order {jumper.order_number} while "
                 f"{first_blocking.finding_id} at order "
                 f"{first_blocking.order_number} is still "
-                f"{first_blocking.status!r} — record the reason in the Apply log "
-                "or reorder the index",
+                f"{first_blocking.status!r} — stamp that one with its real "
+                "status (a finding the human declined is "
+                "'skipped (not approved)', not 'pending'), or note "
+                f"'{OUT_OF_TURN}' on this finding's Apply-log line",
                 jumper.finding_id,
             )
         )
@@ -382,31 +412,40 @@ def check_report(text, rules=DEFAULT_RULES):
 
 
 def progress_line(report):
-    """`3 of 9 findings resolved · 5 pending · 1 deferred` — the one-line state.
+    """`2 of 9 applied · 5 pending · 1 reverted · 1 skipped` — the one-line state.
 
     Cheap to compute and the thing a reader wants before anything else, so the
     report carries it rather than making them count rows.
+
+    **`failed (reverted)` gets its own bucket and is never counted as applied.**
+    Folding it into the leading number told a reader at the decision gate -- and
+    the Outcome synthesis built from the same statuses -- that a third of the
+    work had landed when every attempt had been reverted.
+
+    A status outside the vocabulary counts as neither: it lands in `unstamped`
+    rather than being silently absorbed into `pending`, because "we cannot read
+    this row" and "this row is queued" are different facts and only one of them
+    is the reader's problem.
     """
     total = len(report.index_rows)
-    resolved = len(
-        [
-            row
-            for row in report.index_rows
-            if row.status.lower().startswith(("applied", "failed"))
-        ]
-    )
-    skipped = len(
-        [row for row in report.index_rows if row.status.lower().startswith("skipped")]
-    )
-    deferred = len(
-        [row for row in report.index_rows if row.status.lower().startswith("deferred")]
-    )
-    pending = total - resolved - skipped - deferred
-    parts = [f"{resolved} of {total} applied"]
+
+    def matching(prefix):
+        return len(
+            [row for row in report.index_rows if row.status.lower().startswith(prefix)]
+        )
+
+    applied = matching("applied")
+    reverted = matching("failed")
+    skipped = matching("skipped")
+    pending = matching("pending")
+    unstamped = total - applied - reverted - skipped - pending
+
+    parts = [f"{applied} of {total} applied"]
     for count, label in (
         (pending, "pending"),
-        (deferred, "deferred"),
+        (reverted, "reverted"),
         (skipped, "skipped"),
+        (unstamped, "unstamped"),
     ):
         if count:
             parts.append(f"{count} {label}")

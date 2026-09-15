@@ -136,7 +136,9 @@ class TestTheForgeSignalRecoversIt:
 
         lines = merged_branch.report(clone, forge_merged=frozenset({"feat/x"}))
 
-        assert any("Merged branches still present locally: feat/x." in l for l in lines)
+        assert any(
+            "Merged branches still present locally: feat/x." in line for line in lines
+        )
 
     def test_an_unrelated_merged_pr_does_not_make_this_branch_merged(self, clone):
         """The set is consulted by name, so a busy repo's other merged PRs say

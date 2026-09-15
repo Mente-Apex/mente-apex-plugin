@@ -101,7 +101,8 @@ shares, so both fold in:
   read, believed, and wrong.
 
 **Open with the progress line**, above the table, so the state is legible before the
-first row: `**3 of 9 applied · 5 pending · 1 deferred**`. On an audit-only run that
+first row: `**3 of 9 applied · 5 pending · 1 skipped**`. Reverted work gets its own
+bucket and is never counted as applied. On an audit-only run that
 reads `0 of 9 applied · 9 pending`, which is honest and takes one line.
 
 **The `#` column is a queue, not a suggestion.** Phase 4 consumes it top to bottom. A

@@ -195,6 +195,22 @@ def mutation_score(result):
     excluded from the numerator's population for the reason `was_executed`
     exists: they are not survivors the suite failed to kill, they are mutants
     that never ran.
+
+    **Every EXECUTED row counts against the score, not only `survived`.** The
+    gate records a row for a mutant only when it was not cleanly killed, so any
+    executed row is by definition a mutant the suite did not kill: `no_coverage`
+    means no test touched it, `timeout` and `non_viable` mean the run could not
+    say, and `unreliable_baseline` means its covering tests were already red.
+    Counting only the literal `survived` status scored all four as kills, so 75
+    uncovered mutants out of 100 reported **100%** -- a perfect reading on code
+    nothing tests, which is the exact lie this function's caution about `None`
+    was written to avoid. `mutation_gate.py`'s own arithmetic uses the whole
+    executed population for this reason; this now matches it.
+
+    An inconclusive row counting against the score understates health rather
+    than overstating it. That is the right direction for a number a reader takes
+    as reassurance, and the survivors stay enumerated with their statuses so
+    nobody has to guess which kind they were.
     """
     counting_runs = [run for run in result.backend_runs if run.counts_mutants]
     if not counting_runs:
@@ -204,14 +220,10 @@ def mutation_score(result):
     executed = sum(run.mutants_executed for run in counting_runs)
     if executed <= 0:
         return None
-    survived = len(
-        [
-            survivor
-            for survivor in result.survivors
-            if is_survivor(survivor) and was_executed(survivor)
-        ]
+    not_killed = len(
+        [survivor for survivor in result.survivors if was_executed(survivor)]
     )
-    killed = max(executed - survived, 0)
+    killed = max(executed - not_killed, 0)
     return round(100.0 * killed / executed, 1)
 
 
