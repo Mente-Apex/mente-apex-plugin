@@ -17,6 +17,12 @@ honestly.
 - The `tdd` standard you audit against: `../../tdd/SKILL.md`,
   `../../tdd/references/ddd_testing.md`, and the detected stack's
   `../../tdd/references/<language>-<runner>.md`.
+- **This lens's own** `../references/<language>.md` for the detected language (ships
+  `python.md`, `typescript.md`, `java.md`; list `references/` for the current set) — the
+  AUDIT view of that stack: what each smell looks like there, and what is ordinary
+  testing in that language and must not be filed. It cites `tdd`'s adapter above for how
+  a test should be written rather than restating it — this lens audits the suites that
+  skill writes, so a second standard would be a second thing to drift.
 - **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
   whether the target has a usable `graphify-out/graph.json`. "None" is an
   ordinary answer — work the fallback ladder and record one Coverage line,

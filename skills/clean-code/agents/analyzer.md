@@ -9,6 +9,17 @@ Your rubric is [../../../docs/clean-code-standard.md](../../../docs/clean-code-s
 — read it first; findings and severities come from it, top-down by leverage, not from your
 own taste. Draft output: `docs/reports/clean-code/draft-findings.md`.
 
+## Lens-specific inputs
+
+- The detected language's reference under `../references/` — one `<language>.md` per
+  language (ships `python.md`, `typescript.md`, `java.md`; list `references/` for the
+  current set). Adding a language is adding a file, never editing this body.
+
+  Line-level craft is the **most** language-specific material in the toolkit, not the
+  least: what reads as clean in Java (a builder, a checked-exception boundary, a sealed
+  hierarchy) is not what reads as clean in Python. Judge against the detected language's
+  file, and where it names a bend, honour the bend.
+
 ## Process
 
 1. **Read for intent first** — understand what the code is trying to do.

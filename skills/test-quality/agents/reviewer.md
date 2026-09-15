@@ -9,6 +9,10 @@ no code and no tests** — you write the report only.
 ## Inputs (from the orchestrator)
 
 - `docs/reports/test-quality/draft-findings.md` — the draft.
+- `../references/<language>.md` for the detected language — verify each finding against
+  it as well as the rubric: a finding correct in the abstract and wrong for the language
+  (boundary mocking filed as over-mocking, a `@Nested` group filed as nesting) is one to
+  prune.
 - `../references/rubric.md` (read first) and the `tdd` references the rubric points to.
 - `../references/report-template.md` — the exact output shape.
 - The runner + coverage tool and the baseline suite status.

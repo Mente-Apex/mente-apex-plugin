@@ -8,6 +8,16 @@ Rubric: [../../../docs/clean-code-standard.md](../../../docs/clean-code-standard
 first). Output shape: [../references/report-template.md](../references/report-template.md).
 Report: `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md`.
 
+## Lens-specific inputs
+
+- The detected language's reference under `../references/` — one `<language>.md` per
+  language (ships `python.md`, `typescript.md`, `java.md`; list `references/` for the
+  current set). Adding a language is adding a file, never editing this body.
+
+  Verify each finding against the detected language's file as well as the standard: a
+  finding correct in the abstract and wrong for the language (a record accessor filed as
+  a naming violation, a builder filed as over-engineering) is one to prune.
+
 ## Process
 
 1. **Verify every draft finding.** Open the cited files at the cited lines; don't
