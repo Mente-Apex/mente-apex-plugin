@@ -180,9 +180,9 @@ group is one job. Decode `Breaks` in the Legend.
 
 | # | Finding | Breaks | Risk | Status |
 |---|---|---|---|---|
-| 1ᴾ | `solid/major-1` Split the 1889-line command god-module | SOLID · SRP | Med | pending |
-| 1ᴿ | `clean-code/major-1` Extract the 4-site credential read | clean-code · #4 DRY | Low | pending |
-| 2 | `clean-arch/major-1` Break the 23-module import cycle | clean-arch · ADP | Low | pending |
+| 1 | `solid/critical-1` <short imperative title> | SOLID · SRP | Med | pending |
+| 2ᴾ | `clean-arch/major-1` Break the 23-module import cycle | clean-arch · ADP | Low | pending |
+| 2ᴿ | `clean-code/major-1` Extract the 4-site credential read | clean-code · #4 DRY | Low | pending |
 | 3 | `clean-code/minor-1` Extract the duplicated skeleton-report dict | clean-code · #4 DRY | Low | pending |
 
 **Apply order.** <one line of *why* per non-obvious position; obvious tier order needs none — e.g.
@@ -248,11 +248,25 @@ links (and any intra-report reference) resolve to the exact finding.
 
 ### Major
 
-#### [clean-arch/major-1] ...
+<a id="clean-arch-major-1"></a>
+#### [clean-arch/major-1] Break the 23-module import cycle
+
+- <!-- ...the same fields as above... -->
+- **Status:** pending
+
+<a id="clean-code-major-1"></a>
+#### [clean-code/major-1] Extract the 4-site credential read
+
+- <!-- ...the same fields as above... -->
+- **Status:** pending
 
 ### Minor
 
-#### [clean-code/minor-1] ...   <!-- every lens files at its own tier; clean-code is a peer, not down-filed -->
+<a id="clean-code-minor-1"></a>
+#### [clean-code/minor-1] Extract the duplicated skeleton-report dict   <!-- every lens files at its own tier; clean-code is a peer, not down-filed -->
+
+- <!-- ...the same fields as above... -->
+- **Status:** pending
 
 ## Conflicts
 
@@ -310,8 +324,8 @@ DIP (solid) on `Config` — the lenses disagree; decide at the gate", or "none">
 <!-- Appended by the implementer, one line per attempt, exactly as in the lens templates.
      The safety clause (existing-suite coverage source, or pins written red-first) is
      required — it is what makes "the engine actually ran a safe refactor" observable: -->
-<!-- <UTC timestamp> [clean-arch/critical-1] applied — covered by test_boundaries.py — suite green (42 passed) — diffstat: 3 files, +120/-85 -->
-<!-- <UTC timestamp> [gof/major-2] applied — uncovered targets → 3 pins written red-first (test_legacy_billing.py) — suite green (45 passed) — diffstat: 2 files, +80/-30 -->
+<!-- <UTC timestamp> [clean-arch/major-1] applied — covered by test_boundaries.py — suite green (42 passed) — diffstat: 3 files, +120/-85 -->
+<!-- <UTC timestamp> [clean-code/major-1] applied — uncovered targets → 3 pins written red-first (test_legacy_billing.py) — suite green (45 passed) — diffstat: 2 files, +80/-30 -->
 ```
 
 The `Status:` vocabulary and the Apply-log line format are the shared ones defined

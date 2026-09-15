@@ -202,3 +202,145 @@ class TestTheCli:
         completed = self.run_cli(str(report), "--badges", vocabulary)
 
         assert completed.returncode == 0, completed.stderr
+
+
+class TestTheDeepLinksActuallyResolve:
+    """Every lens template mandates `<a id="<lens>-<tier>-<n>"></a>` above each
+    finding heading, and the umbrella's *Full detail* links point at exactly
+    that. The renderer was html-escaping those anchors into visible junk text
+    while deriving its own title-based ids — so every deep link in every HTML
+    preview resolved nowhere, and the id changed whenever a finding was retitled.
+    """
+
+    ANCHORED = """# SOLID Report
+
+## Findings
+
+<a id="solid-critical-1"></a>
+
+#### [solid/critical-1] Split the god-module
+
+- **Status:** pending
+"""
+
+    def test_the_reports_own_anchor_becomes_the_section_id(self):
+        page = render_html(self.ANCHORED)
+
+        assert 'id="solid-critical-1"' in page
+        assert 'href="#solid-critical-1"' in page
+
+    def test_the_anchor_is_never_rendered_as_text(self):
+        page = render_html(self.ANCHORED)
+
+        assert "&lt;a id=" not in page
+
+    def test_an_explicit_anchor_survives_a_retitle(self):
+        """The stability the derived slug could not give: the id is the finding's
+        permanent ID, so a saved link keeps working when the title changes."""
+        retitled = self.ANCHORED.replace("Split the god-module", "Split the module")
+
+        assert 'id="solid-critical-1"' in render_html(retitled)
+
+    def test_only_a_strict_anchor_shape_reaches_the_page_unescaped(self):
+        """This is the one place markup from the report is emitted raw, so the
+        pattern allows an id of word characters and hyphens and nothing else."""
+        hostile = self.ANCHORED.replace(
+            '<a id="solid-critical-1"></a>',
+            '<a id="x" onclick="alert(1)"></a>',
+        )
+        page = render_html(hostile)
+
+        assert "onclick" not in page or "&lt;a id=" in page
+
+    def test_a_repeated_heading_does_not_collide_on_one_id(self):
+        """Two lenses both emit `### Critical`; a duplicate id makes the second
+        unreachable, because the nav link scrolls to the first."""
+        page = render_html("# R\n\n### Critical\n\nOne.\n\n### Critical\n\nTwo.\n")
+
+        assert page.count('id="critical"') == 1
+        assert 'id="critical-2"' in page
+
+
+class TestQuotedMarkdownIsNotParsedAsStructure:
+    FENCED = """# R
+
+## Findings
+
+#### [solid/critical-1] Thing
+
+Evidence:
+
+```markdown
+## Summary
+
+A heading quoted as evidence.
+```
+
+Prose after the fence.
+"""
+
+    def test_a_heading_inside_a_fence_is_not_a_section(self):
+        """It invented a phantom section and nav link, and split the fence into
+        two unbalanced blocks across two cards — so the prose after it rendered
+        as code. These lenses audit Markdown-heavy trees, where quoting a heading
+        as evidence is the ordinary case."""
+        page = render_html(self.FENCED)
+
+        assert 'href="#summary"' not in page
+
+    def test_the_fence_stays_in_one_piece(self):
+        page = render_html(self.FENCED)
+
+        assert page.count("<pre><code>") == page.count("</code></pre>") == 1
+
+    def test_the_prose_after_the_fence_is_prose(self):
+        page = render_html(self.FENCED)
+
+        assert "<p>Prose after the fence.</p>" in page
+
+
+class TestInternalSectionsAreNotPublished:
+    """The Markdown report is gitignored; the HTML is the artifact that gets
+    forwarded to a colleague or a client. This rule existed in gof's per-lens
+    spec and was lost when the renderer was shared."""
+
+    INTERNAL = """# R
+
+## Summary
+
+One finding.
+
+## Reviewer notes
+
+Pruned D5 — the cited line had moved.
+
+## Apply log
+
+2026-09-16T10:00Z [solid/critical-1] applied — covered — green — diffstat: 3 files
+"""
+
+    def test_reviewer_notes_are_withheld(self):
+        """It carries every finding the critic PRUNED, with the reason — not for
+        an outside reader."""
+        page = render_html(self.INTERNAL)
+
+        assert "Pruned D5" not in page
+        assert 'href="#reviewer-notes"' not in page
+
+    def test_the_apply_log_is_withheld(self):
+        page = render_html(self.INTERNAL)
+
+        assert "diffstat" not in page
+        assert 'href="#apply-log"' not in page
+
+    def test_the_rest_of_the_report_still_renders(self):
+        page = render_html(self.INTERNAL)
+
+        assert "One finding." in page
+
+    def test_the_withheld_set_is_data(self):
+        """A lens adding an internal section adds a name, not a code path."""
+        from report_html import INTERNAL_SECTIONS
+
+        assert "reviewer notes" in INTERNAL_SECTIONS
+        assert "apply log" in INTERNAL_SECTIONS

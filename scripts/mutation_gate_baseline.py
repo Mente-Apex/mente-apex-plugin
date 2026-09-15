@@ -98,15 +98,35 @@ class PytestSuiteRunner:
     # how a repo with no pytest suite ends up running `uv run pytest` and
     # collecting nothing -- #155's own failure, reintroduced by the fix.
     _MARKER_FILES = ("pytest.ini", "conftest.py")
-    _MARKED_MANIFESTS = ("pyproject.toml", "tox.ini", "setup.cfg")
+    _MARKED_MANIFESTS = (
+        "pyproject.toml",
+        "tox.ini",
+        "setup.cfg",
+        # A Django or Flask service routinely keeps its test deps here rather
+        # than in pyproject. Without these, such a repo carrying a frontend
+        # `package.json` resolved the NODE runner, whose green run returns an
+        # empty already-red set -- so every Python mutant whose only covering
+        # test was already failing scored as killed, silently. The old
+        # hardcoded-pytest baseline would at least have exited 2 loudly.
+        "requirements-dev.txt",
+        "requirements-test.txt",
+        "requirements.txt",
+        "Pipfile",
+    )
 
     def available(self, repo_root):
         if any((Path(repo_root) / name).is_file() for name in self._MARKER_FILES):
             return True
-        return any(
+        if any(
             "pytest" in _text_of(repo_root, manifest)
             for manifest in self._MARKED_MANIFESTS
-        )
+        ):
+            return True
+        # A `tests/` tree of `test_*.py` is a pytest suite whether or not any
+        # manifest says so, and this is the last check rather than the first
+        # because reading a manifest is cheaper than walking a tree.
+        tests_directory = Path(repo_root) / "tests"
+        return tests_directory.is_dir() and any(tests_directory.glob("**/test_*.py"))
 
     def already_red(self, repo_root):
         return baseline(repo_root, _pytest_run_suite)
@@ -239,7 +259,15 @@ class NodeSuiteRunner:
             manifest = json.loads(_text_of(repo_root, "package.json") or "{}")
         except json.JSONDecodeError:
             return False
-        return bool(manifest.get("scripts", {}).get("test"))
+        # `null`, `[]`, `"a string"` and `{"scripts": null}` are all valid JSON and
+        # all raised AttributeError here, killing the whole gate during DETECTION
+        # -- before any mutant ran, from a file this runner was only sniffing.
+        if not isinstance(manifest, dict):
+            return False
+        scripts = manifest.get("scripts")
+        if not isinstance(scripts, dict):
+            return False
+        return bool(scripts.get("test"))
 
     def already_red(self, repo_root):
         returncode = _run(["npm", "test", "--silent"], repo_root, self.toolchain)
@@ -366,7 +394,15 @@ def gradle_suite_runner():
         bare="gradle",
         # `--console=plain` for the same reason the pitest backend passes it:
         # the rich console writes ANSI control sequences into captured output.
-        task_argv=("--console=plain", "test"),
+        #
+        # `--rerun-tasks` is not optional here. `--scope working-tree` copies the
+        # operator's `build/` into the scratch workspace verbatim, so Gradle's
+        # up-to-date check reported `:test UP-TO-DATE`, exited 0 and rewrote
+        # nothing -- and the freshness policy then correctly found no results this
+        # run had written and raised, blaming stale results rather than the
+        # incremental build. A permanently failing gate on any Gradle repo with a
+        # populated `build/`. Maven is unaffected because Surefire always re-forks.
+        task_argv=("--console=plain", "--rerun-tasks", "test"),
         locate_results=_gradle_results,
     )
 

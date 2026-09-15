@@ -68,7 +68,7 @@ def branch_repo(tmp_path):
 class TestTheWorktreeCarriesTheCodeUnderReview:
     def test_every_lens_gets_the_branch_commit_not_the_merge_base(self, branch_repo):
         """The headline defect, stated as a test: six worktrees at the branch."""
-        _, created = create_worktrees(branch_repo["path"], "feature", LENSES)
+        _, created, _ = create_worktrees(branch_repo["path"], "feature", LENSES)
 
         for worktree in created.values():
             head = subprocess.run(
@@ -83,13 +83,13 @@ class TestTheWorktreeCarriesTheCodeUnderReview:
     def test_the_file_the_audit_is_about_is_actually_there(self, branch_repo):
         """The ref is a proxy; this is the thing that matters. In the reported
         run the sources under review simply did not exist in any worktree."""
-        _, created = create_worktrees(branch_repo["path"], "feature", LENSES)
+        _, created, _ = create_worktrees(branch_repo["path"], "feature", LENSES)
 
         for worktree in created.values():
             assert (worktree / "feature.py").is_file()
 
     def test_one_worktree_per_lens_named_for_it(self, branch_repo):
-        _, created = create_worktrees(branch_repo["path"], "feature", LENSES)
+        _, created, _ = create_worktrees(branch_repo["path"], "feature", LENSES)
 
         assert set(created) == set(LENSES)
         assert all(path.name == name for name, path in created.items())
@@ -97,7 +97,7 @@ class TestTheWorktreeCarriesTheCodeUnderReview:
     def test_they_are_detached_so_six_lenses_can_share_one_branch(self, branch_repo):
         """Not a preference: git refuses to check out one branch in two
         worktrees, so without --detach the second lens fails outright."""
-        _, created = create_worktrees(branch_repo["path"], "feature", LENSES)
+        _, created, _ = create_worktrees(branch_repo["path"], "feature", LENSES)
 
         for worktree in created.values():
             status = subprocess.run(
@@ -111,7 +111,7 @@ class TestTheWorktreeCarriesTheCodeUnderReview:
     def test_the_set_lives_outside_the_repository(self, branch_repo):
         """A worktree nested inside the tree it was cut from is a tree that
         contains itself, and every file walk downstream doubles."""
-        root, _ = create_worktrees(branch_repo["path"], "feature", LENSES)
+        root, _, _ = create_worktrees(branch_repo["path"], "feature", LENSES)
 
         assert branch_repo["path"] not in root.parents and root != branch_repo["path"]
 
@@ -195,7 +195,7 @@ class TestResolveRef:
 
 class TestTeardown:
     def test_removal_unregisters_every_worktree(self, branch_repo):
-        _, created = create_worktrees(branch_repo["path"], "feature", LENSES)
+        _, created, _ = create_worktrees(branch_repo["path"], "feature", LENSES)
 
         failures = remove_worktrees(branch_repo["path"], created.values())
 
@@ -309,3 +309,89 @@ class TestTheCli:
 
         assert code == 0
         assert json.loads(capsys.readouterr().out)["ref"] == "feature"
+
+
+class TestPathsAreResolvedNotAssumed:
+    """A relative `--repo-root` used to fail 100% of the time, and fail with this
+    module's own #156 alarm about a defect that had not occurred: `git worktree
+    add` resolves a relative destination against `git -C <repo_root>`, while
+    `_head_of` ran `git -C <destination>` against the PROCESS cwd."""
+
+    def test_a_relative_repo_root_still_creates_a_verified_set(
+        self, branch_repo, monkeypatch, tmp_path
+    ):
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+        relative_repo = Path("..") / branch_repo["path"].relative_to(tmp_path)
+
+        root, created, commit = create_worktrees(relative_repo, "feature", LENSES)
+
+        assert commit == branch_repo["branch_head"]
+        for worktree in created.values():
+            assert (worktree / "feature.py").is_file()
+        assert root.is_absolute()
+
+    def test_the_returned_paths_are_absolute_so_remove_works_from_anywhere(
+        self, branch_repo
+    ):
+        """The payload hands `root` back for the teardown call, possibly from a
+        different cwd."""
+        root, created, _ = create_worktrees(branch_repo["path"], "feature", LENSES)
+
+        assert root.is_absolute()
+        assert all(path.is_absolute() for path in created.values())
+
+    def test_the_verified_commit_is_the_one_reported(self, branch_repo):
+        """Resolving the ref a second time for the payload could report a SHA
+        other than the one the worktrees were checked against."""
+        _, _, commit = create_worktrees(branch_repo["path"], "feature", LENSES)
+
+        assert commit == branch_repo["branch_head"]
+
+
+class TestAMissingGitIsReportedNotRaised:
+    def test_an_oserror_becomes_a_stated_error_with_json_on_stdout(
+        self, branch_repo, monkeypatch
+    ):
+        """Only TimeoutExpired was converted, so an OSError escaped `main` -- which
+        catches only WorktreeSetupError -- as a traceback with NO json. The
+        orchestrator parsed empty stdout, got no {"error": ...}, and the audit
+        proceeded with no worktrees: the invisible failure this module refuses."""
+        import lens_worktrees
+
+        def no_git(*args, **kwargs):
+            raise FileNotFoundError(2, "No such file or directory", "git")
+
+        monkeypatch.setattr(lens_worktrees.subprocess, "run", no_git)
+
+        with pytest.raises(WorktreeSetupError) as raised:
+            create_worktrees(branch_repo["path"], "feature", LENSES)
+
+        assert "could not run git" in str(raised.value)
+
+    def test_the_cli_prints_that_error_as_json(self, branch_repo, monkeypatch, capsys):
+        import lens_worktrees
+
+        monkeypatch.setattr(
+            lens_worktrees.subprocess,
+            "run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                FileNotFoundError(2, "No such file or directory", "git")
+            ),
+        )
+
+        code = main(
+            [
+                "create",
+                "--repo-root",
+                str(branch_repo["path"]),
+                "--ref",
+                "feature",
+                "--lenses",
+                *LENSES,
+            ]
+        )
+
+        assert code == 2
+        assert "could not run git" in json.loads(capsys.readouterr().out)["error"]

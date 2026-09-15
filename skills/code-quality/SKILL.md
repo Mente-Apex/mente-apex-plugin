@@ -24,7 +24,7 @@ description: >-
   (design principles, patterns, dependency structure, domain model, line craft).
 user-invocable: true
 metadata:
-  version: "0.4.0"
+  version: "0.4.1"
 ---
 
 # code-quality — the seven-lens umbrella audit

@@ -155,11 +155,12 @@ class TestTheForgeSignalRecoversIt:
             forge_merged=frozenset({"feat/other", "feat/older"}),
         )
 
-    def test_a_branch_with_unpushed_work_is_still_not_merged_locally(self, clone):
-        """The forge speaks about the PR's head ref as GitHub last saw it. A
-        branch carrying commits the forge never saw is not finished, and the
-        local ancestor test is what still says so — the forge signal only ever
-        ADDS a merged verdict for a branch the local test cannot see."""
+    def test_a_published_branch_with_extra_local_work_is_still_announced(self, clone):
+        """The forge speaks about the head ref as GitHub last saw it. This branch
+        was published and merged, so the verdict stands — and the extra local
+        commit is exactly the thing the user needs telling about. (An UNpublished
+        branch is a different case, covered in
+        `TestANameIsNecessaryButNotSufficient`.)"""
         rebase_merge(clone, "feat/x", "x.txt")
         (clone / "more.txt").write_text("more\n")
         run("git", "add", "more.txt", cwd=clone)
@@ -274,3 +275,55 @@ class TestTheLookupItself:
 
         assert real_lookup(clone, deadline=spent) == frozenset()
         assert called == []
+
+
+class TestANameIsNecessaryButNotSufficient:
+    """The forge answers with head-ref NAMES, not commits, and names get reused.
+
+    `fix/login` merged in March and recreated in September is a different branch
+    wearing a merged name — and fork PRs make `patch-1`, `develop` and `master`
+    routine entries in that set. Matching on the name alone announced the branch
+    the user was standing on and listed it as safe to delete, short-circuiting
+    both freshly-created-branch guards because the check sat in front of them.
+    """
+
+    def test_a_recreated_merged_name_is_not_announced(self, clone):
+        run("git", "checkout", "-q", "-b", "fix/login", cwd=clone)
+
+        lines = merged_branch.report(clone, forge_merged=frozenset({"fix/login"}))
+
+        assert not any("has been merged" in line for line in lines)
+
+    def test_nor_is_it_listed_as_safe_to_delete(self, clone):
+        """The more expensive half: the user is standing on it."""
+        run("git", "checkout", "-q", "-b", "fix/login", cwd=clone)
+
+        lines = merged_branch.report(clone, forge_merged=frozenset({"fix/login"}))
+
+        assert not any("still present locally" in line for line in lines)
+
+    def test_a_genuinely_rebase_merged_branch_is_still_announced(self, clone):
+        """The fix must not swallow the case the forge signal exists for: this
+        branch was published and has commits of its own."""
+        rebase_merge(clone, "feat/x", "x.txt")
+
+        lines = merged_branch.report(clone, forge_merged=frozenset({"feat/x"}))
+
+        assert "Branch feat/x has been merged into main." in lines
+
+
+class TestTheSeenSetIsAdjudicatedNotReported:
+    def test_a_branch_the_tip_guard_skipped_is_not_re_added_by_the_forge_pass(
+        self, clone
+    ):
+        """`seen.add` sat AFTER the tracking-tip guard, so a ref that guard
+        deliberately skipped never entered the set — and the forge pass, which
+        skips anything already seen, re-added it. The original false positive
+        arriving by a third route: a recreated branch sitting at the tip,
+        reported as merged and deletable."""
+        run("git", "checkout", "-q", "-b", "docs/readme", cwd=clone)
+        run("git", "checkout", "-q", "main", cwd=clone)
+
+        lines = merged_branch.report(clone, forge_merged=frozenset({"docs/readme"}))
+
+        assert not any("docs/readme" in line for line in lines)

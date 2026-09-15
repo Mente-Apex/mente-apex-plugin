@@ -650,3 +650,68 @@ class TestTheCliReportsRatherThanCrashes:
 
         assert completed.returncode == 2
         assert "invalid choice" in completed.stderr
+
+
+class TestDetectionDoesNotHandThePythonBaselineToNode:
+    """A Python service whose test deps live in `requirements-dev.txt`, carrying
+    a frontend `package.json`, resolved the NODE runner — whose green run returns
+    an EMPTY already-red set. Every Python mutant whose only covering test was
+    already failing then scored as killed, silently. The hardcoded-pytest
+    baseline this replaced would at least have exited 2 loudly."""
+
+    def test_a_django_shaped_repo_with_a_frontend_resolves_pytest(self, tmp_path):
+        (tmp_path / "requirements-dev.txt").write_text(
+            "pytest==8.0\n", encoding="utf-8"
+        )
+        _node_repo(tmp_path)
+
+        assert resolve_suite_runner(tmp_path).toolchain == "pytest"
+
+    def test_a_tests_tree_is_enough_even_with_no_manifest_saying_so(self, tmp_path):
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_orders.py").write_text("def test_x(): pass\n", encoding="utf-8")
+        _node_repo(tmp_path)
+
+        assert resolve_suite_runner(tmp_path).toolchain == "pytest"
+
+    def test_a_genuine_node_repo_still_resolves_node(self, tmp_path):
+        """The fix must not swallow the case the node runner exists for."""
+        _node_repo(tmp_path)
+
+        assert resolve_suite_runner(tmp_path).toolchain == "node"
+
+    @pytest.mark.parametrize(
+        "manifest", ["null", "[]", '"a string"', '{"scripts": null}', "123"]
+    )
+    def test_a_package_json_that_is_not_an_object_does_not_kill_the_gate(
+        self, tmp_path, manifest
+    ):
+        """All valid JSON, all raised AttributeError during DETECTION — before a
+        single mutant ran, from a file this runner was only sniffing."""
+        (tmp_path / "package.json").write_text(manifest, encoding="utf-8")
+
+        assert resolve_suite_runner(tmp_path).toolchain == "none"
+
+
+class TestGradleIsMadeToActuallyRunItsTests:
+    def test_the_invocation_forces_a_rerun(self, tmp_path, monkeypatch):
+        """`--scope working-tree` copies the operator's `build/` into the
+        workspace verbatim, so Gradle reported `:test UP-TO-DATE`, exited 0 and
+        wrote nothing — and the freshness policy correctly found no results this
+        run had written, then raised blaming stale results rather than the
+        incremental build. A permanently failing gate on any Gradle repo with a
+        populated `build/`."""
+        repo_root = _gradle_repo(tmp_path)
+        (repo_root / "gradlew").write_text("#!/bin/sh\n", encoding="utf-8")
+        results = repo_root / "build" / "test-results" / "test" / "TEST-a.FooTest.xml"
+        captured = _capture_invocation(
+            monkeypatch,
+            writes=lambda: _write_junit_xml(
+                results, "a.FooTest", passing=("shouldWork",)
+            ),
+        )
+
+        resolve_suite_runner(repo_root).already_red(repo_root)
+
+        assert "--rerun-tasks" in captured["argv"]

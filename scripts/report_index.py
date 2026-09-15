@@ -187,6 +187,12 @@ def parse_report(text):
     apply_log = _section(text, "Apply log")
     report.has_apply_log = bool(apply_log.strip())
     for line in apply_log.splitlines():
+        if line.lstrip().startswith("<!--"):
+            # A commented line is INSTRUCTION, not data: every lens template
+            # shows the apply-log format as commented examples, and reading one
+            # as a real entry reported the template's own scaffolding as work
+            # somebody forgot to stamp.
+            continue
         for match in APPLY_LOG_LINE.finditer(line):
             candidate = FINDING_ID.search(match.group("id"))
             if not candidate:

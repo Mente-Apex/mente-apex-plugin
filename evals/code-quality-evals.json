@@ -1,14 +1,14 @@
 {
   "skill_name": "code-quality",
   "reviewed_against_skill_versions": {
-    "code-quality": "0.4.0"
+    "code-quality": "0.4.1"
   },
   "evals": [
     {
       "id": 1,
       "skill": "code-quality",
       "prompt": "/code-quality — do a full quality audit of this repo. Python service, about 90 source files under src/ and 40 test modules under tests/, pytest suite takes ~25s. Audit only for now, don't change anything.",
-      "expected_output": "Runs Phase 0 ONCE (scope, language set, baseline suite, report dirs) and builds the shared index (file list + import graph + symbol index) before any lens runs. Fans out six analyzers in parallel with that index, then six reviewers, then one consolidator. Emits a single merged CODE-QUALITY-REPORT, reaps the six per-lens drafts, and stops at the decision gate honouring 'audit only'.",
+      "expected_output": "Runs Phase 0 ONCE (scope, language set, baseline suite, report dirs) and builds the shared index (file list + import graph + symbol index) before any lens runs. Fans out seven analyzers in parallel with that index, then seven reviewers, then one consolidator. Emits a single merged CODE-QUALITY-REPORT, reaps the seven per-lens drafts, and stops at the decision gate honouring 'audit only'.",
       "assertions": [
         "Runs the shared Phase 0 exactly once itself (scope + detected language set + baseline test run + report dirs) rather than letting each lens re-scan",
         "Builds all three shared-index artifacts in Phase 0 — scoped file list, import graph, and symbol index — and hands them to every analyzer",
@@ -66,7 +66,7 @@
       "id": 4,
       "skill": "code-quality",
       "prompt": "Two requests to route against the installed skill set: (1) \"our test suite is a total mess, tests everywhere, half of them probably dead — can you clean it up?\" and (2) \"review the diff on my feature branch before I open the PR.\" For each, say which skill should handle it and why.",
-      "expected_output": "Recognizes both as NOT the umbrella. (1) is a scoped one-concern request -> /test-quality even though the user never named the lens. (2) is a change-set correctness review -> /code-review, not a whole-codebase architecture-and-craft audit. Explains the carve rather than running six lenses.",
+      "expected_output": "Recognizes both as NOT the umbrella. (1) is a scoped one-concern request -> /test-quality even though the user never named the lens. (2) is a change-set correctness review -> /code-review, not a whole-codebase architecture-and-craft audit. Explains the carve rather than running seven lenses.",
       "assertions": [
         "Routes request (1) to /test-quality, explicitly because it is scoped to one concern even though the lens is never named",
         "Routes request (2) to /code-review, explicitly because a diff/PR correctness pass is not what /code-quality does",

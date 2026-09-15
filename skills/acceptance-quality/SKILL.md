@@ -23,7 +23,7 @@ description: >-
   acceptance suites.
 user-invocable: true
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   source: "The acceptance layer as the load-bearing human checkpoint"
 ---
 

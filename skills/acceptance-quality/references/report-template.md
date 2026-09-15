@@ -18,20 +18,22 @@ e.g. `<a id="acceptance-quality-critical-1"></a>` above `#### [acceptance-qualit
 the umbrella's *Full detail* links can jump straight to it.
 
 Each finding carries a **Kind** line naming the rubric dimension it breaks
-(`structure`, `naming`, `one-behavior`, `no-logic`, `fixtures`, `assertions`,
-`parametrization`, `over-mock`, `isolation`, `speed`, `stale`) — this is the "which
-principle" column the umbrella's Findings index reads.
+(`spec-as-spec`, `leakage`, `coverage`, `coupling`, `definitions`, `consistency`,
+`stale`) — this is the "which principle" column the umbrella's Findings index reads.
 
-Findings whose recommended action is **deletion** additionally carry a
-**Coverage proof** line — deletions are never applied without it (see the SKILL's
-deletion gate).
+A finding that changes what a scenario **means** carries a **Conversation** line
+instead of a mechanical proposal: a scenario is agreed behaviour, so rewriting one
+is a discussion with the people who agreed it, never a batch apply. Mechanical
+findings — an extracted duplicate step, a consistent rename — carry an ordinary
+Proposed change.
 
 ```markdown
-# Test-quality Audit — <project> — <YYYY-MM-DD>
+# Acceptance-quality Audit — <project> — <YYYY-MM-DD>
 
 ## Summary
-- Scope: <test path>, <N> test files, <M> tests, <languages/runner>
-- Test suite: <command> — <green / N failing at baseline>; coverage tool: <name / none>
+- Scope: <acceptance path>, <N> feature files, <M> scenarios, <dialect/runner>
+- Acceptance suite: <command> — <green / N failing at baseline / not run>
+- Dialect: <gherkin / other> — the `references/<dialect>.md` that was loaded
 - Findings: <n> Critical, <n> Major, <n> Minor
 - Top wins: <the 2–3 that matter most, one line each — e.g. "3 dead tests referencing
   the deleted `LegacyExporter`; a flat 900-line test_core.py with no module architecture">
@@ -42,16 +44,18 @@ deletion gate).
 <a id="acceptance-quality-critical-1"></a>
 #### [acceptance-quality/critical-1] <short imperative title, e.g. "Delete the 3 dead tests importing the removed LegacyExporter">
 - **Kind:** <the rubric dimension: spec-as-spec | leakage | coverage | coupling | definitions | consistency | stale>
-- **Location:** `tests/path:line` <all sites>
-- **Evidence:** <what makes it a finding — the missing import, the mock-only assertion,
-  the identical parametrized twin. No evidence, no finding.>
+- **Location:** `features/path:line` <all sites; for a consistency finding, the
+  count and a representative few rather than all 31>
+- **Evidence:** <quote the scenario text — this lens's findings are about what a reader
+  sees, so the quote IS the evidence. No evidence, no finding.>
 - **Reader impact:** <why it hurts trust/readability/change-safety — justifies the tier>
-- **Proposed change:** <concrete: delete / merge into <test> / split into N tests / inject the port /
-  extract a fixture>
-- **Coverage proof:** <only for a deletion — the coverage evidence that removal loses no
-  SUT coverage, or "N/A (not a deletion)">
-- **Related:** <lens-overlap rec, e.g. "over-mock → solid DIP / ddd missing port", or none>
-- **Risk:** <Low | Medium | High> — <what could break; a deletion or a de-mock is rarely Low>
+- **Proposed change:** <concrete: name one concept one way / split into N scenarios /
+  move the precondition into a Given / merge the duplicate step definitions>
+- **Conversation:** <only where the change alters what a scenario MEANS — who needs to
+  agree, and what the question is. "N/A (mechanical)" otherwise.>
+- **Related:** <lens-overlap rec, e.g. "leaked domain term → ddd ubiquitous language", or none>
+- **Risk:** <Low | Medium | High> — <what could break; anything touching a scenario's
+  meaning is never Low>
 - **Tier:** Critical
 - **Status:** pending
 
@@ -79,32 +83,6 @@ never silence.
 - Suspected-but-unproven duplicates kept (no coverage proof): <ids>, or "none"
 - Areas not examined: <coverage gaps>
 
-```
-
-## Mutation gate
-
-Written by `scripts/mutation_gate.py --report <this file>`, which replaces the
-span between the two markers below and leaves every other byte of the report
-alone — so re-running the gate updates this section in place rather than
-stacking stale copies. The script does the writing, never the agent: the marker
-contract is then covered by a test, and a guard that lives only in prose is the
-unverifiable guard this lens exists to catch. Without `--report` the gate writes
-no file at all, and this section keeps reading `_Not yet run._`.
-
-Records the scope that produced this result, every survivor with the tests that
-should have killed it, and anything inconclusive or unverifiable. Never a score
-— a percentage is gameable and tells a reader nothing they can act on.
-
-<!-- mutation-gate:begin -->
-_Not yet run._
-<!-- mutation-gate:end -->
-
-This section sits in the real report between `## Reviewer notes` and
-`## Outcome`, at the same top level as the rest of the template above and
-below — it is broken out of the fenced block only so this reference doc's own
-structure guard can address it as a real heading.
-
-```markdown
 ## Outcome
 
 <!-- Written by the orchestrator at Phase 5, once an apply phase has run — the
@@ -116,15 +94,16 @@ structure guard can address it as a real heading.
 <!-- Appended by the implementer, one line per attempt, per the canonical format in
      docs/refactor-workflow.md — with the safety clause (acceptance suite run result, or the
      coverage-non-regression proof for a deletion): -->
-<!-- <UTC ts> [acceptance-quality/major-2] applied — merged into test_export::…, acceptance suite run: broke SUT → test failed → restored — suite green (312 passed) — diffstat: 1 file, +6/-24 -->
-<!-- <UTC ts> [acceptance-quality/critical-1] applied (deletion) — coverage proof: removed 3 tests, SUT line/branch coverage unchanged (deleted symbol gone) — suite green (309 passed) — diffstat: 1 file, -41 -->
+<!-- <UTC ts> [acceptance-quality/major-2] applied — one term per concept ('the customer', 31 scenarios) — acceptance suite green (48 scenarios) — diffstat: 6 files, +31/-31 -->
+<!-- <UTC ts> [acceptance-quality/critical-1] applied (stale scenario deleted) — the step it pinned names a screen removed in #402 — acceptance suite green (47 scenarios) — diffstat: 1 file, -18 -->
 ```
 
 `Status:` vocabulary and the Apply-log line format are the shared ones in
 [../../../docs/refactor-workflow.md](../../../docs/refactor-workflow.md)
 ("Status, Apply-log & Outcome format") — identical to the other lenses. Per that file's
-Phase 4 dispatch rule (lens ships one → use it, otherwise the shared `docs/refactor-agents/implementer.md`),
-a acceptance-quality rec always runs through this
-lens's own [agents/implementer.md](../agents/implementer.md) — including when the rec
-arrives via the `code-quality` umbrella — so no special casing is needed anywhere else
-beyond that implementer recording the gate result in the safety clause.
+Phase 4 dispatch rule (lens ships one → use it, otherwise the shared
+`docs/refactor-agents/implementer.md`), an acceptance-quality rec runs through the
+**shared** implementer: this lens ships none of its own, because it has no extra safety
+gate to add — its restraint is a tiering rule (a change to what a scenario MEANS is a
+conversation, carried on the finding's `Conversation` line) rather than a mechanical
+gate. The safety clause on the Apply-log line is the acceptance suite's own result.
