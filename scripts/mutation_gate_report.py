@@ -169,10 +169,18 @@ def _mutants_executed_summary(result):
     return ", ".join(parts)
 
 
-def as_report_payload(result, scope):
-    """A JSON-serialisable view for the calling agent."""
+def as_report_payload(result, scope, empty_scope_advice=""):
+    """A JSON-serialisable view for the calling agent.
+
+    `empty_scope_advice` is carried for the same reason every other verdict is:
+    the analyzer agent parses this payload, not the markdown, so advice that
+    reached only the human is advice the agent acts against. Computed by
+    `mutation_gate_scope` and passed in -- this module renders what it is
+    handed and knows nothing about what a scope implies.
+    """
     return {
         "scope": scope,
+        "empty_scope_advice": empty_scope_advice if not result.selected else "",
         "survivors": [
             {
                 "artifact": s.artifact,
@@ -218,8 +226,14 @@ def as_report_payload(result, scope):
     }
 
 
-def render_markdown(result, scope):
-    """The Mutation-gate section body for the report."""
+def render_markdown(result, scope, empty_scope_advice=""):
+    """The Mutation-gate section body for the report.
+
+    `empty_scope_advice` is rendered only under "Nothing selected" -- advice
+    about an empty sweep, printed next to a sweep that covered twelve files, is
+    noise, and noise in this section is how the sentences that matter stop
+    being read. Optional, so every existing caller's output is unchanged.
+    """
     unverified = unverified_reasons(result)
     lines = [
         f"**Scope:** {scope}",
@@ -321,10 +335,17 @@ def render_markdown(result, scope):
     elif not result.selected:
         # "Nothing to do" is a different fact from "nothing found", and an
         # all-empty result cannot tell them apart on its own.
-        lines.append(
+        sentence = (
             "**Nothing selected** — no files were selected for this scope, so "
             "nothing was mutated. This is 'nothing to do', not 'nothing found'."
         )
+        if empty_scope_advice:
+            # The remedy belongs in the same breath as the fact. An operator
+            # reading "0 files" with no next step reads a finished sweep, which
+            # at `merge-base` on an untouched tree is the exact opposite of
+            # what happened (issue #149).
+            sentence = f"{sentence} Why, and what reaches it: {empty_scope_advice}."
+        lines.append(sentence)
         lines.append("")
     else:
         lines.append("No survivors in scope.")

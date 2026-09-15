@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from mutation_gate_scope import changed_paths, scope_label
+from mutation_gate_scope import changed_paths, empty_scope_advice, scope_label
 from mutation_gate_workspace import scratch_workspace
 
 STACK_SUFFIXES = {
@@ -740,6 +740,9 @@ def main(argv=None):
     pathspec = tuple(arguments.paths)
     paths = changed_paths(arguments.repo_root, scope=arguments.scope, pathspec=pathspec)
     label = scope_label(arguments.scope, pathspec)
+    # Computed here, rendered there: what an empty scope MEANS belongs to the
+    # scope module, and the reporter only renders what it is handed.
+    advice = empty_scope_advice(arguments.scope, pathspec)
     dirty = arguments.scope == "working-tree"
     with scratch_workspace(arguments.repo_root, dirty=dirty) as workspace:
         # The composition root: detection happens once, here, and everything
@@ -762,7 +765,12 @@ def main(argv=None):
             baseline_failures=baseline_failures,
             baseline_error=baseline_error,
         )
-    print(json.dumps(as_report_payload(result, scope=label), indent=2))
+    print(
+        json.dumps(
+            as_report_payload(result, scope=label, empty_scope_advice=advice),
+            indent=2,
+        )
+    )
     if arguments.report is not None:
         # After the JSON, never before: a missing report file or a report with
         # no markers raises, and the analyzer's copy of the result must not be
@@ -773,7 +781,7 @@ def main(argv=None):
         report_path.write_text(
             splice_into_report(
                 report_path.read_text(encoding="utf-8"),
-                render_markdown(result, scope=label),
+                render_markdown(result, scope=label, empty_scope_advice=advice),
             ),
             encoding="utf-8",
         )

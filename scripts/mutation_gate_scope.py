@@ -186,6 +186,50 @@ def changed_paths(repo_root, scope="merge-base", pathspec=()):
     return tuple(paths)
 
 
+def empty_scope_advice(scope, pathspec=()):
+    """What an empty selection MEANS for this scope, and what to do about it.
+
+    An empty selection is not a failure -- nothing broke, so it stays exit 0
+    and stays out of `unverified_reasons`. But "0 files selected" reads like a
+    finished sweep, and at `merge-base` on an untouched tree it is the OPPOSITE
+    of one: the scope the skill advertises as catching born-vacuous tests
+    cannot see a single one, because a stand-alone audit has no diff (issue
+    #149). The remedy exists (`--scope full --paths <subtree>`); what was
+    missing is the gate saying so at the moment an operator is looking at zero.
+
+    It lives here rather than in the reporter because it is a fact about what a
+    scope MEANS, and this module owns scope semantics -- the reporter only
+    renders what it is handed. A new scope therefore extends this function, and
+    the renderer does not change at all.
+
+    `""` where there is nothing useful to say: a scope already at `full` cannot
+    be advised to widen to `full`, and an unrecognised scope gets silence
+    rather than invented advice -- `changed_paths` rejects those anyway, and a
+    wrong remedy is worse than none.
+    """
+    if pathspec:
+        joined = ", ".join(pathspec)
+        return (
+            f"the pathspec matched no files ({joined}) -- check the path, or "
+            "widen it; a narrowed sweep that selected nothing proves nothing "
+            "about the tree it named"
+        )
+    if scope in ("merge-base", "working-tree"):
+        return (
+            "this scope covers a diff, and there is none -- expected on a "
+            "stand-alone audit of an untouched tree, where it means the sweep "
+            "proved nothing rather than finding nothing. Re-run narrowed to "
+            "reach it: `--scope full --paths <subtree>` over the "
+            "highest-value part of the tree, at a cost you choose"
+        )
+    if scope == "full":
+        return (
+            "the whole tree was in scope and no file landed in a stack any "
+            "backend claims, so there was nothing this gate could mutate"
+        )
+    return ""
+
+
 def scope_label(scope, pathspec=()):
     """How this run's coverage is named in the JSON payload and the report.
 
