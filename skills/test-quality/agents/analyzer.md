@@ -70,6 +70,18 @@ never be reported as one — the `unverified_reasons` array in the JSON payload 
 exactly what went wrong, and the `Mutants executed` line says how many mutants actually
 ran. Zero mutants executed over a non-empty scope means nothing was tested.
 
+**Never improvise around a `2` by running the mutation tool yourself.** A hand-run
+`./gradlew pitest` (or `npx stryker run`) ignores the scope selection and mutates the
+whole project, which is how one audit turned a branch sweep into 661 mutants and a
+second agent launched a competing run over the same report file. Report the `2` with
+its stated cause instead.
+
+The gate baselines the suite in the repo's own language — it detects pytest, Gradle,
+Maven or `npm test` from the repo's markers, and `--suite-runner {pytest,gradle,maven,node}`
+overrides that when a polyglot repo's markers point at the wrong suite. A `2` reading
+*"no supported test toolchain detected"* means the stack is not supported yet; say so
+as a named coverage gap.
+
 Default scope is the **merge-base** diff, so the sweep does not change its answer
 as the operator commits mid-audit; `--scope full` exists and is slow enough that
 it is never the default.

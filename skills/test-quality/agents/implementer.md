@@ -26,6 +26,22 @@ Exit `0` = looked, found nothing. `1` = survivors. `2` = could not verify the sc
 as "the gate proved nothing", never as a pass, and say so rather than recording the
 refactor as safe on the strength of it.
 
+**The baseline runs the audited repo's own suite, in its own language.** Before
+mutating anything the gate runs the suite once clean, to tell a genuine survivor
+from one whose covering test was already red. It detects which suite to run from
+the repo's markers — pytest (`pytest.ini`, `conftest.py`, or a manifest naming
+pytest), Gradle, Maven, or `npm test` — in that order, so a JVM repo carrying a
+`package.json` for frontend assets still baselines through Gradle. A repo whose
+markers point at the wrong suite takes `--suite-runner {pytest,gradle,maven,node}`
+to name one explicitly. Two results are worth recognising in a `2`:
+
+- *"no supported test toolchain detected …"* — the repo is on a stack the baseline
+  cannot run yet. That is the manual-loop case below, and adding the stack is a
+  runner in `scripts/mutation_gate_baseline.py` plus one registry entry.
+- *"npm test exited 1 … cannot name which tests"* — the JS suite was **already red**
+  before any mutant. Fix the red suite and re-run; the gate is refusing to call a
+  broken baseline clean, not failing to work.
+
 If the test under audit appears in a survivor's `associated_tests`, the refactor
 hollowed it out — a mutant it should have killed is still alive. Revert the
 refactor and report it. Record the gate result in the safety clause of the
@@ -33,8 +49,10 @@ apply-log line, quoting the mutant.
 
 The manual loop — break the code under test by hand, confirm the test fails,
 restore — remains the documented **fallback** for anything the gate cannot reach:
-a repo with no mutation tool declared, an unsupported language, or a guard with
-no marker. The automated gate is the sweep; the manual one is the spot check.
+a repo with no mutation tool declared, a stack neither the backends nor the
+baseline support (check the `2`'s stated cause — it names which of the two is
+missing), or a guard with no marker. The automated gate is the sweep; the manual
+one is the spot check.
 
 ## Gate B — deleting a stale test (the inverse gate)
 

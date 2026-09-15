@@ -1,7 +1,7 @@
 {
   "skill_name": "test-quality",
   "reviewed_against_skill_versions": {
-    "test-quality": "0.2.0"
+    "test-quality": "0.3.0"
   },
   "evals": [
     {
@@ -59,6 +59,19 @@
         "Still names the test-side symptom in its own report (vacuous mock-only tests, coupling to implementation detail)",
         "Defers pure line-craft issues inside test files to clean-code rather than claiming them",
         "Does not recommend simply deleting or rewriting the mocks without addressing the production-side seam"
+      ]
+    },
+    {
+      "id": 5,
+      "skill": "test-quality",
+      "prompt": "/test-quality on our Spring Boot service — Gradle, Java 21, JUnit 5, pitest is declared in build.gradle. Audit the tests on this branch and apply the safe refactors.",
+      "expected_output": "Runs the mutation gate against the Java repo the same way it would a Python one — the baseline runs the repo's own Gradle suite — and, if the gate returns 2, reports its stated cause as a coverage gap instead of hand-running pitest over the whole project.",
+      "assertions": [
+        "Drives the mutation gate through scripts/mutation_gate.py with --repo-root, rather than invoking pitest directly",
+        "Does not run `./gradlew pitest` by hand as a workaround — an unscoped run mutates the whole project instead of the branch",
+        "Treats an exit 2 as 'the gate proved nothing' and reports the cause it names, never as a clean sweep",
+        "Does not claim the refactor is safe on a still-green suite alone",
+        "If the baseline cannot run, names the toolchain as the reason (and that --suite-runner can override detection) instead of reporting a broken environment"
       ]
     }
   ]

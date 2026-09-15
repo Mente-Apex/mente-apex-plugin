@@ -276,11 +276,17 @@ def test_pytest_run_suite_raises_rather_than_silently_reporting_a_clean_baseline
         mutation_gate._pytest_run_suite(tmp_path)
 
 
-def test_record_baseline_turns_a_clean_run_into_failures_with_no_error(tmp_path):
-    def fake_run_suite(repo_root):
-        return "FAILED tests/test_a.py::test_flaky\n"
+def test_record_baseline_turns_a_completed_run_into_failures_with_no_error(tmp_path):
+    """What is injected is the RED IDS, not a suite's stdout: parsing pytest's
+    summary format here was the last pytest-shaped assumption in this path, and
+    a Gradle suite reports what it ran in JUnit XML instead. Each runner owns
+    its own parsing (see `mutation_gate_baseline`); this function owns only the
+    completed/never-ran distinction."""
 
-    failures, error = mutation_gate._record_baseline(tmp_path, fake_run_suite)
+    def fake_collect_already_red(repo_root):
+        return ("tests/test_a.py::test_flaky",)
+
+    failures, error = mutation_gate._record_baseline(tmp_path, fake_collect_already_red)
 
     assert failures == ("tests/test_a.py::test_flaky",)
     assert error == ""
