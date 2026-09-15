@@ -537,7 +537,7 @@ def baseline(repo_root, run_suite):
     return _failed_node_ids(run_suite(repo_root))
 
 
-def _record_baseline(repo_root, run_suite):
+def _record_baseline(repo_root, collect_already_red):
     """Run the baseline, turning a run that never completed into an explicit,
     reportable error instead of an empty (and misleadingly clean-looking)
     baseline.
@@ -547,9 +547,17 @@ def _record_baseline(repo_root, run_suite):
     baseline run itself did not complete, and `baseline_failures` is left
     empty rather than guessed at -- there is no data to report a failure
     list from when the run that would have produced it never finished.
+
+    `collect_already_red` is a callable taking `repo_root` and returning the
+    already-red test identifiers -- ordinarily a `SuiteRunner.already_red`
+    bound method (see `mutation_gate_baseline`). It is the RED IDS that are
+    injected here, not a suite's stdout: parsing pytest's summary format was
+    the last pytest-shaped assumption in this path, and a Gradle suite reports
+    what it ran in JUnit XML rather than in a short summary line. This function
+    needs only the answer, so that is all it asks for.
     """
     try:
-        return baseline(repo_root, run_suite), ""
+        return collect_already_red(repo_root), ""
     except BaselineRunFailedError as exc:
         return (), str(exc)
 
@@ -671,8 +679,25 @@ def main(argv=None):
     the operator's tree: the byte-identical guarantee is unchanged for every
     invocation that does not explicitly name a file to update.
     """
+    # Deferred like the two below, and for the same cycle: this module is
+    # imported back by `mutation_gate_baseline`. Hoisted above the parser only
+    # because the runner registry owns the list of names `--suite-runner`
+    # accepts — one source of truth for "which stacks can this gate baseline".
+    from mutation_gate_baseline import SUPPORTED_TOOLCHAINS
+
     parser = argparse.ArgumentParser(description="Run the test-quality mutation gate.")
     parser.add_argument("--repo-root", default=".")
+    parser.add_argument(
+        "--suite-runner",
+        choices=SUPPORTED_TOOLCHAINS,
+        default=None,
+        help=(
+            "Force the toolchain used to record the clean-run baseline, "
+            "instead of detecting it from the repo's markers. The escape "
+            "hatch for a polyglot repo whose manifests point at the wrong "
+            "suite."
+        ),
+    )
     parser.add_argument(
         "--scope", choices=("merge-base", "working-tree", "full"), default="merge-base"
     )
@@ -705,6 +730,7 @@ def main(argv=None):
     # this one back: the backend modules need `Survivor`, and the reporter
     # needs `is_survivor`. A module-level import here closes that cycle.
     from mutation_gate_backends import default_backends
+    from mutation_gate_baseline import resolve_suite_runner, suite_runner_named
     from mutation_gate_report import (
         as_report_payload,
         render_markdown,
@@ -716,8 +742,18 @@ def main(argv=None):
     label = scope_label(arguments.scope, pathspec)
     dirty = arguments.scope == "working-tree"
     with scratch_workspace(arguments.repo_root, dirty=dirty) as workspace:
+        # The composition root: detection happens once, here, and everything
+        # below depends on the resolved runner rather than on a language. The
+        # baseline used to be pinned to `_pytest_run_suite` while the backends
+        # dispatched polymorphically beside it, so on a non-Python repo the
+        # gate could only ever exit 2 (#155).
+        suite_runner = (
+            resolve_suite_runner(workspace)
+            if arguments.suite_runner is None
+            else suite_runner_named(arguments.suite_runner)
+        )
         baseline_failures, baseline_error = _record_baseline(
-            workspace, _pytest_run_suite
+            workspace, suite_runner.already_red
         )
         result = run_gate(
             workspace,
@@ -766,4 +802,15 @@ def exit_code_for(result):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Delegated through the IMPORTED module rather than run straight from this
+    # one. Executed as a script this file is `__main__`, while every sibling
+    # (`mutation_gate_baseline`, the backends, the reporter) imports
+    # `mutation_gate` -- so the interpreter holds two module objects and two
+    # distinct copies of every class defined here. `BaselineRunFailedError`
+    # raised by a suite runner was then a different class from the one
+    # `_record_baseline` catches: it escaped as a traceback and exit 1 instead
+    # of becoming the reportable `baseline_error` this gate promises. One entry
+    # point through the imported module leaves exactly one copy of everything.
+    import mutation_gate
+
+    sys.exit(mutation_gate.main())

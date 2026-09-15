@@ -50,7 +50,6 @@ was asked for. That goes to `scope_notes`, never to `run_errors`, which would
 wrongly print the "did not complete" banner over trustworthy results.
 """
 
-import shutil
 import subprocess
 import warnings
 import xml.etree.ElementTree as ElementTree
@@ -58,6 +57,11 @@ from pathlib import Path
 
 from mutation_gate import Survivor
 from mutation_gate_freshness import ReportFreshness
+
+# Re-exported under this module's own private name: the launcher rule now has a
+# second caller (the baseline's suite runners), so it lives in one place rather
+# than twice. Call sites and tests here are unchanged.
+from mutation_gate_toolchain import wrapper_or_bare as _wrapper_or_bare
 
 # Bounded like every other subprocess the gate starts: a PIT run drives a whole
 # Maven or Gradle build plus the suite once per mutant, and may hang outright.
@@ -350,23 +354,6 @@ def _build_file_text(repo_root):
     """The text of whichever manifest `_build_tool` selected."""
     tool = _build_tool(repo_root)
     return "" if tool is None else _manifest_text(repo_root, tool)
-
-
-def _wrapper_or_bare(repo_root, wrapper, bare):
-    """Prefer the repo's build-tool wrapper, exactly as a developer would.
-
-    The wrapper pins the build tool version the way a lockfile pins
-    dependencies; running the ambient `mvn`/`gradle` can resolve a different
-    version than the project's own CI does, which is how a mutation run comes
-    back disagreeing with the suite for reasons that have nothing to do with
-    mutants.
-    """
-    wrapper_path = Path(repo_root) / wrapper
-    if wrapper_path.is_file():
-        return [str(wrapper_path)]
-    if shutil.which(bare):
-        return [bare]
-    return None
 
 
 def _argv(repo_root, target_classes):
