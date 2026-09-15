@@ -64,20 +64,36 @@ class TestTheSharedRuleStatesTheContract:
         # And the ref: where the subject of the audit would have been.
         assert "merge-base" in section
 
-    def test_it_splits_relative_code_paths_from_an_injected_artifact_root(self):
-        """The asymmetry IS the fix: read where you stand, write where you were
-        told. Absolute code paths are what let five analyzers read outside their
-        sandbox without noticing."""
+    def test_it_splits_the_subject_root_from_the_artifact_root(self):
+        """The asymmetry IS the fix: read where you were put, write where you
+        were told. Absolute code paths are what let five analyzers read outside
+        their sandbox without noticing."""
         section = section_of(WORKFLOW, ISOLATION_SECTION)
 
-        assert "repo-relative" in section
+        assert "subject root" in section
         assert "artifact root" in section
         assert "outside the worktree" in section
+
+    def test_it_makes_the_worktrees_itself_rather_than_asking_the_harness(self):
+        """`isolation: "worktree"` takes no ref, so it cannot be pointed at the
+        branch under review — which is the whole defect. The orchestrator cuts
+        the set itself, and is told not to nest one sandbox inside another."""
+        section = section_of(WORKFLOW, ISOLATION_SECTION)
+
+        assert "lens_worktrees.py" in section
+        assert "takes no ref" in section
+        assert "do not also pass" in section
+
+    def test_it_requires_the_ref_to_be_verified_not_trusted(self):
+        section = section_of(WORKFLOW, ISOLATION_SECTION)
+
+        assert "verifies the ref rather than trusting it" in section
+        assert "partial set is worse than none" in section
 
     def test_it_requires_the_subject_to_be_asserted_present(self):
         section = section_of(WORKFLOW, ISOLATION_SECTION)
 
-        assert "own working directory" in section
+        assert "own subject root" in section
         assert "coverage gap" in section
 
     def test_it_forbids_deriving_a_path_into_another_checkout(self):
@@ -89,24 +105,36 @@ class TestTheSharedRuleStatesTheContract:
 
 
 class TestTheUmbrellaDispatchesTheWayTheRuleRequires:
-    def test_analyzers_are_dispatched_isolated(self):
+    def test_it_cuts_the_worktree_set_at_the_reviewed_ref(self):
         text = UMBRELLA.read_text(encoding="utf-8")
 
-        assert 'isolation: "worktree"' in text
+        assert "lens_worktrees.py" in text
+        assert "--ref <branch-under-review>" in text
 
-    def test_both_fan_out_phases_carry_the_dispatch_rules(self):
-        """Phase 2's reviewers are as isolated as Phase 1's analyzers, and need
-        the draft by a path that exists in the tree that wrote it."""
+    def test_it_does_not_also_ask_the_harness_for_isolation(self):
+        """A harness worktree wrapping an orchestrator worktree is two sandboxes
+        deep with the code in neither."""
         text = UMBRELLA.read_text(encoding="utf-8")
 
-        assert text.count('isolation: "worktree"') >= 2
+        assert "without** `isolation:`" in text
+
+    def test_reviewers_reuse_the_set_rather_than_cutting_a_second(self):
+        """A reviewer must verify against exactly the tree its analyzer read."""
+        text = UMBRELLA.read_text(encoding="utf-8")
+
+        assert "same worktree set Phase 1 used" in text
 
     def test_it_names_the_three_things_dispatch_owns(self):
         text = UMBRELLA.read_text(encoding="utf-8")
 
-        assert "repo-relative" in text
+        assert "subject root" in text
         assert "artifact root" in text
-        assert "own working directory" in text
+        assert "own subject root" in text
+
+    def test_it_tears_the_set_down_afterwards(self):
+        text = UMBRELLA.read_text(encoding="utf-8")
+
+        assert "remove --root" in text
 
     def test_it_points_at_the_shared_rule_rather_than_restating_it(self):
         """One contract, one home -- a second copy is a second thing to drift."""
@@ -128,6 +156,14 @@ class TestTheAgentSideHalf:
 
         assert "your own working directory" in text
         assert "coverage gap" in text
+
+    def test_the_assertion_is_documented_as_a_backstop_not_the_mechanism(self):
+        """The script is what makes a correct worktree; the assertion is what
+        makes a wrong one loud. Conflating them invites someone to delete the
+        script and keep the prose."""
+        section = section_of(WORKFLOW, ISOLATION_SECTION)
+
+        assert "backstop, not the mechanism" in section
 
     def test_the_reviewer_does_not_verify_against_a_different_tree(self):
         """A reviewer confirming and pruning findings against another checkout
@@ -168,4 +204,5 @@ class TestTheApplyPhaseInheritsTheSameRule:
         parallel = text[text.index("**Parallel option**") :][:900]
 
         assert "Isolation and artifact collection" in parallel
-        assert "present in its own worktree" in parallel
+        assert "lens_worktrees.py" in parallel
+        assert "edits code that is not under review" in parallel

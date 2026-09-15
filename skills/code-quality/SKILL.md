@@ -111,21 +111,30 @@ stays available; it just shouldn't be the silent default when the repo is large.
 
 ### Phase 1 — Fan out the six analyzers (parallel)
 
-Dispatch **six analyzer subagents at once** (Agent tool, `general-purpose`), one per
-lens, **each with `isolation: "worktree"`** — six agents sharing one tree cannot be
-told apart the moment any of them writes. Isolation is yours to request; an agent
-cannot put itself in a worktree, and cannot tell that it is in one except by finding
-its inputs missing. That makes three things your job at dispatch, per
-**"Isolation and artifact collection"** in
-[../../docs/refactor-workflow.md](../../docs/refactor-workflow.md):
-give the scoped file list and every code path **repo-relative**; name the **artifact
-root** as one absolute path (this checkout's git-excluded `docs/reports/`) and tell the
-lens to write `<artifact-root>/<lens>/draft-findings.md` there; and require each
-analyzer to **assert its scoped files resolve under its own working directory** before
-it starts, reporting a named coverage gap if they do not. Skip any of the three and the
-failure is silent: a worktree cut at the merge-base carries none of the branch's code,
-and an analyzer handed absolute paths will quietly audit *your* checkout from inside
-its sandbox while reporting a clean isolated run (issue #156).
+**Make the six worktrees first, at the ref under review** — six agents sharing one
+tree cannot be told apart the moment any of them writes, and the harness's own
+`isolation:` takes no ref, so it cannot be pointed at the branch you are auditing:
+
+    sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/lens_worktrees.py" \
+        create --repo-root <target> --ref <branch-under-review> \
+        --lenses clean-architecture ddd solid gof clean-code test-quality
+
+Then dispatch **six analyzer subagents at once** (Agent tool, `general-purpose`), one
+per lens and **without** `isolation:` — the worktree you just made is the isolation.
+Per **"Isolation and artifact collection"** in
+[../../docs/refactor-workflow.md](../../docs/refactor-workflow.md), each brief names
+**two roots and nothing absolute besides**: the lens's **subject root** (its worktree
+path from the JSON above), with every scoped code path **relative to it**; and the
+**artifact root** (this checkout's git-excluded `docs/reports/`), where it writes
+`<artifact-root>/<lens>/draft-findings.md`. Require each analyzer to **assert its
+scoped files resolve under its own subject root** before it starts, and to report a
+named coverage gap rather than reaching outside if they do not. Tear the set down with
+`remove --root <root> --lenses …` once Phase 2 is finished with it.
+
+Skip any of this and the failure is silent: a worktree cut at the merge-base carries
+none of the branch's code, and an analyzer handed absolute paths will quietly audit
+*your* checkout from inside its sandbox while reporting a clean isolated run
+(issue #156).
 
 Each is read-only **over the code it audits** but must be able to write its own
 `draft-findings.md`. The filename constraint that governs that write is documented in
@@ -176,11 +185,12 @@ next wave; a lens that errors is a recorded coverage gap, not a blocker.
 ### Phase 2 — Fan out the six reviewers (parallel)
 
 Dispatch **six reviewer subagents**, one per lens (`skills/<lens>/agents/reviewer.md`),
-each with `isolation: "worktree"` and the same three dispatch rules as Phase 1
-(repo-relative code paths, injected artifact root, assert-the-subject-is-present).
-Each is given only its own lens's draft — by a path under the artifact root, which is
-where Phase 1 actually wrote it; a reviewer resolving the draft inside its own fresh
-worktree finds nothing there. They run their normal verified pass and write
+into the **same worktree set Phase 1 used** — reuse it rather than cutting a second one,
+so a reviewer verifies against exactly the tree its analyzer read — with the same
+dispatch rules (subject root, artifact root, assert-the-subject-is-present). Each is
+given only its own lens's draft, by a path under the artifact root, which is where
+Phase 1 actually wrote it; a reviewer resolving the draft inside its own worktree finds
+nothing there. They run their normal verified pass and write
 their lens's own report (e.g. `docs/reports/solid/SOLID-REPORT-<YYYY-MM-DD>.md`). They
 need **not** cross-reference each other here — because dedup is deferred to the
 consolidator, the six reviewers are independent and run concurrently. (If a

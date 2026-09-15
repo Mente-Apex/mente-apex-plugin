@@ -85,13 +85,12 @@ stale-collision bug this rule exists to prevent.
 ### Isolation and artifact collection (every parallel wave)
 
 **Isolation is the dispatcher's call, never the agent's.** A subagent cannot put
-itself in a worktree — it gets one only if the Agent call asked for it
-(`isolation: "worktree"`), and once running it has no way to tell which regime it
-is in except by finding its inputs missing. So the orchestrator decides once per
-wave and says so in the brief. **Dispatch every parallel wave isolated** —
-analyzers, reviewers and apply chains alike: a shared tree makes concurrent
-writes unattributable, and an audit cannot tell an agent's own edit from the code
-it was auditing.
+itself in a worktree, and once running it has no way to tell which regime it is
+in except by finding its inputs missing. So the orchestrator decides once per
+wave and says so in the brief. **Every parallel wave is isolated** — analyzers,
+reviewers and apply chains alike: a shared tree makes concurrent writes
+unattributable, and an audit cannot tell an agent's own edit from the code it
+was auditing.
 
 A worktree carries **tracked files at the ref it was created at, and nothing
 else.** Two consequences, both of which have failed silently in a real run
@@ -108,29 +107,58 @@ else.** Two consequences, both of which have failed silently in a real run
   path and audited *that* from inside their sandbox; the sixth — whose gate has
   to **execute** the code — could not fall back at all and reported nothing.
 
-The contract that closes both:
+#### Make the worktrees yourself, at the ref under review
 
-1. **Code paths in a brief are repo-relative.** Absolute paths into the
-   orchestrator's checkout are precisely what let five analyzers read outside
-   their sandbox without noticing. A relative path resolves against whatever
-   tree the agent is actually in, which is the entire point of giving it one.
-2. **Artifact paths are injected, absolute, and outside the worktree.** The
-   dispatcher names one **artifact root** — its own git-excluded `docs/reports/`
-   — and every role writes beneath it (`<artifact-root>/<lens>/draft-findings.md`).
-   *Injected*, because an agent must never **derive** a path into a tree it is not
-   in; *outside the worktree*, because a draft written inside one can vanish with
-   it. Writing there does not dirty the orchestrator's tree: the artifact root is
+**`isolation: "worktree"` takes no ref**, so nothing in a plugin can say where
+the harness cuts one — and in the reported run it cut at the merge-base. An
+agent cannot repair that from inside either: one tried, and its `checkout` was
+refused by the permission layer as irreversible local destruction. So the
+orchestrator creates the set itself, before the wave:
+
+    sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/lens_worktrees.py" \
+        create --repo-root <target> --ref <branch-under-review> \
+        --lenses solid gof ddd clean-architecture clean-code test-quality
+
+It prints `{"root": …, "commit": …, "worktrees": {lens: path}}`. Cut every
+worktree at the branch, never at its merge-base, and **do not also pass
+`isolation:` on the dispatch** — a harness worktree wrapping an orchestrator
+worktree is two sandboxes deep with the code in neither.
+
+The script **verifies the ref rather than trusting it**: `git worktree add` can
+report success and still leave a checkout at another commit, and that failure is
+invisible to the agent handed the path. A mismatch tears the whole set down, as
+does any single failure — a partial set is worse than none, because some lenses
+then audit the branch, some audit whatever their fallback finds, and the
+consolidated report merges both without knowing which was which. Tear down with
+`remove --root <root> --lenses …` when the wave is done, and report any failure
+rather than leaving a stale entry registered against the operator's repo.
+
+#### Two roots, and everything else relative
+
+1. **The subject root** — the worktree that lens is to work in, named in its
+   brief. Every code path in the brief is **relative to it**. Absolute paths
+   into the orchestrator's checkout are precisely what let five analyzers read
+   outside their sandbox without noticing.
+2. **The artifact root** — one absolute path, the orchestrator's own
+   git-excluded `docs/reports/`, under which every role writes
+   (`<artifact-root>/<lens>/draft-findings.md`). *Injected*, because an agent
+   must never **derive** a path into a tree it is not in;
+   *outside the worktree*, because a draft written inside one can vanish with
+   it. Writing
+   there does not dirty the orchestrator's tree: the artifact root is
    git-excluded by construction.
 3. **Assert the subject is present before working.** Confirm the scoped files
-   resolve **under your own working directory**. If they do not, stop and report a
+   resolve **under your own subject root**. If they do not, stop and report a
    named coverage gap — "the worktree does not carry the code under audit" — and
-   never re-resolve them against another checkout. An audit that quietly reads
-   someone else's tree yields findings nobody can attribute to a ref, and it
-   reports success while proving nothing.
+   never re-resolve them against another checkout. This is the
+   backstop, not the mechanism: the script above is what makes a correct
+   worktree, and this is what makes a wrong one loud. An audit that quietly reads someone else's tree yields
+   findings nobody can attribute to a ref, and reports success while proving
+   nothing.
 
-The asymmetry is deliberate: **read the subject where you stand, write the
-artifact where you were told.** One injected absolute path, named by the
-dispatcher; everything else relative.
+The asymmetry is deliberate: **read the subject where you were put, write the
+artifact where you were told.** Two injected roots, named by the dispatcher;
+every other path relative to one of them.
 
 ## Invocation
 
@@ -397,13 +425,14 @@ end. A job that fails and reverts leaves nothing to checkpoint — the tree is a
 back at the last green commit, exactly the clean baseline the next job needs.
 
 **Parallel option** — for large approvals (roughly 6+ recs across disjoint
-files) independent chains may run concurrently, each in its own git worktree
-(`isolation: worktree`, per "Isolation and artifact collection" above — the
-chain asserts the code it is about to change is present in its own worktree
-before touching anything, since a worktree at the wrong ref would have it
-editing code that is not under review). Two hard rules: recs touching the same
-file never run in parallel, and per-worktree green proves nothing about the
-combination —
+files) independent chains may run concurrently, each in its own git worktree,
+created per "Isolation and artifact collection" above — `lens_worktrees.py
+create --ref <branch-under-change> --lenses <chain ids>`, never the harness's
+own `isolation:`, which cannot be pointed at a ref. The stakes are higher here
+than in an audit: a chain in a worktree at the wrong ref does not fail to find
+the code, it **edits code that is not under review** and reports it green.
+Two hard rules: recs touching the same file never run in parallel, and
+per-worktree green proves nothing about the combination —
 after merging, run the full suite once on the merged tree yourself. Merged
 suite red → fall back to the sequential contract: revert the merge and re-land
 chains one at a time until blame is attributable. Parallelism is an
