@@ -33,7 +33,8 @@
         "Still surfaces the dead test that fails to import a removed symbol, on the grounds that its proof is the missing symbol not a coverage run",
         "Does not auto-delete anything — every deletion stays a per-test human decision",
         "Prefers merge over delete where a narrow test could be folded into a parametrized case",
-        "Does not claim the suite is safe to prune merely because it is green"
+        "Does not claim the suite is safe to prune merely because it is green",
+        "If applying is opted into, the implementer admits that dead-import deletion rather than refusing it as a report defect — its blanket refusal covers coverage-proved recs, and this rec's proof is the collection error plus an absent-symbol search"
       ]
     },
     {
