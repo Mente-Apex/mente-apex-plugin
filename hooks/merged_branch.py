@@ -151,6 +151,62 @@ def _default_from_gh(
     return completed.stdout.strip() or None if completed.returncode == 0 else None
 
 
+def forge_merged_branches(
+    cwd: str | Path, *, limit: int = 50, deadline: Deadline | None = None
+) -> frozenset[str]:
+    """Head-ref names the forge reports as merged. Empty when it cannot say.
+
+    The second source of the merged signal, and the only one that can see a
+    squash or rebase merge: those rewrite the branch's commits, so its tip is
+    not an ancestor of the default and `merge-base --is-ancestor` is false
+    forever (issue #108). This repo has all three merge methods enabled and the
+    very first real merge took a path the hook could not see.
+
+    Opportunistic in exactly the way `_default_from_gh` is: gh missing,
+    unauthenticated, pointed at a non-GitHub remote, rate-limited or simply
+    slow all arrive at the caller as an empty set, and an empty set changes
+    nothing. There is no hard dependency on a forge, and silence stays the
+    default.
+
+    ONE call for every branch, not one per branch. The batched consumer
+    (`merged_local_branches`) runs over every local ref, and a network round
+    trip each would eat the whole hook's budget on a branch-heavy repo -- the
+    same reason that function uses two subprocesses regardless of branch count.
+    """
+    allowance = (
+        NETWORK_TIMEOUT_SECONDS
+        if deadline is None
+        else deadline.allow(NETWORK_TIMEOUT_SECONDS)
+    )
+    if allowance <= 0:
+        return frozenset()
+    try:
+        completed = _run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                "merged",
+                "--limit",
+                str(limit),
+                "--json",
+                "headRefName",
+                "-q",
+                ".[].headRefName",
+            ],
+            cwd,
+            allowance,
+        )
+    except OSError, subprocess.SubprocessError:
+        return frozenset()
+    if completed.returncode != 0:
+        return frozenset()
+    return frozenset(
+        line.strip() for line in completed.stdout.splitlines() if line.strip()
+    )
+
+
 def resolve_default(
     cwd: str | Path, remote: str, *, deadline: Deadline | None = None
 ) -> str | None:
@@ -218,7 +274,12 @@ def current_branch(cwd: str | Path, *, deadline: Deadline | None = None) -> str 
 
 
 def is_merged(
-    cwd: str | Path, revision: str, tracking: str, *, deadline: Deadline | None = None
+    cwd: str | Path,
+    revision: str,
+    tracking: str,
+    *,
+    forge_merged: frozenset[str] = frozenset(),
+    deadline: Deadline | None = None,
 ) -> bool:
     """True when `revision` has landed on `tracking`.
 
@@ -262,7 +323,14 @@ def is_merged(
         cwd, "merge-base", "--is-ancestor", revision, tracking, deadline=deadline
     )
     if code != 0:
-        return False
+        # Not an ancestor. Under merge-commit that settles it; under a squash or
+        # rebase merge it settles nothing, because the branch's commits were
+        # rewritten. The forge is the only thing that can tell them apart, and
+        # it needs no guard behind it: a MERGED pull request for this head ref
+        # is a stronger statement than either fact below (issue #108).
+        return revision in forge_merged
+    if revision in forge_merged:
+        return True
     remote = tracking.split("/", 1)[0]
     if _exists_on_remote(cwd, revision, remote, deadline=deadline):
         return True
@@ -334,6 +402,7 @@ def merged_local_branches(
     tracking: str,
     *,
     exclude: tuple = (),
+    forge_merged: frozenset[str] = frozenset(),
     deadline: Deadline | None = None,
 ) -> list[str]:
     """Local branches that have landed on the remote default and are still
@@ -373,21 +442,54 @@ def merged_local_branches(
     if code != 0:
         return []
     lingering = []
+    seen = set()
     for line in output.splitlines():
         objectname, _, branch = line.partition(" ")
         if not branch or branch == default or branch in exclude:
             continue
         if objectname == tracking_tip:
             continue
+        seen.add(branch)
         lingering.append(branch)
+
+    # The ancestor test above cannot see a squash- or rebase-merged branch, so
+    # one accumulated in refs/heads permanently -- the precise opposite of what
+    # this line exists to do (issue #108). A second pass over the forge's answer
+    # recovers exactly those, and only for refs that still exist locally: the
+    # forge lists every merged head ref in the repository, including branches
+    # this machine has never had.
+    for branch in sorted(forge_merged):
+        if branch in seen or branch == default or branch in exclude:
+            continue
+        code, _ = git(
+            cwd,
+            "show-ref",
+            "--verify",
+            "--quiet",
+            f"refs/heads/{branch}",
+            deadline=deadline,
+        )
+        if code == 0:
+            lingering.append(branch)
     return lingering
 
 
-def report(cwd: str | Path, *, budget: float = TOTAL_BUDGET_SECONDS) -> list[str]:
+def report(
+    cwd: str | Path,
+    *,
+    budget: float = TOTAL_BUDGET_SECONDS,
+    forge_merged: frozenset[str] | None = None,
+) -> list[str]:
     """The lines to inject as session context. Empty means stay silent.
 
     One deadline covers the whole call, so a repo whose remote hangs costs the
     budget once rather than once per network call.
+
+    This is where the two merged signals are composed: the forge answer is
+    fetched ONCE here and handed to both consumers, so neither of them knows
+    anything about gh, GitHub, or networks -- they take a set of branch names.
+    `forge_merged` is injectable for the same reason: a test says what the forge
+    said without a forge, and a caller that already knows can skip the call.
     """
     deadline = Deadline(budget)
     code, _ = git(cwd, "rev-parse", "--git-dir", deadline=deadline)
@@ -435,8 +537,10 @@ def report(cwd: str | Path, *, budget: float = TOTAL_BUDGET_SECONDS) -> list[str
     # is checked out, but only the branch has a reflog of its own -- HEAD's is
     # the whole session's checkout history, which says nothing about this
     # branch. See `_created_and_never_moved`.
+    if forge_merged is None:
+        forge_merged = forge_merged_branches(cwd, deadline=deadline)
     current_is_merged = branch != default and is_merged(
-        cwd, branch, tracking, deadline=deadline
+        cwd, branch, tracking, forge_merged=forge_merged, deadline=deadline
     )
     if current_is_merged:
         lines.append(f"Branch {branch} has been merged into {default}.")
@@ -455,6 +559,7 @@ def report(cwd: str | Path, *, budget: float = TOTAL_BUDGET_SECONDS) -> list[str
         default,
         tracking,
         exclude=() if current_is_merged else (branch,),
+        forge_merged=forge_merged,
         deadline=deadline,
     )
     if lingering:
