@@ -31,7 +31,7 @@ flood of near-duplicate rows -- worse for an operator than the silence it
 replaces, and not the "signal" this report exists to provide.
 """
 
-from mutation_gate import is_survivor, unverified_reasons
+from mutation_gate import is_survivor, unverified_reasons, was_executed
 
 # The contract between this renderer and `references/report-template.md`. The
 # gate does not append its section, and does not own the file: it replaces
@@ -169,6 +169,52 @@ def _mutants_executed_summary(result):
     return ", ".join(parts)
 
 
+def mutation_score(result):
+    """Killed / executed, as a percentage — the SENSOR reading (issue #119).
+
+    The gate's native output is a proof obligation attached to an edit: located
+    survivors, used as a pass/fail verdict on one risky change. A score is the
+    other thing mutation testing is for — a standing health reading on a whole
+    codebase, sitting alongside coverage, cyclomatic complexity and module size.
+    Same raw material, different question, so this aggregates rather than
+    replaces: every survivor stays enumerated.
+
+    Returns `None`, never a number, when the run cannot support a score:
+
+    - no backend counted mutants (`mutants_executed` is the count of mutants
+      actually APPLIED, and a backend that cannot report it makes the
+      denominator a guess);
+    - nothing was executed at all, where 0/0 would render as either 0% or 100%
+      and both are lies about a run that tested nothing.
+
+    A `None` here is what lets the Measurements section OMIT the line rather
+    than print a reassuring number — the same "absence is data, never silence"
+    rule the Coverage section already carries.
+
+    Mutants that were never executed (`no_op_mutant`, `declaration_error`) are
+    excluded from the numerator's population for the reason `was_executed`
+    exists: they are not survivors the suite failed to kill, they are mutants
+    that never ran.
+    """
+    counting_runs = [run for run in result.backend_runs if run.counts_mutants]
+    if not counting_runs:
+        return None
+    if any(run.mutants_executed is None for run in counting_runs):
+        return None
+    executed = sum(run.mutants_executed for run in counting_runs)
+    if executed <= 0:
+        return None
+    survived = len(
+        [
+            survivor
+            for survivor in result.survivors
+            if is_survivor(survivor) and was_executed(survivor)
+        ]
+    )
+    killed = max(executed - survived, 0)
+    return round(100.0 * killed / executed, 1)
+
+
 def as_report_payload(result, scope, empty_scope_advice=""):
     """A JSON-serialisable view for the calling agent.
 
@@ -181,6 +227,9 @@ def as_report_payload(result, scope, empty_scope_advice=""):
     return {
         "scope": scope,
         "empty_scope_advice": empty_scope_advice if not result.selected else "",
+        # None when the run cannot support one — see `mutation_score`. Kept
+        # distinct from 0.0, which is a real and very bad reading.
+        "mutation_score": mutation_score(result),
         "survivors": [
             {
                 "artifact": s.artifact,
@@ -235,12 +284,18 @@ def render_markdown(result, scope, empty_scope_advice=""):
     being read. Optional, so every existing caller's output is unchanged.
     """
     unverified = unverified_reasons(result)
+    score = mutation_score(result)
     lines = [
         f"**Scope:** {scope}",
         f"**Files selected:** {result.selected}",
         f"**Mutants executed:** {_mutants_executed_summary(result)}",
-        "",
     ]
+    if score is not None:
+        # Omitted, never faked, when the run cannot support one: a score is a
+        # health reading, and a reassuring number from a run that counted
+        # nothing is worse than no number.
+        lines.append(f"**Mutation score:** {score}% killed")
+    lines.append("")
 
     if result.baseline_error:
         lines.append(
