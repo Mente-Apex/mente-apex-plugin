@@ -12,8 +12,8 @@ once in [docs/report-contract.md](../../../docs/report-contract.md).
 
 Each lens already assigns a **globally-unique, self-describing** rec ID —
 `<lens>/<tier>-<n>` — so the consolidator **carries it verbatim** and never
-re-prefixes. `<lens>` ∈ `clean-arch | ddd | solid | gof | clean-code | test-quality`;
-`<tier>` ∈ `critical | major | minor` for **all six** lenses (clean-code and test-quality
+re-prefixes. `<lens>` ∈ `clean-arch | ddd | solid | gof | clean-code | test-quality | acceptance-quality`;
+`<tier>` ∈ `critical | major | minor` for **all seven** lenses (clean-code and test-quality
 grade on the same three tiers — see clean-code's Severity rubric and test-quality's
 Tiers rubric — so nothing needs translating). So `solid/major-5`,
 `clean-arch/critical-1`, `test-quality/major-2` —
@@ -43,7 +43,11 @@ this block — pruned to the codes that actually appear — into each report:
   - `gof` — Gang-of-Four design patterns.
   - `clean-code` — line-level craft (naming, function shape, comments).
   - `test-quality` — the test suite's own structure, craft, and stale-test tending.
-- **Tiers** — all six lenses use `critical > major > minor` (clean-code and test-quality
+  - `acceptance-quality` — the acceptance/Gherkin layer: spec-as-spec, leakage,
+    domain coverage, scenario coupling, step-definition DRY-ness, prose consistency,
+    stale scenarios.
+    Absent from a report means no acceptance suite was found, which is ordinary.
+- **Tiers** — all seven lenses use `critical > major > minor` (clean-code and test-quality
   grade on the same three tiers, so their findings sit at their own tier, not down-filed).
   A code's tier word is its tier at first assignment — the section a finding sits
   under is the current truth if it was later re-tiered.
@@ -53,7 +57,8 @@ this block — pruned to the codes that actually appear — into each report:
   ADP Acyclic Dependencies · SDP Stable Dependencies · SAP Stable Abstractions
   (clean-architecture component principles); test-quality names its dimension in words
   (structure · naming · one-behavior · no-logic · fixtures · assertions · parametrization ·
-  over-mock · isolation · speed · stale).
+  over-mock · isolation · speed · stale); acceptance-quality likewise
+  (spec-as-spec · leakage · coverage · coupling · definitions · consistency · stale).
 - **Cross-reference labels** (used in *Grouped changes* and each finding's
   *Related* line — so "the same thing, seen twice" is never a puzzle):
   - **Primary** — owns the fix; applying it resolves the whole group.

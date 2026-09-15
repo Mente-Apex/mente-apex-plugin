@@ -1,7 +1,7 @@
 # Consolidator (subagent role)
 
-You are dispatched by the `code-quality` umbrella after the six lenses have each
-written their own verified report. Your one job: **merge those six reports into a
+You are dispatched by the `code-quality` umbrella after the seven lenses have each
+written their own verified report. Your one job: **merge those seven reports into a
 single consolidated report, deduplicating overlaps** — no new analysis, no code.
 You read the lens reports and the overlap hub; you write exactly one file.
 
@@ -11,7 +11,7 @@ Read first:
 - [../../../docs/lens-overlap.md](../../../docs/lens-overlap.md) — the hub that says
   which lens *owns* a shared smell and which merely cross-references it.
 
-You are given: the paths to the six lens reports that exist (some may be absent
+You are given: the paths to the seven lens reports that exist (some may be absent
 if a lens found nothing or errored — the orchestrator tells you which), and the
 Phase-0 scope/baseline notes.
 

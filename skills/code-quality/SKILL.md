@@ -1,7 +1,7 @@
 ---
 name: code-quality
 description: >-
-  The umbrella full-audit for a codebase's quality — runs all six review lenses
+  The umbrella full-audit for a codebase's quality — runs all seven review lenses
   in one pass and merges them into a single, deduplicated Critical/Major/Minor
   report. It fans out clean-architecture (component/dependency graph), ddd
   (domain model, analyze-only), solid (the five class principles), gof (design
@@ -27,12 +27,12 @@ metadata:
   version: "0.3.0"
 ---
 
-# code-quality — the six-lens umbrella audit
+# code-quality — the seven-lens umbrella audit
 
-The plugin has six code-quality lenses, each sound on its own and each still
+The plugin has seven code-quality lenses, each sound on its own and each still
 invokable on its own (`/clean-architecture`, `/ddd analyze`, `/solid`, `/gof`,
 `/clean-code`, `/test-quality`). This skill is the **all-at-once entry point**: it runs
-every lens over the same target and returns **one consolidated report** instead of six
+every lens over the same target and returns **one consolidated report** instead of seven
 you'd have to cross-read yourself. Its value is not new analysis — it is *orchestration
 and reconciliation*: scope the tree once, fan the lenses out in parallel, and merge
 their findings so a smell two lenses both see (a type-switch that is OCP *and*
@@ -43,7 +43,7 @@ lands in the report **once**, at the right altitude, with the others cross-refer
 **It reuses the shared engine end to end** —
 [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md) (Phases 0, 3, 4,
 5) and [../../docs/lens-overlap.md](../../docs/lens-overlap.md) (the reconciliation
-hub). It adds exactly two things of its own: a parallel fan-out over the six
+hub). It adds exactly two things of its own: a parallel fan-out over the seven
 lenses' analysis passes, and a **consolidation** step that dedups them. Everything
 downstream of the merged report — the human gate, the TDD apply, the final
 verification — is the shared flow, unchanged.
@@ -67,7 +67,7 @@ Run [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md) **Phase 0
 yourself, a single time**: scope the tree, record the **detected language set**
 (it drives the detect-and-load reference convention below), detect and run the test
 suite once to establish the baseline, and create the git-excluded report dirs. This
-is the whole point of an umbrella — the six lenses would otherwise each re-scan the
+is the whole point of an umbrella — the seven lenses would otherwise each re-scan the
 tree, re-detect the languages, and re-run the suite. **Scope in the test tree too** —
 five lenses read `src/`, but `test-quality` audits the tests, so don't exclude `tests/`
 from the inventory the way a production-only pass might. Create
@@ -96,7 +96,7 @@ with findings that sit in critical code, and expensive opt-in checks (whole-repo
 can be scoped to those subtrees. Tiers stay Critical/Major/Minor and mean what they always
 meant. Not declared is an ordinary answer; say so in the readout and move on.
 
-**Build the shared index here, once — it is the umbrella's biggest speed lever.** Six
+**Build the shared index here, once — it is the umbrella's biggest speed lever.** Seven
 analyzers each independently globbing and grepping a large tree is ~6× the necessary
 scanning before a single finding exists (on a big repo this is where the minutes go).
 So produce a small **inventory artifact** in `docs/reports/code-quality/` now and hand
@@ -116,7 +116,7 @@ check it is current per
 structural queries) → **`ctags`** (fallback) → **agent-read of the scoped file
 list** (last resort, recorded as a coverage note). **No graph is the normal
 case and blocks nothing** — it just means starting the ladder one rung down.
-Six analyzers each
+Seven analyzers each
 re-enumerating the tree's classes, functions, and call-sites is the same waste
 the import graph already removes for edges. This shared index is an
 **analysis-phase artifact** — built once over Phases 0–2's single read-only
@@ -131,17 +131,17 @@ to **scope the audit to a package/subtree**, or an **incremental "changed files 
 action beats an exhaustive one that takes 20 minutes and buries the wins. Whole-repo
 stays available; it just shouldn't be the silent default when the repo is large.
 
-### Phase 1 — Fan out the six analyzers (parallel)
+### Phase 1 — Fan out the seven analyzers (parallel)
 
-**Make the six worktrees first, at the ref under review** — six agents sharing one
+**Make the seven worktrees first, at the ref under review** — seven agents sharing one
 tree cannot be told apart the moment any of them writes, and the harness's own
 `isolation:` takes no ref, so it cannot be pointed at the branch you are auditing:
 
     sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/lens_worktrees.py" \
         create --repo-root <target> --ref <branch-under-review> \
-        --lenses clean-architecture ddd solid gof clean-code test-quality
+        --lenses clean-architecture ddd solid gof clean-code test-quality acceptance-quality
 
-Then dispatch **six analyzer subagents at once** (Agent tool, `general-purpose`), one
+Then dispatch **seven analyzer subagents at once** (Agent tool, `general-purpose`), one
 per lens and **without** `isolation:` — the worktree you just made is the isolation.
 Per **"Isolation and artifact collection"** in
 [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md), each brief names
@@ -187,7 +187,7 @@ list (the Grep tool is ripgrep-backed — speed comes from a tight `glob`/path s
 from grepping the whole tree); reach for `ast-grep` for structural/pattern queries
 (the shape a `gof`/`solid` smell has) instead of brittle regex; and read file *ranges*
 around a hit rather than whole large files. This keeps the fan-out from turning into
-six redundant full-tree scans.
+seven redundant full-tree scans.
 
 The analyzer brief otherwise:
 
@@ -199,14 +199,15 @@ The analyzer brief otherwise:
 | gof | `skills/gof/agents/analyzer.md` | — |
 | clean-code | `skills/clean-code/agents/analyzer.md` | **deep gear** (two-stage, writes a report — not the inline quick gear) |
 | test-quality | `skills/test-quality/agents/analyzer.md` | audits the **test** tree, not `src/`; nominates stale-test deletions (reviewer proves them) |
+| acceptance-quality | `skills/acceptance-quality/agents/analyzer.md` | audits the **acceptance/Gherkin** layer; **auto-skips when Phase 0 finds no suite** — one Coverage line, no findings, no cost |
 
 Each analyzer writes its own `docs/reports/<lens>/draft-findings.md` — **you read
-those files, you never write them for the subagents.** Collect all six before the
+those files, you never write them for the subagents.** Collect all seven before the
 next wave; a lens that errors is a recorded coverage gap, not a blocker.
 
-### Phase 2 — Fan out the six reviewers (parallel)
+### Phase 2 — Fan out the seven reviewers (parallel)
 
-Dispatch **six reviewer subagents**, one per lens (`skills/<lens>/agents/reviewer.md`),
+Dispatch **seven reviewer subagents**, one per lens (`skills/<lens>/agents/reviewer.md`),
 into the **same worktree set Phase 1 used** — reuse it rather than cutting a second one,
 so a reviewer verifies against exactly the tree its analyzer read — with the same
 dispatch rules (subject root, artifact root, assert-the-subject-is-present). Each is
@@ -215,7 +216,7 @@ Phase 1 actually wrote it; a reviewer resolving the draft inside its own worktre
 nothing there. They run their normal verified pass and write
 their lens's own report (e.g. `docs/reports/solid/SOLID-REPORT-<YYYY-MM-DD>.md`). They
 need **not** cross-reference each other here — because dedup is deferred to the
-consolidator, the six reviewers are independent and run concurrently. (If a
+consolidator, the seven reviewers are independent and run concurrently. (If a
 reviewer cross-references the hub out of habit, that's harmless; the consolidator is
 authoritative.) **Tell the gof reviewer to skip its HTML preview** — under a direct
 `/gof` run it unconditionally writes `docs/reports/gof/GOF-REPORT-<date>.html`
@@ -226,13 +227,13 @@ product, so instruct it to write only the Markdown report here.
 
 Dispatch **one consolidator subagent** reading
 [agents/consolidator.md](agents/consolidator.md). Tell it which lens reports exist
-(name the absent ones explicitly). It merges the six reports into
+(name the absent ones explicitly). It merges the seven reports into
 `docs/reports/code-quality/CODE-QUALITY-REPORT-<YYYY-MM-DD>.md` per
 [references/report-template.md](references/report-template.md), filing each shared
 smell once at the owning altitude and cross-referencing the rest. Read the merged
 report yourself before the gate.
 
-**Reap the six drafts here, not in Phase 2.** The umbrella's Phase 2 fans out six
+**Reap the seven drafts here, not in Phase 2.** The umbrella's Phase 2 fans out seven
 reviewers instead of running the shared workflow's single-lens Phase 2, so the
 shared per-lens "reap the draft" (Phase 2, docs/refactor-workflow.md) has nowhere
 to run on its own — a lens's `docs/reports/<lens>/draft-findings.md` would
@@ -311,7 +312,7 @@ the window. Then offer to commit/PR via `/ship`; never auto-publish.
   and the overlap hub are shared. This skill adds fan-out + consolidation and
   nothing else; if you find yourself restating a lens's rubric or the apply
   mechanics, stop — link the shared doc instead.
-- **Each lens still stands alone.** Nothing here changes the six skills; a user who
+- **Each lens still stands alone.** Nothing here changes the seven skills; a user who
   wants only one runs it directly. This is the convenience layer on top, not a
   replacement.
 - **Judgment, not dogma.** A full audit can surface a lot; the top-wins summary
@@ -326,7 +327,8 @@ the window. Then offer to commit/PR via `/ship`; never auto-publish.
 - [../../docs/refactor-workflow.md](../../docs/refactor-workflow.md) — the shared
   Phase 0/3/4/5 this skill reuses verbatim.
 - [../../docs/lens-overlap.md](../../docs/lens-overlap.md) — the reconciliation hub.
-- The six lenses: [../clean-architecture/SKILL.md](../clean-architecture/SKILL.md),
+- The seven lenses: [../clean-architecture/SKILL.md](../clean-architecture/SKILL.md),
   [../ddd/SKILL.md](../ddd/SKILL.md), [../solid/SKILL.md](../solid/SKILL.md),
   [../gof/SKILL.md](../gof/SKILL.md), [../clean-code/SKILL.md](../clean-code/SKILL.md),
-  [../test-quality/SKILL.md](../test-quality/SKILL.md).
+  [../test-quality/SKILL.md](../test-quality/SKILL.md),
+  [../acceptance-quality/SKILL.md](../acceptance-quality/SKILL.md).

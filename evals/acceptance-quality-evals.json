@@ -1,0 +1,60 @@
+{
+  "skill_name": "acceptance-quality",
+  "reviewed_against_skill_versions": {
+    "acceptance-quality": "0.1.0"
+  },
+  "evals": [
+    {
+      "id": 1,
+      "skill": "acceptance-quality",
+      "prompt": "/acceptance-quality on features/ — we have about 40 Cucumber scenarios that have grown over two years and nobody has looked at them as a whole.",
+      "expected_output": "Analyzer→reviewer two-stage pass producing a tiered docs/reports/acceptance-quality/ACCEPTANCE-QUALITY-REPORT-<date>.md. Report-only; every change to what a scenario MEANS stays a per-scenario human decision.",
+      "assertions": [
+        "Reads references/rubric.md and the detected dialect's references/gherkin.md rather than inventing a rubric",
+        "Applies the cold-read test — judges each scenario on whether a reader with no code open could say what the system does",
+        "Checks the step vocabulary across the whole suite, not scenario by scenario, since near-duplicate steps are invisible one file at a time",
+        "Tiers a scenario that asserts no observable outcome as Critical, not as a wording nit",
+        "Ends report-only, and states that changing what a scenario means is a conversation rather than a refactor",
+        "Does not duplicate the atdd plugin's build path — it audits the suite that exists and never generates specs or a pipeline"
+      ]
+    },
+    {
+      "id": 2,
+      "skill": "acceptance-quality",
+      "prompt": "/code-quality — full audit of this Python service. (There is no acceptance suite in the repo.)",
+      "expected_output": "The seventh lens detects no acceptance suite, records one Coverage line, and costs nothing. It does not invent scenarios or recommend adopting Gherkin.",
+      "assertions": [
+        "Records the absent acceptance suite as one Coverage line, not as a finding",
+        "Does not recommend adopting Gherkin or an acceptance layer — whether a project should have one is a product decision this lens has no standing to make",
+        "Does not invent scenarios or grade a suite that does not exist",
+        "The other six lenses run normally and the consolidated report is not blocked by the skip"
+      ]
+    },
+    {
+      "id": 3,
+      "skill": "acceptance-quality",
+      "prompt": "/acceptance-quality — here's one feature file. Every scenario is `When I click \"#submit\"` / `Then I see \".alert-success\"`, and the API feature file next to it asserts on HTTP 201.",
+      "expected_output": "Files the click-script suite as the spec-as-spec failure it is, and does NOT file the API file's status codes — when the stakeholder is another service, the HTTP contract IS the agreed behaviour.",
+      "assertions": [
+        "Files the selector-driven scenarios as leakage / spec-as-spec, tiered on what a cold reader loses",
+        "Does NOT file the API feature's HTTP verbs and status codes as leakage — judged by who the stakeholder is",
+        "Names the restraint explicitly rather than silently omitting the API file",
+        "Does not argue that the suite should or should not be Gherkin — it grades the suite it was given"
+      ]
+    },
+    {
+      "id": 4,
+      "skill": "acceptance-quality",
+      "prompt": "/acceptance-quality on features/ — across 31 scenarios the same person is called \"the customer\", \"the user\" and \"the account holder\", and Given steps are sometimes past tense and sometimes present. There are also three step definitions that all mean \"logged in\".",
+      "expected_output": "Files the three step DEFINITIONS as a DRY finding and the naming/tense drift as a PROSE CONSISTENCY finding — two different standards — and proposes making the scenarios say the same thing the same way rather than merging them.",
+      "assertions": [
+        "Treats the three step definitions as a DRY problem in code and proposes merging them",
+        "Treats the actor naming and tense drift as a CONSISTENCY problem in prose, explicitly NOT as duplication to be removed",
+        "Does not propose merging or deleting scenarios to reduce repetition — repetition of prose is how this layer gives examples",
+        "Files the naming drift once per concept with its occurrence count, not once per scenario",
+        "Cross-references ddd's ubiquitous language for the term choice rather than deciding the domain's vocabulary itself",
+        "Leaves genuinely meaningful distinctions (e.g. a separate 'guest' actor) alone rather than flattening them"
+      ]
+    }
+  ]
+}
