@@ -15,10 +15,12 @@ description: >-
   docs/domain proposal — report-only, no code changes. Use for "/ddd",
   domain-driven design, bounded context, aggregate, ubiquitous language, entity
   vs value object, anemic domain model, hexagonal / ports and adapters,
-  repository / unit of work.
+  repository / unit of work, specification pattern, entity identity strategy,
+  and — opt-in only, never by default — CQRS, event sourcing, sagas / process
+  managers.
 user-invocable: true
 metadata:
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 
 # ddd — Domain-Driven Design modelling, build & analysis
@@ -35,7 +37,11 @@ layer ordering, and dependency direction**; it delegates the red-green cycle to
 one bounded context is in play; `references/<language>.md` for the detected
 language's idioms (ships `python.md`, `typescript.md`, and `java.md`; list
 `references/` for the current set); `references/report-template.md` + `agents/*`
-only in `analyze` mode.
+only in `analyze` mode; `references/cqrs.md`, `references/event-sourcing.md`,
+`references/sagas.md` **only once a trigger for that discipline has fired** —
+either the user opting in or you being about to raise it (design step 3), or the
+reviewer filing a finding that names it. Never as background reading, or the
+skill starts finding reasons to recommend them.
 
 ## Invocation
 
@@ -74,32 +80,77 @@ Gauge domain complexity from the brief:
   aggregates, one step at a time, live.
 The user can override the chosen path either way.
 
-### 3. Persist the model
+### 3. 🔀 Opt-in triage — CQRS, event sourcing, sagas
+Do this **before** the model is persisted and gated: each of these rewrites the
+ports and (for event sourcing) the aggregates the gate is about to sign off, so
+deciding after the gate means re-opening it.
+
+- **Default is no.** The default build is one model, state-based persistence, and
+  domain events. Say nothing about these unless a trigger fires.
+- **Triggers.** An explicit request (`/ddd design … with cqrs`, "event-sourced",
+  "we need a saga"), or the interview surfacing the specific need each answers:
+  sharply divergent read/write shapes (CQRS), hard audit/temporal requirements
+  (event sourcing), a multi-aggregate process with compensating steps (sagas).
+- **Try the cheap answer first** — these resolve most triggers without any of the
+  three, and you do not need the reference to offer them:
+  - "we need an audit trail" → an append-only audit table written by a domain-event
+    handler, *not* event sourcing.
+  - "reads are slow" → measure, then an index or a denormalized view, *not* CQRS.
+  - "these two aggregates must stay in step" → re-examine the boundary; if they
+    always change together they were one aggregate, *not* a saga.
+- **Load the reference to price it, then decide.** Reading `references/cqrs.md`,
+  `references/event-sourcing.md`, or `references/sagas.md` is authorized as soon as
+  a trigger fires — you cannot state a cost list you have not read. What stays
+  forbidden is *adopting* one without the user's explicit yes, and reading them as
+  background when no trigger fired.
+- **Price it before recommending it.** When *you* raise one, state its cost list
+  from the reference **first**, then the benefit, then let the user decide.
+  Adopting one silently is a defect, not a shortcut.
+- **Build order shifts** only on a yes: CQRS adds query ports + projection
+  handlers *after* the write side is complete; event sourcing replaces the
+  repository port with an event-store port and requires a written versioning
+  strategy before the first test; a saga is an application-layer coordinator over
+  dispatch/subscribe ports, built after the aggregates it coordinates.
+
+### 4. Persist the model
 Write, into the target project (committed, living):
 - `docs/domain/GLOSSARY.md` — ubiquitous language.
 - `docs/domain/model.md` — aggregates + invariants, domain events, entities/VOs,
-  ports.
+  ports, the identity strategy, and the opt-in decision from step 3 **including a
+  "no"**, so the next run doesn't re-litigate it.
 - `docs/domain/context-map.md` — only if more than one bounded context.
 
-### 4. 🚦 MODELING GATE (hard stop — human sign-off)
-Before a single test or line of production code, present the three load-bearing
+### 5. 🚦 MODELING GATE (hard stop — human sign-off)
+Before a single test or line of production code, present the load-bearing
 decisions for explicit approval:
 - **Ubiquitous language** — glossary terms and definitions.
 - **Bounded context(s)** — name(s) and boundaries (+ context map if >1).
 - **Aggregates** — each aggregate root, its members, and the **invariant it
   exists to guard**.
+- **Entity identity generation** — application- vs database-generated, per
+  "Entity identity" in `ddd-core.md`. Cheap here, and it decides the repository
+  port's shape (`add(order)` vs `add(order) -> OrderId`), so it cannot wait for
+  the adapter layer.
+- **Any opt-in from step 3**, with the cost the user accepted.
 Do not proceed until the user approves. They may approve as-is, edit
 terms/boundaries/aggregates, or send it back to re-model. A pre-authorization
-covering these counts as approval. *Why these three:* they are cheap to change on
+covering these counts as approval. *Why these:* they are cheap to change on
 paper and a rewrite once code depends on them — the language names every class,
-the boundaries decide scope, and the invariant is the consistency rule the whole
-repository + unit-of-work layer is built to protect.
+the boundaries decide scope, the invariant is the consistency rule the whole
+repository + unit-of-work layer is built to protect, and identity generation
+reaches the ports. If a later step changes one of them, re-present this gate
+rather than editing an approved artifact silently.
 
-### 5. Build layer-by-layer via tdd (programmatic), innermost first
+### 6. Build layer-by-layer via tdd (programmatic), innermost first
 Hand each layer to `tdd` in **programmatic mode** with acceptance criteria,
 explicit scope, and integration points. `tdd` writes tests+code; you own the
 ordering and the dependency direction. `tdd` does **not** commit — this flow owns
-the branch. Order:
+the branch.
+
+**Choose the directory scaffold first**, per "Modules" in `ddd-core.md`:
+layer-first (`domain/ application/ adapters/`) for a single bounded context,
+concept-first (`billing/{domain,…}`, `catalog/{…}`) once there is more than one —
+top-level names come from the ubiquitous language either way. Then, in order:
 1. **Domain core** — entities, value objects, aggregates. Pure; no
    infrastructure; no mocks (this is `tdd`'s existing `references/ddd_testing.md`
    contract).
@@ -109,12 +160,15 @@ the branch. Order:
    publishers — each behind a port defined inward.
 4. **Web / HTTP layer last, and only if needed.**
 
-After **each** layer, verify the DDD boundary yourself (see next section), then
-*recommend* (never auto-run) `/solid` for a deep audit and `/gof` when a specific
-pattern earns its place (factory for aggregate creation, strategy for a domain
-policy, adapter/ACL for a third party).
+After **each** layer, verify the DDD boundary yourself (see next section). Aim
+`tdd`'s refactor step at "Supple Design" in `ddd-core.md` — intention-revealing
+names, side-effect-free queries split from mutating commands, invariants stated
+as assertions — that is what the refactor half of red-green-refactor is *for* in
+a domain layer. Then *recommend* (never auto-run) `/solid` for a deep audit and
+`/gof` when a specific pattern earns its place (factory for aggregate creation,
+strategy for a domain policy, adapter/ACL for a third party).
 
-### 6. Per-layer boundary check (inline DIP)
+### 7. Per-layer boundary check (inline DIP)
 - **Dependency direction is inward only** — domain imports nothing from
   application/adapters/web; application imports domain + ports only; adapters
   depend inward on ports.
@@ -124,7 +178,7 @@ policy, adapter/ACL for a third party).
 If either fails, fix the boundary before starting the next layer — a broken
 boundary compounds.
 
-### 7. Finish
+### 8. Finish
 Full suite green, then per the git convention **offer** (never auto) commit + PR
 via `mente-apex:ship`. Finally, **offer** (never silently) to capture durable
 domain decisions — bounded-context names, core invariants, key ubiquitous-
@@ -220,8 +274,13 @@ durable knowledge — the memory brain (via `/mente`) when present, else a short
   `references/ddd-core.md`: no value object where a primitive is fine, no unit of
   work when a single repository call is the whole transaction, keep aggregates
   small, don't split one context into ceremony.
-- **Out of scope by default (opt-in only):** CQRS, Event Sourcing, Sagas —
-  name them, price them, never reach for them silently.
+- **Out of scope by default (opt-in only):** CQRS, Event Sourcing, Sagas — name
+  them, price them, never reach for them silently. Their references
+  (`references/cqrs.md`, `references/event-sourcing.md`, `references/sagas.md`)
+  stay unloaded until a trigger fires (design step 3, or a reviewer finding that
+  names one); a skill that has read them as background starts seeing reasons to
+  use them. Once a trigger *has* fired, reading is required — you cannot price
+  what you have not read.
 
 ## File map
 
@@ -235,6 +294,10 @@ durable knowledge — the memory brain (via `/mente`) when present, else a short
   ids, `interface` ports, async Prisma repos), and `java.md` (records as value
   objects, Spring-aware ports, the JPA anemic-model trap); list `references/`
   for the current set. New languages drop in here.
+- `references/cqrs.md`, `references/event-sourcing.md`, `references/sagas.md` —
+  one per opt-in discipline: what it is, when it pays off, its honest cost list,
+  the port shape, and a firm when-NOT-to. Loaded **only** once a trigger fires
+  (design step 3, or an `analyze` finding that names one), never as background.
 - `references/report-template.md` — exact `analyze` report format.
 - `agents/analyzer.md`, `agents/reviewer.md` — the two `analyze` subagent roles.
 - `../../docs/git-convention.md` — working-branch + offer-never-auto-publish.

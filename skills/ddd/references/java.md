@@ -72,7 +72,10 @@ explicitly `implements`. The decision that matters is the same one Python makes 
 | Kind | What it is | Examples | Use |
 |------|------------|----------|-----|
 | **Port** | a seam to infrastructure the domain *depends on* | `OrderRepository`, `EmailSender`, `Clock`, `PaymentGateway` | **`interface`**, declared in the domain package |
-| **Domain base** | shared behavior *inside* the domain | `AggregateRoot`, `DomainEvent`, `Specification` | **`abstract class`**, or a sealed interface |
+| **Domain base** | shared behavior *inside* the domain | `AggregateRoot`, `DomainEvent` | **`abstract class`**, or a sealed interface |
+
+`Specification` is the documented exception — its combinators are `default` methods over
+one abstract method, so it stays an interface; see its section below.
 
 **Where the port interface lives is the entire DIP question.** Declared in the domain
 package and implemented by the adapter, the compile-time arrow points inward: the
@@ -183,6 +186,104 @@ class JdbcOrderRepository implements OrderRepository {
 The adapter returns a fully-constituted `Order`, never a row or an entity. Keep
 `SpringDataOrderRepository` package-private so nothing outside the adapter can reach it.
 
+### Collection- vs persistence-oriented — Java makes the choice for you
+
+Java is the clearest illustration of the two styles in `ddd-core.md`, because the
+persistence technology decides:
+
+- **JPA/Hibernate is collection-oriented by nature.** A managed entity loaded in a
+  transaction is dirty-checked and flushed at commit — `save()` on an already-managed
+  aggregate is a no-op that many teams write anyway, believing it is what persists the
+  change. It is not, and that misunderstanding is worth a finding on its own: the
+  transaction boundary, not the `save` call, is what commits.
+- **Spring Data JDBC is persistence-oriented.** No session, no dirty tracking; the
+  aggregate is written when, and only when, `save()` is called. This is the style the
+  "anemic-model trap" section recommends, and it pairs with the `isNew`/application-
+  generated-identity caveat noted there.
+
+A codebase that mixes both — some aggregates relying on dirty checking, others on an
+explicit `save` — will lose writes at exactly the seams nobody tests. Name the style
+once, in `docs/domain/model.md`, and audit against it.
+
+## Specification — composable business rules
+
+```java
+@FunctionalInterface
+public interface Specification<T> {
+
+    boolean isSatisfiedBy(T candidate);
+
+    default Specification<T> and(Specification<T> other) {
+        return candidate -> isSatisfiedBy(candidate) && other.isSatisfiedBy(candidate);
+    }
+
+    default Specification<T> or(Specification<T> other) {
+        return candidate -> isSatisfiedBy(candidate) || other.isSatisfiedBy(candidate);
+    }
+
+    default Specification<T> negate() {
+        return candidate -> !isSatisfiedBy(candidate);
+    }
+}
+
+var eligibleForFreeShipping =
+        new OrderOverThreshold(new Money(5000, Currency.getInstance("EUR")))
+                .and(new ContainsHazardousGoods().negate());
+```
+
+Java is the one language here where the *interface with `default` methods* is the right
+carrier rather than an abstract class: the combinators close over `this` and need no
+state, so a single abstract method keeps every specification implementable as a lambda.
+This is the documented exception to the "a `default` body means you wanted an abstract
+class" rule above — the defaults here are combinators over the single abstract method,
+not shared implementation state.
+
+### The repository-translation seam
+
+Spring Data ships this seam pre-built: `JpaSpecificationExecutor` takes an
+`org.springframework.data.jpa.domain.Specification`, which is a Criteria-API builder,
+not a domain predicate. **Do not let that type into the domain** — it drags
+`jakarta.persistence.criteria` inward and inverts the dependency arrow. Keep the domain
+`Specification<Order>` above, add `List<Order> matching(Specification<Order>)` to the
+`OrderRepository` port, and translate in the adapter:
+
+```java
+@Repository
+class JpaOrderRepository implements OrderRepository {
+
+    private final SpringDataOrderRepository orders;    // extends JpaSpecificationExecutor<OrderRecord>
+
+    JpaOrderRepository(SpringDataOrderRepository orders) {
+        this.orders = orders;
+    }
+
+    @Override
+    public List<Order> matching(Specification<Order> specification) {
+        return orders.findAll(toCriteria(specification))   // returns Spring Data's Specification
+                     .stream().map(OrderRecord::toDomain).toList();
+    }
+}
+```
+(Java has no import aliasing, so one of the two must be fully qualified at every use —
+a small, permanent tax that is itself an argument for naming the domain type
+`OrderRule` instead.)
+
+`toCriteria` handles the finite set of domain specifications this adapter can render and
+throws on the rest — an explicit `UntranslatableSpecificationException` beats a silent
+`findAll()` plus in-memory filter.
+
+One design fork worth stating rather than stumbling into: **sealing the hierarchy makes
+the translator's `switch` exhaustive at compile time, and gives up lambdas** — a
+`sealed interface` cannot be implemented by a lambda, so `@FunctionalInterface` must
+come off (it is a compile error on a sealed type) and `and`/`or`/`negate` must return
+small `Composite` records instead of lambdas. That is usually the better trade for a
+*translated* specification — the compiler catches the rule you forgot to render — and
+the worse one for purely in-memory rules. Pick per hierarchy, not per codebase.
+
+Java's fork is the same one TypeScript faces (class-with-combinators vs tagged union):
+in-memory composability and translatability pull against each other, and the sealed
+version is how you buy both, at the cost of a named type per rule.
+
 ## Transactions are the unit of work
 
 Java's unit of work is `@Transactional`, and it belongs on the **application service** —
@@ -224,9 +325,11 @@ synchronously inside `save()`, before the transaction commits** — only the *ha
 deferred, and only if the listener is `@TransactionalEventListener`. Do not read
 `AbstractAggregateRoot` as giving after-commit semantics by itself.
 
-Two more sharp edges: the publishing interceptor triggers on methods whose name **starts
-with `save`** (`save`, `saveAll`, `saveAndFlush`) plus the `delete` family, each taking
-exactly one parameter — so **`deleteById(...)` publishes nothing**. And the base class
+Two more sharp edges: the publishing interceptor triggers on single-parameter methods
+whose name **starts with `save`** (`save`, `saveAll`, `saveAndFlush`) plus an **exact**
+list of four deletes — `delete`, `deleteAll`, `deleteInBatch`, `deleteAllInBatch`. The
+asymmetry is the trap: `save` is prefix-matched, `delete` is not, so **`deleteById(...)`
+and `deleteAllById(...)` publish nothing** despite looking like they should. And the base class
 extends a Spring type, putting a framework dependency in the domain: a Dependency-Rule
 trade-off the team may accept, but flag it as one.
 

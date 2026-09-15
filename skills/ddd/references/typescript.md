@@ -75,8 +75,10 @@ export interface OrderRepository {
 }
 ```
 Structural typing is the purest DIP here: the concrete `PrismaOrderRepository`
-*structurally matches* the interface **without importing anything from the
-domain** and without an `implements` clause — though writing `implements
+*structurally matches* the interface **without importing the port itself** and
+without an `implements` clause — it does, correctly, import the domain's `Order`
+and `OrderId`, because adapters depend *inward*; what DIP forbids is the arrow
+pointing the other way — though writing `implements
 OrderRepository` on the adapter is good practice for a clearer compile error, it
 must live in the adapter layer, never pull the port toward infrastructure. The
 same structural match means an in-memory `FakeOrderRepository` satisfies the port
@@ -112,6 +114,84 @@ combinator *implementations*, so it is an `abstract class`, not an interface. Wh
 a port genuinely needs a little shared code, combine both — an `interface` for the
 type seam plus a small concrete helper — rather than fattening the interface.
 
+## Specification — composable business rules
+
+```ts
+export abstract class Specification<T> {
+  abstract isSatisfiedBy(candidate: T): boolean;
+
+  and(other: Specification<T>): Specification<T> {
+    return new AndSpecification(this, other);
+  }
+  or(other: Specification<T>): Specification<T> {
+    return new OrSpecification(this, other);
+  }
+  not(): Specification<T> {
+    return new NotSpecification(this);
+  }
+}
+
+class AndSpecification<T> extends Specification<T> {
+  constructor(
+    private readonly left: Specification<T>,
+    private readonly right: Specification<T>,
+  ) {
+    super();
+  }
+  isSatisfiedBy(candidate: T): boolean {
+    return this.left.isSatisfiedBy(candidate) && this.right.isSatisfiedBy(candidate);
+  }
+}
+
+const eligibleForFreeShipping = new OrderOverThreshold(Money.of(5000, "EUR"))
+  .and(new ContainsHazardousGoods().not());
+```
+TS has no operator overloading, so the combinators are named methods.
+
+### The repository-translation seam
+
+The port takes the specification; the **adapter** renders it as a Prisma `where`
+clause. Give every specification a literal `kind` so the translator can discriminate
+— including the combinators, or a *composed* specification (the whole point of the
+pattern) cannot be translated:
+
+```ts
+type OrderSpecification =
+  | (OrderOverThreshold & { readonly kind: "overThreshold" })
+  | (ContainsHazardousGoods & { readonly kind: "hazardous" })
+  | { readonly kind: "and"; left: OrderSpecification; right: OrderSpecification }
+  | { readonly kind: "not"; inner: OrderSpecification };
+
+export interface OrderRepository {
+  matching(specification: OrderSpecification): Promise<Order[]>;
+}
+
+// in the adapter only — the domain never imports Prisma types
+function toWhere(specification: OrderSpecification): Prisma.OrderWhereInput {
+  switch (specification.kind) {
+    case "overThreshold": return { totalCents: { gte: specification.thresholdCents } };
+    case "hazardous":    return { lines: { some: { hazardous: true } } };
+    case "and":          return { AND: [toWhere(specification.left), toWhere(specification.right)] };
+    case "not":          return { NOT: toWhere(specification.inner) };
+    default: {
+      const unhandled: never = specification;      // compile error if a kind is added
+      throw new UntranslatableSpecification(unhandled);
+    }
+  }
+}
+```
+Two things to get right here. **Write the `never` default explicitly** — the
+"omit the default and let the compiler catch it" trick only errors under
+`strictNullChecks` or `noImplicitReturns` (TS2366/TS7030); with neither flag set
+the function compiles clean and returns `undefined`, which Prisma reads as *no
+filter* — a silent full-table scan, exactly what this seam exists to prevent. And
+note the union is **not** the `Specification<T>` abstract class above: the class
+gives you `.and()/.or()/.not()` for in-memory composition, the tagged union gives
+you translatability. If you want both, have each class expose a `kind` and build
+the union from them; if you only ever compose in memory, keep the class and drop
+the union. Where a rule genuinely cannot be rendered, load candidates and filter
+with `isSatisfiedBy` — but say so at the call site rather than letting a scan hide.
+
 ## Repository adapter (Prisma) — persistence-oriented
 
 ```ts
@@ -138,6 +218,17 @@ export class PrismaOrderRepository implements OrderRepository {
 ```
 The port lives with the domain/application; this adapter is injected at the
 composition root. It returns a fully-constituted `Order`, never a raw row.
+
+**Prisma forces the persistence-oriented style** and that is fine: it has no
+identity map and no dirty tracking, so every write is an explicit `create` /
+`update` call. Do not fake collection-oriented semantics on top of it. **TypeORM
+is in the same bucket** — despite the `EntityManager` name it has no identity map,
+no dirty checking and no `flush()`, so an explicit `save()` is required after every
+mutation. **MikroORM is the outlier**: a real identity map plus unit of work plus
+`flush()`, so the collection-oriented style — mutate the aggregate, let `flush()`
+persist it — is genuinely available there and only there. Getting this backwards
+is expensive: choose collection-oriented on TypeORM and every write is silently
+dropped. See `ddd-core.md` for the tradeoff.
 
 ## Unit of work
 

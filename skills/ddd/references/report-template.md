@@ -46,7 +46,8 @@ auto-generated heading anchors don't handle the `/`).
 
 - **Smell:** <anemic domain model | domain logic in controller/ORM model |
   missing port (direct DB/HTTP in domain) | fat repository | aggregate without
-  invariant | transaction script | leaked ubiquitous language>
+  invariant | transaction script | leaked ubiquitous language | query mechanism
+  in the domain | mixed repository styles | package-by-layer-only | de-facto CQRS>
 - **Location:** `path/to/file.py:120-180` <all affected sites>
 - **Evidence:** <2–4 sentences quoting the key lines. No evidence, no finding.>
 - **Reader impact:** <why this hurts comprehension/change safety — justifies the tier>
