@@ -151,7 +151,7 @@ path from the JSON above), with every scoped code path **relative to it**; and t
 `<artifact-root>/<lens>/draft-findings.md`. Require each analyzer to **assert its
 scoped files resolve under its own subject root** before it starts, and to report a
 named coverage gap rather than reaching outside if they do not. Tear the set down with
-`remove --root <root> --lenses …` once Phase 2 is finished with it.
+`remove --repo-root <target> --root <root> --lenses …` once Phase 2 is finished with it.
 
 Skip any of this and the failure is silent: a worktree cut at the merge-base carries
 none of the branch's code, and an analyzer handed absolute paths will quietly audit

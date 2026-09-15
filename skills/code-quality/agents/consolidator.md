@@ -49,7 +49,7 @@ Phase-0 scope/baseline notes.
 5. **Pick the owner and the relationship type.** For each overlap, use the hub's
    altitude rule to choose the **Primary** — the finding at the altitude where the
    fix actually lives (precedence when several claim it: **clean-arch → ddd → solid
-   → gof → clean-code → test-quality**; widest structural altitude files it, line-level
+   → gof → clean-code → test-quality → acceptance-quality**; widest structural altitude files it, line-level
    and test-side symptoms defer up-ladder — e.g. test-quality's *over-mock* symptom
    defers to the `solid` DIP / `ddd` missing-port fix that owns it). Then label how each
    *other* finding relates to the Primary, using the

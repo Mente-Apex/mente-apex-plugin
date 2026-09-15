@@ -117,7 +117,8 @@ orchestrator creates the set itself, before the wave:
 
     sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/lens_worktrees.py" \
         create --repo-root <target> --ref <branch-under-review> \
-        --lenses solid gof ddd clean-architecture clean-code test-quality
+        --lenses solid gof ddd clean-architecture clean-code test-quality \
+        acceptance-quality
 
 It prints `{"root": …, "commit": …, "worktrees": {lens: path}}`. Cut every
 worktree at the branch, never at its merge-base, and **do not also pass
@@ -130,7 +131,7 @@ invisible to the agent handed the path. A mismatch tears the whole set down, as
 does any single failure — a partial set is worse than none, because some lenses
 then audit the branch, some audit whatever their fallback finds, and the
 consolidated report merges both without knowing which was which. Tear down with
-`remove --root <root> --lenses …` when the wave is done, and report any failure
+`remove --repo-root <target> --root <root> --lenses …` when the wave is done, and report any failure
 rather than leaving a stale entry registered against the operator's repo.
 
 #### Two roots, and everything else relative

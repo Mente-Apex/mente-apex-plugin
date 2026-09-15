@@ -134,7 +134,9 @@ class TestTheUmbrellaDispatchesTheWayTheRuleRequires:
     def test_it_tears_the_set_down_afterwards(self):
         text = UMBRELLA.read_text(encoding="utf-8")
 
-        assert "remove --root" in text
+        # `--repo-root` is part of it: the flag defaults to `.`, which is wrong
+        # whenever the audit target is another repo — the umbrella's normal case.
+        assert "remove --repo-root" in text
 
     def test_it_points_at_the_shared_rule_rather_than_restating_it(self):
         """One contract, one home -- a second copy is a second thing to drift."""

@@ -13,11 +13,13 @@ written — live in
 
 Every finding gets a self-describing, permanent ID: `<lens>/<tier>-<n>`.
 
-- `<lens>` ∈ `clean-arch | ddd | solid | gof | clean-code | test-quality` — the
+- `<lens>` ∈ `clean-arch | ddd | solid | gof | clean-code | test-quality |
+  acceptance-quality` — the
   prefix makes the ID globally unique, so the code-quality umbrella (and any
   lens's *Related* line) carries it verbatim, never re-prefixed.
-- `<tier>` ∈ `critical | major | minor` — the same three tiers for all six
-  lenses; clean-code and test-quality are peers on this scale, not down-filed.
+- `<tier>` ∈ `critical | major | minor` — the same three tiers for all seven
+  lenses; clean-code, test-quality and acceptance-quality are peers on this scale,
+  not down-filed.
 - `<n>` is per-lens-per-tier, starting at 1.
 - IDs are permanent once assigned — later cycles append, never renumber. The
   tier word records the tier **at first assignment**; if a finding is later
@@ -44,6 +46,7 @@ Each lens writes `docs/reports/<lens>/<LENS>-REPORT-<YYYY-MM-DD>.md`:
 | gof | `docs/reports/gof/GOF-REPORT-<date>.md` |
 | clean-code | `docs/reports/clean-code/CLEAN-CODE-REPORT-<date>.md` |
 | test-quality | `docs/reports/test-quality/TEST-QUALITY-REPORT-<date>.md` |
+| acceptance-quality | `docs/reports/acceptance-quality/ACCEPTANCE-QUALITY-REPORT-<date>.md` |
 | code-quality (consolidated) | `docs/reports/code-quality/CODE-QUALITY-REPORT-<date>.md` |
 
 ## Canonical per-finding fields
