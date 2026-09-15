@@ -247,6 +247,12 @@ the partial run and record the coverage gap instead.
 
 ### Phase 3 — Decision gate (human, shared)
 
+**Check the report against itself before presenting it.** Run
+`scripts/report_index.py` over the consolidated report: it prints the progress line and
+every disagreement between the Findings index, the findings' own `Status:` lines and the
+Apply log. A gate presented from a stale index asks the human to decide using numbers
+that are wrong.
+
 Follow the shared workflow's Phase 3 on the **consolidated** report: present counts by
 tier, the top wins across all lenses, anything High-risk, and any *Unresolved tensions*
 the consolidator surfaced (e.g. Singleton ↔ DIP). **Where `--critical` was declared, lead
@@ -287,7 +293,12 @@ they would under a direct `/test-quality` apply. Model-tiering by Risk (above) i
 orthogonal to this dispatch and unchanged by it. One working branch
 (`code-quality/<slug>`).
 
-At Phase 5, verify the suite yourself, then **write the `## Outcome` section into the
+At Phase 5, **re-run `scripts/report_index.py --strict`** before writing anything: the
+Outcome is a synthesis of statuses, so it inherits every disagreement the index still
+carries. An Outcome counted off a stale index is wrong in the one section built to
+outlive the session.
+
+Then verify the suite yourself, and **write the `## Outcome` section into the
 consolidated report** — the persisted run summary (applied / deferred / failed, suite
 before → after, per-job verification method, checkpoint count, residuals for a next pass)
 that survives loss of this session's context, not merely a chat summary that vanishes with
