@@ -17,7 +17,7 @@ description: >-
   invoke this skill in programmatic mode to get code implemented test-first.
 user-invocable: true
 metadata:
-  version: "1.5.0"
+  version: "1.6.0"
 ---
 
 # TDD — Test-Driven Development
@@ -106,6 +106,39 @@ Also ask how the user wants to work:
 
 If the user doesn't answer or can't be reached, default to autonomous, say so, and
 leave a clear record of each cycle so the work is reviewable after the fact.
+
+### 🔀 Design triage — is there a domain here?
+
+**One judgment, out loud, before the first red test.** The design machinery is good and
+nothing routed to it: `/ddd` design mode gates the model and then drives this skill, but
+this skill owns the wide trigger surface ("implement", "build", "add a feature", "new
+endpoint") and never asked whether there was a domain to design first. So the default
+path from *"build me X"* to code bypassed design entirely, and quality arrived afterwards
+as an audit of something already built.
+
+Ask once, answer in a sentence, move on:
+
+- **Yes — hand off to `/ddd` design mode** when the thing has entities with identity and
+  a lifecycle, invariants that must hold across operations, a vocabulary the business
+  already speaks, and behaviour beyond CRUD. `/ddd` gates the ubiquitous language,
+  bounded contexts and aggregates for sign-off, then drives this skill programmatically
+  to build innermost-out — a handoff that already exists and simply needed entering from
+  this side.
+- **No — go straight to red-green** for a script, an adapter, a formatting helper, a
+  one-off, a thin CRUD endpoint over an existing model. **Most work is this**, and
+  forcing DDD on it is the exact dogma `ddd`'s own "when NOT to" list warns against.
+
+**Cheap and skippable, never an interview.** One question, a stated answer, and it is
+over. A pre-authorization ("just build it", a caller already past the model gate) skips
+it outright.
+
+**Silence is not an acceptable outcome** — the same failure mode the REFACTOR step names.
+A triage nobody sees is a triage that did not happen, so say which way it went and why,
+in one line, even when the answer is the ordinary no.
+
+*Why this step and not another audit:* design decisions are the ones an audit cannot fix
+cheaply. An anemic domain model found in a `/code-quality` report costs a refactor; the
+same decision made correctly before the first test costs nothing.
 
 ## Phase 2 — Build with red-green-refactor
 
