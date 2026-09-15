@@ -19,6 +19,7 @@ DOCS_DIR = REPO_ROOT / "docs"
 PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
 MARKETPLACE_JSON = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
+UV_LOCK = REPO_ROOT / "uv.lock"
 
 REQUIRED_FRONTMATTER_KEYS = ("name", "description")
 
@@ -165,16 +166,51 @@ def test_relative_link_targets_include_inline_code_paths():
     )  # non-path code spans ignored
 
 
+def _locked_project_version():
+    """The version `uv.lock` records for THIS package.
+
+    A fourth mirror, and the one that is easy to miss: `uv.lock` pins the
+    project's own version alongside its dependencies, so `uv lock` rewrites that
+    line on every release bump. The change arrives as a lone `version = "..."`
+    diff in a file otherwise full of dependency noise, which is exactly how it
+    gets reverted as "an incidental lockfile touch" -- that happened, and this
+    test is why it cannot happen quietly again.
+    """
+    inside_project_entry = False
+    for line in UV_LOCK.read_text().splitlines():
+        if line.strip() == 'name = "mente-apex-plugin"':
+            inside_project_entry = True
+            continue
+        if inside_project_entry and line.strip().startswith("version = "):
+            return line.split("=", 1)[1].strip().strip('"')
+        if inside_project_entry and line.startswith("[["):
+            break
+    return None
+
+
 def test_version_mirrors_match():
     plugin_version = json.loads(PLUGIN_JSON.read_text())["version"]
     pyproject_version = tomllib.loads(PYPROJECT.read_text())["project"]["version"]
     marketplace_version = json.loads(MARKETPLACE_JSON.read_text())["plugins"][0][
         "version"
     ]
-    assert plugin_version == pyproject_version == marketplace_version, (
+    locked_version = _locked_project_version()
+    assert (
+        plugin_version == pyproject_version == marketplace_version == locked_version
+    ), (
         f"version drift — plugin.json={plugin_version} "
-        f"pyproject={pyproject_version} marketplace={marketplace_version}"
+        f"pyproject={pyproject_version} marketplace={marketplace_version} "
+        f"uv.lock={locked_version} (run `uv lock` after a version bump)"
     )
+
+
+def test_the_lockfile_mirror_is_actually_found():
+    """A guard on the guard: if the lockfile's shape changes and the reader
+    starts returning None, the assertion above would compare None to None for
+    three of four mirrors and silently stop checking anything."""
+    assert (
+        _locked_project_version() is not None
+    ), "cannot read uv.lock's project version"
 
 
 HOOKS_DIR = REPO_ROOT / "hooks"
