@@ -1,7 +1,7 @@
 {
   "skill_name": "tdd",
   "reviewed_against_skill_versions": {
-    "tdd": "1.5.0"
+    "tdd": "1.6.0"
   },
   "evals": [
     {
@@ -17,7 +17,8 @@
         "Sliding-window behavior is actually specified by the tests: the 101st request inside a window is rejected, and capacity frees up once old requests age out of the 60s window",
         "Test names read like behavior specifications (describe outcomes, not implementation)",
         "Work was done on a tdd/<slug> working branch, not directly on main",
-        "The SUMMARY.md shows a test-first chronology (each behavior's test written and seen failing before its implementation) and states the assumptions made instead of asking questions"
+        "The SUMMARY.md shows a test-first chronology (each behavior's test written and seen failing before its implementation) and states the assumptions made instead of asking questions",
+        "Runs the design triage before the first red test and answers it out loud — here a sliding-window rate limiter is a mechanism, not a domain, so it proceeds straight to red-green rather than handing off to /ddd"
       ]
     },
     {
@@ -25,7 +26,9 @@
       "eval_name": "legacy-characterization-csv",
       "prompt": "This report_generator.py has been running in production since 2023 and has zero tests. I need it to also support CSV output (same data, comma-separated, with a header row) so finance can import it. Please don't break the existing text report — other systems parse it.",
       "expected_output": "Characterization tests pinning current text-report behavior (including quirks like int truncation and skipped-row counting) are written BEFORE any change; odd behaviors flagged rather than silently fixed; then CSV support added via red-green-refactor without altering existing output.",
-      "files": ["fixtures/legacy-report/report_generator.py"],
+      "files": [
+        "fixtures/legacy-report/report_generator.py"
+      ],
       "assertions": [
         "Characterization tests pinning the ORIGINAL text-report behavior were written and passing BEFORE report_generator.py was first modified (per SUMMARY.md chronology and test content)",
         "The characterization tests capture the quirks: integer truncation of totals/averages (not rounding) and the skipped-bad-rows count in the footer",
@@ -33,7 +36,8 @@
         "CSV output is implemented: comma-separated rows with a header row, importable data matching the report's numbers",
         "The truncation quirk was flagged to the user as suspicious but NOT silently changed",
         "The full pytest suite passes (run with the workspace venv's pytest)",
-        "Work was done on a tdd/<slug> working branch, not directly on main"
+        "Work was done on a tdd/<slug> working branch, not directly on main",
+        "Does not run the design triage as a gate on legacy characterization work — the domain question is for new behaviour, and an untested production module needs pins first"
       ]
     }
   ]
