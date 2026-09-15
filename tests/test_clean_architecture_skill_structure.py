@@ -172,7 +172,11 @@ def test_agents_state_their_contracts():
     analyzer = read_skill_file("agents/analyzer.md")
     reviewer = read_skill_file("agents/reviewer.md")
     implementer = read_skill_file("agents/implementer.md")
-    assert "read-only" in analyzer.lower()
+    # The read-only contract moved to the shared role (#131). Delegating is the
+    # goal, so what is asserted here is that the pointer exists -- the contract
+    # itself is pinned once, at the shared doc, by
+    # tests/test_lens_agents_delegate.py.
+    assert "refactor-agents/analyzer.md" in analyzer
     assert "draft-findings.md" in analyzer
     assert "principles.md" in analyzer
     # agent docs must follow the detect-and-load convention, not hardcode one language
@@ -181,7 +185,8 @@ def test_agents_state_their_contracts():
         "typescript.md" in analyzer and "python.md" in analyzer
     ), "analyzer must not have regressed to Python-only"
     assert "report-template.md" in reviewer
-    assert "lens-overlap.md" in reviewer  # cross-reference the hub
+    # The hub cross-reference is the shared critic contract's, not this lens's.
+    assert "refactor-agents/reviewer.md" in reviewer
     assert "<language>.md" in reviewer, "reviewer must load references/<language>.md"
     assert "dependency-rule contract" in reviewer.lower()  # language-neutral contract
     assert (
