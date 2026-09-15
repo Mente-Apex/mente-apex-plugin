@@ -18,7 +18,7 @@ description: >-
   suite is a mess / only grows / never gets cleaned", "are these good tests?".
 user-invocable: true
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   source: "Kent Beck TDD + the plugin's tdd skill, read pragmatically"
 ---
 

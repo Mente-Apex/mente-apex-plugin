@@ -1,7 +1,7 @@
 {
   "name": "mente-apex",
-  "version": "0.32.0",
-  "description": "Mente Apex private utilities \u2014 client onboarding, a brand-book-first client-deliverable generator (offers, proposals, agreements, licences, DPAs, handovers, update briefs \u2014 rendered to on-brand HTML/PDF from Markdown), an invoice generator, a one-step ship (branch/commit/push/PR) workflow, a clean-code review/writing standard, a SOLID analysis & guided-refactor workflow, a GoF design-pattern analysis & guided-refactor workflow (creational/structural/behavioral), a TDD (red-green-refactor) implementation workflow with feature and legacy-code modes, plus Claude config sync across machines via Git, plus a Domain-Driven Design modelling/build/analysis workflow (/ddd), a Clean Architecture component/dependency audit (/clean-architecture), a test-suite quality audit (/test-quality: structure, craft, mocking strategy, and stale-test tending), and an umbrella full-audit (/code-quality) that runs all six review lenses at once and merges them into one deduplicated report, and a release pipeline (/release: gate, stamp, build, tag, publish, verify-install) driven by per-technology adapters.",
+  "version": "0.33.0",
+  "description": "Mente Apex private utilities \u2014 client onboarding, a brand-book-first client-deliverable generator (offers, proposals, agreements, licences, DPAs, handovers, update briefs \u2014 rendered to on-brand HTML/PDF from Markdown), an invoice generator, a one-step ship (branch/commit/push/PR) workflow, a clean-code review/writing standard, a SOLID analysis & guided-refactor workflow, a GoF design-pattern analysis & guided-refactor workflow (creational/structural/behavioral), a TDD (red-green-refactor) implementation workflow with feature and legacy-code modes, plus Claude config sync across machines via Git, plus a Domain-Driven Design modelling/build/analysis workflow (/ddd), a Clean Architecture component/dependency audit (/clean-architecture), a test-suite quality audit (/test-quality: structure, craft, mocking strategy, and stale-test tending), an acceptance-suite audit (/acceptance-quality: the Gherkin/acceptance layer a human actually reads \u2014 spec-as-spec, leakage, coverage, prose consistency), and an umbrella full-audit (/code-quality) that runs all seven review lenses at once and merges them into one deduplicated report, and a release pipeline (/release: gate, stamp, build, tag, publish, verify-install) driven by per-technology adapters.",
   "author": {
     "name": "Boris Vujicic"
   },
@@ -34,6 +34,7 @@
     "code-quality",
     "audit",
     "test-quality",
+    "acceptance-quality",
     "test-suite",
     "release",
     "versioning"

@@ -14,7 +14,7 @@ description: >-
   replace security-review or /ship.
 user-invocable: true
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   source: "Robert C. Martin, Clean Code (2008), read pragmatically"
 ---
 

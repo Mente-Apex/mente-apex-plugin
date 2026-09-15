@@ -1,7 +1,7 @@
 {
   "skill_name": "clean-architecture",
   "reviewed_against_skill_versions": {
-    "clean-architecture": "0.1.0"
+    "clean-architecture": "0.2.0"
   },
   "evals": [
     {
@@ -15,7 +15,8 @@
         "Flags core/use-case modules importing Django, the ORM, or the DB as Dependency-Rule violations with file:line evidence",
         "Creates git-excluded docs/reports/clean-architecture/ and writes CLEAN-ARCHITECTURE-REPORT-<date>.md via the template",
         "Drafts an import-linter contract (importlinter.ini) and offers it as a CI tripwire without committing it silently",
-        "Does not scaffold or build a layered structure (audit-first, no build mode)"
+        "Does not scaffold or build a layered structure (audit-first, no build mode)",
+        "REVIEWER DISCRIMINATION — the reviewer visibly overturns the analyzer on at least one finding (prunes it with a stated reason, re-tiers it, or merges a double-filed smell), and says so in the report. A reviewer that kept every draft finding unchanged scores the same as one that verified nothing, which defeats the generator/critic split"
       ]
     },
     {
@@ -27,7 +28,8 @@
         "Treats cohesion and Screaming Architecture as the opt-in secondary tier (via --cohesion or an explicit go-deeper)",
         "Evaluates REP/CCP/CRP, using git co-change as evidence for CCP",
         "Assesses whether the top-level layout reveals use cases vs the framework (Screaming Architecture)",
-        "Checks whether infrastructure is constructed in core vs wired at a single composition root"
+        "Checks whether infrastructure is constructed in core vs wired at a single composition root",
+        "Reads CCP co-change from git history as evidence rather than scripting a co-change METRIC — the rubric forbids a scripted metric here, and a lazier run would produce one"
       ]
     },
     {
@@ -39,7 +41,8 @@
         "Treats the Main-Sequence metrics as the opt-in appendix (--metrics)",
         "Reports Instability I from import fan-in/fan-out and the A/D metrics per component",
         "States that abstractness A is approximate in Python (Protocols/duck typing) and presents it as structural-health context, not a finding",
-        "Does not recommend refactoring purely to move a component toward the Main Sequence"
+        "Does not recommend refactoring purely to move a component toward the Main Sequence",
+        "Reuses the Phase 0 import graph only if the tree is unchanged since it was built, and rebuilds otherwise — a stale graph produces confident numbers about code that moved"
       ]
     },
     {
