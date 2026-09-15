@@ -74,6 +74,28 @@ from the inventory the way a production-only pass might. Create
 `docs/reports/code-quality/` **plus** each lens's own `docs/reports/<lens>/` (the
 lenses write there; the consolidator reads from there).
 
+**Take the Measurements readout here, once.** The Phase 0 measurements artifact feeds
+the consolidated report's `## Measurements` section — the health dashboard a reader scans
+before any finding (complexity distribution, module size, import cycles, coverage). A
+sensor that could not run **omits its row and says why**; it never prints a reassuring
+number. Where a sensor is measured here and again after an apply phase, Phase 5 writes the
+before → after delta, which is what upgrades the apply proof from "suite still green" to a
+measured effect.
+
+**`--mutation` (opt-in) adds the mutation score** to that readout: a `--scope full` run of
+the mutation gate, aggregated to killed/executed. Off by default and never a silent one —
+whole-repo mutation is expensive enough that it must be a cost the operator chose. Scope it
+to the critical subtrees below to make it affordable. The gate's survivors are still
+enumerated; the score is a sensor added to the proof obligation, not a replacement for it.
+
+**`--critical <path>…` (optional) declares what matters most.** An explicit hint, never
+inferred from path names — a guess that `payments/` is critical and `billing_helpers/` is
+not is exactly the kind of confident wrong answer an audit should not make. It is an
+**attention weight on presentation, not a second severity axis**: the Phase 3 gate leads
+with findings that sit in critical code, and expensive opt-in checks (whole-repo mutation)
+can be scoped to those subtrees. Tiers stay Critical/Major/Minor and mean what they always
+meant. Not declared is an ordinary answer; say so in the readout and move on.
+
 **Build the shared index here, once — it is the umbrella's biggest speed lever.** Six
 analyzers each independently globbing and grepping a large tree is ~6× the necessary
 scanning before a single finding exists (on a big repo this is where the minutes go).
@@ -226,7 +248,11 @@ the partial run and record the coverage gap instead.
 
 Follow the shared workflow's Phase 3 on the **consolidated** report: present counts by
 tier, the top wins across all lenses, anything High-risk, and any *Unresolved tensions*
-the consolidator surfaced (e.g. Singleton ↔ DIP). Resolve every `## Conflicts` **fork** per the shared Phase 3 (an explicit
+the consolidator surfaced (e.g. Singleton ↔ DIP). **Where `--critical` was declared, lead
+with the findings that sit in those subtrees** — a Major in payments deserves the reader's
+attention before a Critical in a formatting helper, and that is a presentation call, not a
+re-tiering. Never silently reorder the tiers themselves; say which findings are in critical
+code and why that is being surfaced first. Resolve every `## Conflicts` **fork** per the shared Phase 3 (an explicit
 either/or, before ordering, un-satisfiable by tier/blanket approval) — this is
 distinct from the softer *Unresolved tensions*, which you merely present. The report's **Findings index** is
 your scannable map for this — it already lays out every finding with its principle,

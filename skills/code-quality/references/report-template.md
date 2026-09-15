@@ -115,6 +115,26 @@ no outcome — the index Status column, all `pending`, already says so).
 - Findings after dedup: <n> Critical, <n> Major, <n> Minor  (<k> findings folded into <g> grouped changes)
 - Top wins: <the 3–5 recs a human should care about most across all lenses, one line each>
 
+## Measurements
+
+<!-- The dashboard a reader scans before any finding — a health readout that fits on one
+     screen, fed by the Phase 0 Measurements artifact.
+     OMIT THE WHOLE SECTION — never fake a row — where the artifact degraded or a probe
+     could not run: absence is data, never silence, exactly as the Coverage section
+     already treats it. A row that could not be
+     measured says so and names why; it does not print a reassuring number. -->
+
+| Sensor | Reading |
+|---|---|
+| Cyclomatic complexity | p50 <n> · p95 <n> · max <n> (<worst offender `file:line`>) |
+| Module size | p50 <n> · p95 <n> · max <n> LOC (<largest `file`>) |
+| Import cycles | <n> (<longest chain length>) |
+| Coverage | <n>% lines / <n>% branches — <tool>, or "no coverage tool declared" |
+| Mutation score | <n>% killed over <scope> — opt-in, omit the row entirely when not run |
+
+- Criticality: <subtrees the operator named as critical, or "not declared"> —
+  see the Phase 3 gate note.
+
 ## Findings index
 
 Recommended apply order top to bottom; grouped-change members share one Order (Primary first).
@@ -237,6 +257,12 @@ DIP (solid) on `Config` — the lenses disagree; decide at the gate", or "none">
 - **Deferred / not approved:** <ids left pending, one-line why each, or "none">
 - **Failed / reverted:** <ids that reverted + reason, or "none">
 - **Suite:** <baseline → final, e.g. "1381 → 1388 passed, green"> · **Net diffstat:** <N files, +X/-Y> · **Checkpoints:** <N commits on the working branch>
+- **Measured effect:** <before → after on the sensors that moved, e.g. "CC p95 31 → 12 · cycles 23 → 14 · module max 1889 → 640 LOC · mutation score 61% → 78%">
+  <!-- This is what upgrades the apply phase's proof from "suite still green" to a
+       measured effect: green proves nothing broke, and says nothing about whether the
+       refactor DID anything. Omit the line on an audit-only run (as this whole section
+       already is), and omit any sensor that was not measured both before and after —
+       a delta with a guessed endpoint is worse than no delta. -->
 - **Verification:** <how safety was proven, in aggregate — "all jobs on covered targets (existing suite exercised them, no pins needed)"; call out any legacy-mode job, e.g. "clean-arch/major-1 targets partly uncovered → 4 characterization pins written red-first">
 - **Residual / next pass:** <pending recs, partial applies, and any newly-noticed smell recorded for a future cycle — never silently applied>
 
