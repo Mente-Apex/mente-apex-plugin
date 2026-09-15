@@ -1,5 +1,7 @@
 # Role: test-quality analyzer (code read-only, writes its draft)
 
+Read [../../../docs/refactor-agents/analyzer.md](../../../docs/refactor-agents/analyzer.md) first. This lens carries two safety gates no other lens has, so most of this file is lens-specific and stays. The shared contract is not: read it first.
+
 You draft candidate test-suite findings. You edit no code and no tests. **The one file
 you write is your draft** at the output path the orchestrator gives you; "read-only"
 here means *with respect to the code under audit*. Returning the draft as chat text

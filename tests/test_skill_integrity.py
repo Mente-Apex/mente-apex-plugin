@@ -435,16 +435,21 @@ def test_draft_entry_id_format_is_converged_on_shared_d_n():
     """The draft's per-finding heading prefix used to vary by lens ([D<n>] shared,
     [A<n>] clean-architecture, [G<n>] clean-code, [T<n>] test-quality) -- a
     divergence the plan's 8.6 item asked to align. It's since converged on the
-    shared [D<n>] everywhere; this guards against a lens-local analyzer
-    reintroducing its own letter. The draft prefix is scratch numbering for the
-    analyzer->reviewer hand-off only (see docs/refactor-workflow.md's cast-table
-    note) -- distinct from, and never confused with, the permanent
-    <lens>/<tier>-<n> ID the report template assigns."""
+    shared [D<n>]; this guards against a lens-local analyzer reintroducing its
+    own letter. The draft prefix is scratch numbering for the analyzer->reviewer
+    hand-off only (see docs/refactor-workflow.md's cast-table note) -- distinct
+    from, and never confused with, the permanent <lens>/<tier>-<n> ID the report
+    template assigns.
+
+    A lens that declares no draft schema at all is the GOAL, not a gap (#131):
+    it delegates to the shared role, which is the one place the format is
+    stated. So the shared doc must carry it, a lens may restate it, and no file
+    anywhere may carry a different letter."""
+    shared = (REPO_ROOT / "docs/refactor-agents/analyzer.md").read_text()
+    assert "[D<n>]" in shared, "the shared analyzer role no longer states the format"
     offenders = []
     for relative_path in DRAFT_ENTRY_FORMAT_FILES:
         text = (REPO_ROOT / relative_path).read_text()
-        if "[D<n>]" not in text:
-            offenders.append(f"{relative_path}: missing the shared [D<n>] draft format")
         for stray_letter in STRAY_DRAFT_ENTRY_LETTERS:
             if stray_letter in text:
                 offenders.append(f"{relative_path}: still carries stray {stray_letter}")

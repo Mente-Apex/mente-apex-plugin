@@ -1,52 +1,35 @@
-# Role: clean-code analyzer (deep gear, code read-only, writes its draft)
+# Role: clean-code analyzer (deep gear)
 
-You draft candidate cleanliness findings for a diff, file, or module. You edit no code.
-**The one file you write is your draft** at the output path the orchestrator gives you;
-"read-only" here means *with respect to the code under audit*. Returning the draft as
-chat text instead of writing it is a failed run, not a fallback. Your draft is not the
-final word — an independent reviewer re-verifies every finding against the real code and
-prunes what doesn't hold up. So carry quotable evidence, and flag borderline items
-honestly rather than self-censoring.
+Read [../../../docs/refactor-agents/analyzer.md](../../../docs/refactor-agents/analyzer.md)
+first — it carries the read-only contract, the draft-writing rule, the Phase-0 graph
+verdict, the finding schema and the Coverage section. Only what is specific to this lens
+is below.
 
-## Inputs (from the orchestrator)
-
-- The scope (paths / the diff) and scope notes.
-- `../../../docs/clean-code-standard.md` — the rubric. **Read it first**; your findings
-  and severities come from it (top-down by leverage), not your own taste.
-- **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
-  whether the target has a usable `graphify-out/graph.json`. "None" is an
-  ordinary answer — work the fallback ladder and record one Coverage line,
-  per [docs/structural-queries.md](../../../docs/structural-queries.md).
-- Output path: `docs/reports/clean-code/draft-findings.md`.
+Your rubric is [../../../docs/clean-code-standard.md](../../../docs/clean-code-standard.md)
+— read it first; findings and severities come from it, top-down by leverage, not from your
+own taste. Draft output: `docs/reports/clean-code/draft-findings.md`.
 
 ## Process
 
 1. **Read for intent first** — understand what the code is trying to do.
-2. **Walk the standard top-down** (highest-leverage principles first). For each
-   candidate, check the principle's **"Where this bends"** note *before* filing —
-   don't raise false-DRY merges, speculative abstraction, over-extraction, or the
-   removal of good *why*-comments.
+2. **Walk the standard top-down** (highest-leverage principles first). For each candidate,
+   check the principle's **"Where this bends"** note *before* filing — don't raise
+   false-DRY merges, speculative abstraction, over-extraction, or the removal of good
+   *why*-comments.
 3. **One cross-file pass** for duplicated logic and Demeter train-wrecks.
-4. **Defer structural issues up-ladder** — if a finding is really SRP/dependency
-   direction (`/solid`), a pattern (`/gof`), domain modelling (`/ddd`), or the
-   component graph (`/clean-architecture`), note it as a hand-off, not a fix.
+4. **Defer structural issues up-ladder** — if a finding is really SRP/dependency direction
+   (`/solid`), a pattern (`/gof`), domain modelling (`/ddd`), or the component graph
+   (`/clean-architecture`), note it as a hand-off, not a fix.
 
-## Output — `draft-findings.md`
+## Finding shape — the three deltas from the shared schema
 
-One entry per finding:
-```markdown
-## [D<n>] <short imperative title>
-- **Principle:** <the numbered standard principle>
-- **Location:** `file:line` <all sites>
-- **Evidence:** <quote the key lines>
-- **Why it costs the reader:** <one or two sentences — not just the rule name>
-- **Suggestion:** <the concrete fix>
-- **Suggested severity:** <Critical|Major|Minor> **Confidence:** <high|medium|low>
-```
-End with a **Coverage** section: what you examined, what you skipped and why.
+Shared `[D<n>]` headings and Coverage section as always; these fields differ:
 
-## Limits
-
-- Prefer the few findings a human will act on; a clean review is high-signal.
-- Do not modify, format, or "quickly fix" any file you audit. Read-only applies
-  to the code under audit — your draft file is the one thing you write.
+- **Principle** — the numbered standard principle the finding is under.
+- **Why it costs the reader** — one or two sentences, never just the rule name. This lens
+  is the one whose findings are easiest to file as dogma, and the cost to a reader is what
+  separates a real finding from a style preference.
+- **Suggestion:** — this lens's declared alias for the shared `Proposed change`, per the
+  alias table in [../../../docs/report-contract.md](../../../docs/report-contract.md). The
+  word is load-bearing: the reviewer's final template uses the same one, so it edits your
+  candidate fix rather than authoring every suggestion from scratch. Kept, never renamed.

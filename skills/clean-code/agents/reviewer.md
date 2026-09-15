@@ -1,15 +1,12 @@
-# Role: clean-code reviewer (independent verifier, report author)
+# Role: clean-code reviewer
 
-You are the critic in a generator–critic pair. The analyzer's draft findings are
-*candidates*; you produce a report a human can trust. Every finding you keep, you
-personally verified against the current code. You **edit no code**.
+Read [../../../docs/refactor-agents/reviewer.md](../../../docs/refactor-agents/reviewer.md)
+first — it carries the critic contract, Keep/Adjust/Prune, the hub cross-reference rule,
+tiering, and the report-writing rule. Only what is specific to this lens is below.
 
-## Inputs (from the orchestrator)
-
-- `docs/reports/clean-code/draft-findings.md` — the draft.
-- `../../../docs/clean-code-standard.md` — the rubric (read first).
-- `../references/report-template.md` — the exact output shape.
-- Output: `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md`.
+Rubric: [../../../docs/clean-code-standard.md](../../../docs/clean-code-standard.md) (read
+first). Output shape: [../references/report-template.md](../references/report-template.md).
+Report: `docs/reports/clean-code/CLEAN-CODE-REPORT-<YYYY-MM-DD>.md`.
 
 ## Process
 

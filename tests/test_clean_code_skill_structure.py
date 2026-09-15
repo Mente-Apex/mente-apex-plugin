@@ -109,7 +109,9 @@ def test_skill_md_is_thin_and_links_the_standard():
 def test_deep_gear_agents_state_their_contracts():
     analyzer = read_skill_file("agents/analyzer.md")
     reviewer = read_skill_file("agents/reviewer.md")
-    assert "read-only" in analyzer.lower()
+    # Read-only, verify/prune and "edit no code" are the shared roles' contract
+    # now (#131); these files must point at them rather than restate them.
+    assert "refactor-agents/analyzer.md" in analyzer
     assert "draft-findings.md" in analyzer
     assert (
         "clean-code-standard.md" in analyzer
@@ -121,8 +123,7 @@ def test_deep_gear_agents_state_their_contracts():
     assert "**Suggestion:**" in analyzer
     assert "report-template.md" in reviewer
     assert "clean-code-standard.md" in reviewer
-    assert "verify" in reviewer.lower() and "prune" in reviewer.lower()
-    assert "no code" in reviewer.lower() or "edit no code" in reviewer.lower()
+    assert "refactor-agents/reviewer.md" in reviewer
 
 
 def test_report_template_has_the_expected_structure():

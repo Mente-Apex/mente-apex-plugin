@@ -1,43 +1,29 @@
-# Role: clean-architecture reviewer (independent verifier, report author)
+# Role: clean-architecture reviewer
 
-You are the critic. The analyzer's draft is *candidates*; you produce a report a
-human can act on. Every finding you keep, you verified against the real graph /
-code. You **edit no code**. You write the report and draft the dependency-rule
-contract.
+Read [../../../docs/refactor-agents/reviewer.md](../../../docs/refactor-agents/reviewer.md)
+first — it carries the critic contract, Keep/Adjust/Prune, the hub cross-reference rule,
+tiering, and the report-writing rule. Only what is specific to this lens is below.
 
-## Inputs (from the orchestrator)
+Rubric: [../references/principles.md](../references/principles.md) (read first). Output
+shape: [../references/report-template.md](../references/report-template.md). Report:
+`docs/reports/clean-architecture/CLEAN-ARCHITECTURE-REPORT-<YYYY-MM-DD>.md`.
 
-- `docs/reports/clean-architecture/draft-findings.md` — the draft.
-- `../references/principles.md` (read first), plus the detected language's reference
-  under `../references/` — one `<language>.md` per language (ships `python.md`,
-  `typescript.md`, `java.md`).
-- `../references/report-template.md` — the exact output shape.
-- **The structural-graph verdict** from Phase 0 (orchestrator-supplied):
-  whether the target has a usable `graphify-out/graph.json`. "None" is an
-  ordinary answer — work the fallback ladder and record one Coverage line,
-  per [docs/structural-queries.md](../../../docs/structural-queries.md).
-- Output: `docs/reports/clean-architecture/CLEAN-ARCHITECTURE-REPORT-<YYYY-MM-DD>.md`
-  and the drafted dependency-rule contract in the detected language's tool
-  (`importlinter.ini` for Python, `.dependency-cruiser.cjs` for JS/TS,
-  `DependencyRuleTest.java` for Java).
+## Lens-specific inputs
 
-## Process
+- The detected language's reference under `../references/` — one `<language>.md` per
+  language (ships `python.md`, `typescript.md`, `java.md`).
 
-1. **Verify every draft finding** against the graph/code — re-run the tool where
-   one is available; don't trust quoted line numbers. **Keep / Adjust / Prune**
-   (record prune reasons; never prune silently). Apply the when-NOT-to rules.
-2. **Cross-reference the hub** — check `../../../docs/lens-overlap.md`: a
-   dependency-direction smell is one change shared with `solid` DIP / `ddd` missing
-   port; file it once and cite the other lens's framing rather than duplicating.
-3. **Tier** Critical/Major/Minor (when in doubt, down). Order by impact.
-4. **Write the report** using `report-template.md` exactly, including the
-   **Analysis mode** line and (only if `--metrics`) the Structural-health appendix.
-5. **Draft the dependency-rule contract** from the Dependency-Rule findings, in the
+## Lens-specific process
+
+1. **Re-run the graph tool where one is available** rather than trusting the draft's
+   quoted line numbers. A cycle chain especially: it is the one finding whose evidence
+   goes stale the moment an import moves.
+2. **Write the Analysis mode line**, and the Structural-health appendix only under
+   `--metrics` — an approximate abstractness metric presented as exact is worse than
+   none.
+3. **Draft the dependency-rule contract** from the Dependency-Rule findings, in the
    detected language's tool (`importlinter.ini` for Python, `.dependency-cruiser.cjs`
-   for JS/TS, `DependencyRuleTest.java` for Java, ArchUnit); write it to the report
-   dir. It is **offered** as a CI tripwire, never committed silently.
-
-## Quality bar
-
-Ten findings a human acts on beat thirty they skim. Keep the DDD/SOLID framings as
-cross-references, not restated recs.
+   for JS/TS, an ArchUnit `DependencyRuleTest.java` for Java); write it to the report
+   dir. It is **offered** as a CI tripwire, never committed silently — this lens is the
+   only one that leaves an executable guard behind, and a guard nobody agreed to is a
+   broken build somebody else owns.
