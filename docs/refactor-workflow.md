@@ -160,6 +160,13 @@ The asymmetry is deliberate: **read the subject where you were put, write the
 artifact where you were told.** Two injected roots, named by the dispatcher;
 every other path relative to one of them.
 
+### HTML previews (any lens, opt-in)
+
+A report can be rendered as a self-contained HTML preview beside its Markdown,
+through the shared renderer — one script for every lens and the umbrella, per
+[report-html conventions](html-previews.md). Offered, never automatic, and never
+instead of the Markdown, which stays the deliverable.
+
 ## Invocation
 
 `/<lens> [path]` — `path` scopes the analysis (default: repo root). The user
