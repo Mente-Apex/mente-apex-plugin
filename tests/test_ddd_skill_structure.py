@@ -167,6 +167,204 @@ def test_ddd_core_covers_the_tactical_spine():
     assert not missing, f"ddd-core.md missing: {missing}"
 
 
+def section_of(text, heading_prefix):
+    """Return the Markdown section starting at `heading_prefix`, up to the next
+    heading of the same level. Guards assert against a SECTION, not the whole
+    file — otherwise a stray word elsewhere satisfies them and the guard passes
+    with the content deleted (issue #153's failure mode)."""
+    start = text.find(heading_prefix)
+    assert start != -1, f"section missing entirely: {heading_prefix!r}"
+    level = len(heading_prefix) - len(heading_prefix.lstrip("#"))
+    rest = text[start + len(heading_prefix) :]
+    next_heading = re.search(rf"^#{{1,{level}}} ", rest, re.MULTILINE)
+    return (rest[: next_heading.start()] if next_heading else rest).lower()
+
+
+def test_ddd_core_carries_the_specification_pattern():
+    """#55: Specification is a first-class tactical pattern — a named business
+    predicate that composes, with the repository translating it. Assert the
+    composition and the translation seam, not just the word."""
+    section = section_of(read_skill_file("references/ddd-core.md"), "## Specification")
+    assert "is_satisfied_by" in section, "need the canonical predicate operation"
+    for use in ["validation", "selection", "construction"]:
+        assert use in section, f"Specification's three uses missing: {use}"
+    assert (
+        "compose" in section or "combinator" in section
+    ), "a Specification that doesn't compose is just a predicate function"
+    assert (
+        "translat" in section
+    ), "the adapter-translates-to-a-query seam is what keeps SQL out of the domain"
+
+
+def test_ddd_core_carries_the_entity_identity_strategy():
+    """#58: identity is a modeling decision, not an afterthought — natural vs
+    surrogate, and who mints the id."""
+    section = section_of(
+        read_skill_file("references/ddd-core.md"), "## Entity identity"
+    )
+    assert "natural" in section and "surrogate" in section
+    assert (
+        "application-generated" in section or "app-generated" in section
+    ), "need the app- vs db-generated identity tradeoff"
+    assert "database-generated" in section or "db-generated" in section
+    assert "port" in section, "the identity choice must be tied back to the ports"
+
+
+def test_ddd_core_distinguishes_the_two_repository_styles():
+    """#59: collection-oriented vs persistence-oriented, and how each pairs with
+    the unit of work."""
+    section = section_of(
+        read_skill_file("references/ddd-core.md"), "### Repository semantics"
+    )
+    assert "collection-oriented" in section
+    assert "persistence-oriented" in section
+    assert "change tracking" in section or "identity map" in section
+    assert "unit of work" in section
+
+
+def test_ddd_core_covers_modules_named_in_the_ubiquitous_language():
+    """#56: packaging is a modeling decision — concept-first vs layer-first."""
+    section = section_of(read_skill_file("references/ddd-core.md"), "## Modules")
+    assert "concept-first" in section and "layer-first" in section
+    assert (
+        "ubiquitous language" in section
+    ), "the point is that package names belong to the language"
+    assert "inward" in section, "the dependency rule still holds inside a module"
+
+
+def test_ddd_core_covers_the_supple_design_subset():
+    """#57: the three highest-leverage Supple Design patterns."""
+    section = section_of(read_skill_file("references/ddd-core.md"), "## Supple Design")
+    for pattern in ["intention-revealing", "side-effect-free", "assertion"]:
+        assert pattern in section, f"supple-design subset missing: {pattern}"
+
+
+def test_ddd_core_when_not_to_grew_with_every_new_pattern():
+    """Every pattern added to the rubric needs its own brake, or the skill just
+    got more ceremonious. All five, not a subset — Supple Design is the one most
+    likely to breed ceremony, so it is the one that must not be exempt."""
+    when_not_to = section_of(
+        read_skill_file("references/ddd-core.md"), "## When NOT to"
+    )
+    for brake in ["specification", "module", "identity", "supple", "cqrs"]:
+        assert brake in when_not_to, f"no when-NOT-to brake for: {brake}"
+
+
+OPT_IN_REFERENCES = {
+    "references/cqrs.md": ["cqrs", "read model", "projection", "command"],
+    "references/event-sourcing.md": ["event sourcing", "replay", "snapshot", "upcast"],
+    "references/sagas.md": ["saga", "process manager", "compensat", "choreograph"],
+}
+
+
+def test_opt_in_references_exist_and_carry_their_core_vocabulary():
+    """#60/#61/#62: each opt-in discipline gets its own reference, loaded only
+    when opted into."""
+    for relative_path, vocabulary in OPT_IN_REFERENCES.items():
+        text = read_skill_file(relative_path).lower()
+        missing = [term for term in vocabulary if term not in text]
+        assert not missing, f"{relative_path} missing: {missing}"
+
+
+def test_opt_in_references_price_the_pattern_before_recommending_it():
+    """The guardrail is 'name them, price them, never reach for them silently' —
+    so each file must carry an explicit cost list and a when-NOT-to."""
+    for relative_path in OPT_IN_REFERENCES:
+        text = read_skill_file(relative_path)
+        # headings, not loose substrings: "cost" survives in ordinary prose, so a
+        # substring check passes with the whole cost list deleted.
+        assert "## When NOT to" in text, f"{relative_path} has no when-NOT-to section"
+        costs = section_of(text, "## What it costs")
+        assert (
+            len(costs.split()) > 60
+        ), f"{relative_path}'s cost list is a heading with nothing under it"
+
+
+def test_cqrs_and_event_sourcing_are_stated_as_independent():
+    """The single most common confusion: CQRS does not require ES, and ES is not
+    required by DDD. Both files must say so."""
+    cqrs = read_skill_file("references/cqrs.md").lower()
+    event_sourcing = read_skill_file("references/event-sourcing.md").lower()
+    assert "event sourcing" in cqrs and "independent" in cqrs
+    assert "not required" in event_sourcing or "does not require" in event_sourcing
+
+
+def test_cqrs_keeps_query_ports_distinct_from_repositories():
+    """ISP + the core rule: a repository returns aggregates, a query port returns
+    a read model. Conflating them is how CQRS rots."""
+    text = read_skill_file("references/cqrs.md").lower()
+    assert "query port" in text
+    assert "repositor" in text, "must contrast the query port against the repository"
+
+
+def test_sagas_depend_on_ports_not_on_a_concrete_bus():
+    """DIP for the orchestration layer: dispatch/subscribe are ports; the bus is
+    an injected adapter."""
+    text = read_skill_file("references/sagas.md").lower()
+    assert "port" in text
+    assert "bus" in text or "dispatch" in text
+    assert "application" in text, "the saga's layer must be stated"
+    assert "integration event" in text, "cross-context sagas ride integration events"
+
+
+def test_skill_md_carries_the_opt_in_triage_step_itself():
+    """The routing STEP is the thing under guard, not the reference paths — those
+    also appear in the file map and the guardrails, so asserting on them passes
+    with the whole step deleted. Assert the step and its load-bearing clauses."""
+    body = parse_frontmatter(read_skill_file("SKILL.md"))["_body"]
+    triage = section_of(body, "### 3. 🔀 Opt-in triage")
+    assert "default is no" in triage, "the default must be stated as no"
+    assert "trigger" in triage, "the step must say what fires it"
+    assert (
+        "cheap" in triage
+    ), "the cheap alternatives must sit OUTSIDE the gated references"
+    assert "price it" in triage or "cost list" in triage
+    for discipline in ["cqrs", "event sourcing", "saga"]:
+        assert discipline in triage, f"triage never names {discipline}"
+
+
+def test_opt_in_triage_runs_before_the_modeling_gate():
+    """These decisions rewrite the ports (and, for ES, the aggregates) the gate
+    signs off — deciding after the gate means silently amending an approved
+    artifact."""
+    body = parse_frontmatter(read_skill_file("SKILL.md"))["_body"]
+    assert body.index("Opt-in triage") < body.index(
+        "MODELING GATE"
+    ), "the opt-in triage must precede the modeling gate"
+    gate = section_of(body, "### 5. 🚦 MODELING GATE")
+    assert "identity" in gate, "#58: identity generation is gated, not deferred"
+    assert "opt-in" in gate, "the gate must surface the step-3 decision for sign-off"
+
+
+def test_skill_md_routes_to_the_reference_material_it_added():
+    """Content in references/ with no route from SKILL.md is unreachable. Each of
+    #56/#57/#58 requires a specific hand-off from design mode."""
+    body = parse_frontmatter(read_skill_file("SKILL.md"))["_body"]
+    build = section_of(body, "### 6. Build layer-by-layer")
+    assert (
+        "concept-first" in build or "modules" in build
+    ), "#56: the scaffold step must reference the packaging note"
+    assert (
+        "supple design" in build
+    ), "#57: the refactor guidance must aim at Supple Design"
+
+
+def test_analyzer_hunts_the_newly_documented_smells():
+    """A rubric the analyzer can't see is decoration — the new patterns need
+    matching violation signatures, each with a way to hunt it. ("query" is NOT
+    asserted: it predates this content in the fat-repository bullet, so it would
+    prove nothing.)"""
+    analyzer = read_skill_file("agents/analyzer.md").lower()
+    for signature in ["package-by-layer", "specification", "de-facto cqrs"]:
+        assert signature in analyzer, f"analyzer has no signature for: {signature}"
+    assert (
+        analyzer.count("*hunt:*") >= 3
+    ), "a signature with no hunt recipe is not actionable"
+    assert (
+        "*false positive:*" in analyzer
+    ), "the signatures prone to firing at scale must carry an FP guard"
+
+
 def test_strategic_has_full_context_mapping_catalogue():
     text = read_skill_file("references/strategic.md")
     catalogue = [

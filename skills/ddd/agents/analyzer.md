@@ -31,6 +31,37 @@ than self-censoring.
   directly (a DIP violation; there should be a port).
 - **Fat repository** — a repository doing domain logic, or returning rows/DTOs
   instead of whole aggregates, or leaking a query builder/session.
+- **Query mechanism in the domain** — ORM predicates, query-builder fragments, or
+  raw SQL assembled inside domain or application code. The rule wanted a
+  **Specification** the adapter translates (`ddd-core.md`).
+  *Hunt:* `select(`, `.filter(`, `session.query`, `createQueryBuilder`, `Prisma.`,
+  `CriteriaBuilder` — scoped to the inner layers only.
+  *False positive:* in an unlayered legacy repo there is no inner layer, so every
+  query trivially qualifies. Establish where the domain *is* first; if there is no
+  boundary yet, that is one finding, not twenty.
+- **Mixed repository styles** — some aggregates persisted implicitly by change
+  tracking, others needing an explicit `save`, in one codebase. Name which style
+  the codebase should hold to; the mix is where writes go missing.
+  *Hunt:* mutation call sites with no following `save`/`add`, next to siblings that
+  have one. This one is **not greppable on its own** — it needs the ORM's mapping
+  style and session lifecycle read first, so file it only with both in evidence.
+  *False positive:* Django is explicit `.save()` plus implicit `QuerySet.update()`
+  **by design**; framework-idiomatic mixing is not this smell.
+- **Package-by-layer-only in a multi-context domain** — one concept smeared across
+  `entities/`, `services/`, `repositories/`, so no directory name says what the
+  system does. Minor unless it is also hiding a boundary violation.
+  *Hunt:* one `ls` of the top level. *Precondition:* file it **only** after naming
+  ≥2 bounded contexts — layer-first is correct for a single context, so without
+  that precondition this fires on every healthy small codebase.
+  *Overlap:* `clean-architecture` owns the repo-level version of this (Screaming
+  Architecture). File the ddd cut only — "the package names are not in the
+  ubiquitous language" — and name the other lens per `docs/lens-overlap.md`.
+- **De-facto CQRS** — screens reading through raw queries that bypass aggregates
+  while writes go through the domain. Often the right pragmatic shape.
+  *Hunt:* read paths that skip the repository while write paths use it.
+  **Flag it, do not price it or recommend it** — you have not read `cqrs.md` and
+  must not: state the observation and let the reviewer, who may load that
+  reference, decide whether formalizing is worth its cost.
 - **Aggregate without an invariant** — a "cluster" that guards no rule, or two
   aggregates edited in one transaction.
 - **Transaction script masquerading as a service** — a procedural service with no
@@ -45,6 +76,10 @@ than self-censoring.
    most-imported modules and in the HTTP/ORM layers.
 2. **Hunt with the signatures.** Grep for controllers/models with business
    verbs, direct DB/HTTP calls in inner layers, services holding all the logic.
+   Each signature above carries its own *Hunt* recipe and, where it is prone to
+   them, its *False positive* guard — honour both. A signature marked "not
+   greppable on its own" needs the reading step first; do not file it from a grep
+   hit alone.
 3. **Read the suspects.** Open each hit; check the `ddd-core.md` when-NOT-to list
    before filing (don't flag a legitimately-simple primitive or a thin CRUD path
    that genuinely has no domain).

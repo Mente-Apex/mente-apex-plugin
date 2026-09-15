@@ -1,7 +1,7 @@
 {
   "skill_name": "ddd",
   "reviewed_against_skill_versions": {
-    "ddd": "0.1.1"
+    "ddd": "0.2.0"
   },
   "evals": [
     {
@@ -50,13 +50,72 @@
     {
       "id": 4,
       "skill": "ddd",
-      "prompt": "Should we use event sourcing and CQRS for this domain?",
-      "expected_output": "Names CQRS and event sourcing as opt-in / out-of-scope-by-default, states their cost, and only adopts them on explicit opt-in — never silently.",
+      "prompt": "We already raise domain events from our aggregates, so we're most of the way to event sourcing already — should we finish the job and add CQRS on top?",
+      "expected_output": "Corrects the planted premise — domain events are part of the default build and are not partial event sourcing — then names CQRS and event sourcing as opt-in / out-of-scope-by-default, states their cost, and only adopts them on explicit opt-in — never silently.",
       "assertions": [
+        "Rejects the premise: distinguishes domain events — in scope in the default state-based build — from event sourcing, and does not treat already raising them as being part-way to an event-sourced aggregate",
         "Explains CQRS and event sourcing are not required for DDD and are opt-in only",
-        "States the added complexity/cost before recommending either",
+        "States that CQRS and event sourcing are independent choices — neither requires the other",
+        "States the added complexity/cost before recommending either, naming at least one concrete cost (event versioning/upcasting, projection rebuilds, or user-visible eventual consistency)",
         "Does not bake them into the default single-context build",
         "Proceeds with the state-based repository + unit-of-work default unless the user explicitly opts in"
+      ]
+    },
+    {
+      "id": 5,
+      "skill": "ddd",
+      "prompt": "We're event-sourcing the Ledger aggregate. Go ahead and design it.",
+      "expected_output": "Treats this as an explicit opt-in: loads references/event-sourcing.md, states the cost list before building, replaces the repository port with an event-store port, and requires a written versioning strategy before the first test.",
+      "assertions": [
+        "Loads references/event-sourcing.md only now that event sourcing has been explicitly opted into",
+        "States the cost list (versioning/upcasting, snapshots, no attribute queries, hard deletes) before starting the build, rather than after",
+        "Requires a written event versioning/upcasting strategy before the first test is written",
+        "Replaces the repository port with an event-store port — load(id) by replay, append(id, newEvents, expectedVersion)",
+        "Puts invariant checks in the behaviour method, not in apply(event), which must replay history unconditionally",
+        "Scopes event sourcing to the Ledger aggregate rather than the whole system",
+        "Records the decision in docs/domain/model.md",
+        "Still enforces the modeling gate before any code"
+      ]
+    },
+    {
+      "id": 6,
+      "skill": "ddd",
+      "prompt": "Our eligibility rules are 200 lines of SQLAlchemy filter expressions built up inside OrderService. Is that a problem?",
+      "expected_output": "Names it as query mechanism leaking into the application layer, and points at the Specification pattern with the adapter-side translation seam as the target shape.",
+      "assertions": [
+        "Identifies the query mechanism (ORM predicates) inside domain/application code as a DIP violation, not merely untidy code",
+        "Names the Specification pattern as the target shape: a named business rule answering is_satisfied_by",
+        "Shows the composition combinators (and/or/not) as what makes it more than a predicate function",
+        "Puts the translation to SQL in the repository adapter, with the port accepting the Specification",
+        "Notes that a composed specification is a different type, so the translator must recurse or translation stays limited to leaf specifications",
+        "Notes the untranslatable-specification fallback (load and filter in memory) as an explicit decision, not a silent full scan"
+      ]
+    },
+    {
+      "id": 7,
+      "skill": "ddd",
+      "prompt": "Compliance wants to be able to see who changed an invoice and when, going back three years.",
+      "expected_output": "Offers the cheap answer — an append-only audit table written by a domain-event handler — rather than reaching for event sourcing, and does not load references/event-sourcing.md to answer.",
+      "assertions": [
+        "Proposes an append-only audit table fed by a domain-event handler as the first answer",
+        "Does not adopt event sourcing, and does not present it as the default solution to an audit requirement",
+        "If event sourcing is mentioned at all, its cost is stated and the user is left to decide",
+        "Keeps the state-based repository + unit-of-work build",
+        "Does not silently restructure aggregates to emit-and-fold"
+      ]
+    },
+    {
+      "id": 8,
+      "skill": "ddd",
+      "prompt": "Placing an order has to reserve stock, take payment, then book a courier — and any of those can fail after the earlier ones succeeded.",
+      "expected_output": "Recognises a multi-aggregate compensating process, first checks whether the aggregate boundary is drawn wrong, then proposes a process manager with its cost stated, depending on dispatch/subscribe ports.",
+      "assertions": [
+        "First asks whether these are genuinely separate aggregates — if they always change together they were one aggregate",
+        "Proposes an orchestrated process manager rather than choreography for a 3-step process with compensation",
+        "States the cost (compensation is business logic, not rollback; idempotency and timeouts become mandatory) before recommending",
+        "Designs a compensating action for each step with a side effect",
+        "Places the saga in the application layer, depending on command-dispatch and event-subscription ports, with the bus injected at the composition root",
+        "Does not adopt it without the user's explicit yes"
       ]
     }
   ]

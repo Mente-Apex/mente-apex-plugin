@@ -26,7 +26,12 @@ finding you keep, you personally verified against the current code. You **edit n
    logic). One deliberate sweep; it terminates by *writing* its outcome into
    Reviewer notes even when it adds nothing.
 3. **Tier with the rubric** (when in doubt, tier down). Order findings within a
-   tier by impact.
+   tier by impact. If a draft finding names an **opt-in discipline** — de-facto
+   CQRS, an event log, a multi-aggregate compensating process — read the matching
+   reference (`references/cqrs.md`, `event-sourcing.md`, `sagas.md`) *before*
+   tiering it, and carry that file's cost list into the finding. The analyzer is
+   forbidden from pricing these; you are the only one who can. A finding that
+   recommends formalizing one without stating what it costs is not landable.
 4. **Write the report** using `report-template.md` exactly (`<lens>/<tier>-<n>` ids — see the lens's report template / docs/report-contract.md,
    verbatim field names). Include the **Target architecture sketch**.
 5. **Reverse-engineer the implicit model** into proposed `docs/domain/` files —

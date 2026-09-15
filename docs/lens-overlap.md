@@ -55,6 +55,7 @@ one change; the running lens files it, the other references the rec ID.
 | cycle (ADP) | `solid` (DIP inverts an edge) | CA files the cycle; DIP is the fix mechanism, not a second rec |
 | composition-root / infra constructed in core | `gof` (Abstract Factory at the boundary), `clean-code` (separate construction from use) | CA files it; GoF/clean-code are the fix idioms |
 | Humble Object at a boundary | `gof` (the pattern) | hand off to `gof` |
+| Screaming Architecture (top-level layout is technical, not use-case) | `ddd` (package-by-layer-only) | one change, both Minor. CA owns the repo-level layout call; `ddd` files only the language cut — "these package names are not in the ubiquitous language" — and cites CA's rec ID. If only `ddd` runs, it files the whole thing. |
 
 **Carve with `ddd` (the tightest seam):** `ddd` asks *"is the domain modelled
 well?"*; `clean-architecture` asks *"is the dependency structure sound, regardless

@@ -43,7 +43,91 @@ class OrderId:
 ```
 Application-generated identity (mint the UUID before persistence) keeps the
 aggregate whole in memory and lets domain events carry the id before any adapter
-runs.
+runs. The SQLAlchemy default pulls the other way — an `Integer` primary key with
+`autoincrement` leaves `order.id` as `None` until `flush()`, so identity equality
+and hashing are undefined for an unsaved aggregate. If the schema must keep a
+database-generated surrogate for indexing, still mint the *domain* id in the
+application and store it as a unique column; the aggregate then never exists
+without an identity. (See "Entity identity" in `ddd-core.md` for the tradeoff.)
+
+## Specification — composable business rules
+
+```python
+from abc import ABC, abstractmethod
+
+class Specification(ABC):
+    @abstractmethod
+    def is_satisfied_by(self, candidate) -> bool: ...
+
+    def __and__(self, other: "Specification") -> "Specification":
+        return AndSpecification(self, other)
+
+    def __or__(self, other: "Specification") -> "Specification":
+        return OrSpecification(self, other)
+
+    def __invert__(self) -> "Specification":
+        return NotSpecification(self)
+
+
+class AndSpecification(Specification):
+    def __init__(self, left: Specification, right: Specification):
+        self._left, self._right = left, right
+
+    def is_satisfied_by(self, candidate) -> bool:
+        return self._left.is_satisfied_by(candidate) and self._right.is_satisfied_by(candidate)
+
+
+class OrderOverThreshold(Specification):
+    def __init__(self, threshold: Money):
+        self.threshold = threshold          # public: the translator below has to read it
+
+    def is_satisfied_by(self, order: "Order") -> bool:
+        return order.total().amount_cents >= self.threshold.amount_cents
+```
+`OrSpecification` / `NotSpecification` follow the same two-line shape. Composition
+reads in the ubiquitous language:
+
+```python
+eligible_for_free_shipping = OrderOverThreshold(Money(5000, "EUR")) & ~ContainsHazardousGoods()
+```
+The combinators need real *implementations*, which is why `Specification` is an
+ABC (a domain base class) and not a `Protocol` port — the same split as
+`AggregateRoot` below.
+
+### The repository-translation seam
+
+The port carries one more method — `matching(specification) -> list[Order]`, shown
+in the full `OrderRepository` declaration below — and the **adapter** turns the
+specification into SQL. The domain never sees a query:
+
+```python
+class SqlAlchemyOrderRepository:                         # the same adapter shown in full below
+    _TRANSLATORS = {                                     # the finite set this adapter renders
+        OrderOverThreshold: lambda specification: OrderRow.total_cents
+        >= specification.threshold.amount_cents,
+    }
+
+    def matching(self, specification: Specification) -> list["Order"]:
+        translator = self._TRANSLATORS.get(type(specification))
+        if translator is None:
+            raise UntranslatableSpecification(specification)   # explicit, never a silent full scan
+        rows = self._session.scalars(select(OrderRow).where(translator(specification)))
+        orders = [_to_domain(row) for row in rows]
+        self.seen.update(orders)                         # touched this transaction — the UoW drains their events
+        return orders
+```
+Raising on an untranslatable specification is deliberate: the alternative — load
+everything and filter with `is_satisfied_by` in Python — is correct only at small
+volumes, so make it a decision the adapter states rather than a performance cliff
+it hides.
+
+Note what a `type(...)` lookup cannot do: **a composed specification is a different
+type**, so `OrderOverThreshold(...) & ~ContainsHazardousGoods()` hits the
+`UntranslatableSpecification` branch. Either keep translation to leaf
+specifications and compose in memory, or make the translator recursive — add
+`AndSpecification`/`OrSpecification`/`NotSpecification` entries that map to
+`and_(…)`, `or_(…)`, `not_(…)` over their translated children. Choose
+deliberately; the recursive version is ~10 more lines and is usually worth it.
 
 ## Protocol vs ABC — the decision, once
 
@@ -64,13 +148,17 @@ mechanical:
 from typing import Protocol
 
 class OrderRepository(Protocol):
+    seen: set["Order"]                       # aggregates touched this transaction; the UoW drains their events
     def get(self, order_id: OrderId) -> "Order": ...
     def add(self, order: "Order") -> None: ...
+    def matching(self, specification: Specification) -> list["Order"]: ...
 ```
 `Protocol` is the purest DIP: the domain declares the shape it needs, and the
 concrete `SqlAlchemyOrderRepository` *structurally matches* it **without importing
-anything from the domain** — the concretion need not know the abstraction exists
-at import time. Structural matching also means an in-memory `FakeOrderRepository`
+the port itself** — the concretion need not know the abstraction exists at import
+time. (It does, correctly, import the domain's `Order` and `OrderId`: adapters
+depend *inward*. What DIP forbids is the arrow pointing the other way.)
+Structural matching also means an in-memory `FakeOrderRepository`
 satisfies the port for free, which is what lets domain tests run with no mocks.
 Type checkers (mypy/pyright) verify conformance statically; do **not** lean on
 `@runtime_checkable`, which only checks that method *names* exist, not signatures.
@@ -114,7 +202,7 @@ class AggregateRoot(ABC):
     def __hash__(self) -> int:
         return hash(self._id)
 ```
-The `Specification` base is the same story: it needs the
+The `Specification` base above is the same story: it needs the
 `&` / `|` / `~` combinator *implementations*, so it is an ABC, not a Protocol.
 
 When a port genuinely needs a little shared code, combine both rather than
@@ -143,6 +231,49 @@ class SqlAlchemyOrderRepository:            # matches the OrderRepository Protoc
 ```
 The port lives with the domain/application; this adapter is injected at the
 composition root. It returns a fully-constituted `Order`, never a row.
+
+`add` is an explicit write — that is what makes this **persistence-oriented**.
+
+### …versus collection-oriented, which SQLAlchemy's ORM also supports
+
+With the ORM's identity map and dirty tracking, a mutated aggregate is written on
+commit with no `save` call at all:
+
+```python
+class CollectionOrientedOrderRepository:    # satisfies the same OrderRepository Protocol
+    def __init__(self, session):
+        self._session = session
+        self.seen: set[Order] = set()
+
+    def get(self, order_id: OrderId) -> Order:
+        order = self._session.get(Order, order_id.value)  # a tracked, mapped aggregate
+        if order is None:
+            raise OrderNotFound(order_id)                 # Session.get returns None, not a raise
+        self.seen.add(order)
+        return order
+
+    def add(self, order: Order) -> None:
+        self._session.add(order)                          # only *new* aggregates are added
+        self.seen.add(order)
+```
+```python
+order = unit_of_work.orders.get(order_id)
+order.cancel(reason)          # no repository call — the UoW's commit flushes the change
+```
+`matching` is identical to the persistence-oriented adapter's — the translation
+seam is orthogonal to the write style. `seen` is not: both adapters must keep it,
+because `collect_new_events` below drains events from exactly that set, and a
+repository that skips the bookkeeping silently publishes nothing.
+
+This is the more literal reading of "collection-like", and it is cheaper to use
+correctly. Its price: it requires **imperative mapping** (`registry.map_imperatively`)
+so the domain class stays free of SQLAlchemy imports — declarative `Base`
+subclasses put the ORM inside the domain and cost you the DIP. It also only works
+while aggregates are *mutated* rather than rebuilt, and a detached instance
+silently stops tracking.
+
+Pick one style per codebase. Mixing them — some aggregates persisting implicitly,
+some needing `add`/`save` — is where "my change didn't stick" bugs come from.
 
 ## Unit of work
 
@@ -204,6 +335,39 @@ class PlaceOrderService:
                 self._event_bus.publish(domain_event)           # after commit
         return order.id
 ```
+
+## Supple design — side-effect-free functions and stated invariants
+
+`Money.add` above is the pattern: a query on a frozen value object that computes
+and returns, mutating nothing. Keep the mutating commands on the aggregate root
+and make the invariant they protect a *stated* assertion, not an inferred one:
+
+```python
+from functools import reduce
+
+class Order(AggregateRoot):
+    MAX_LINES = 50
+
+    def total(self) -> Money:                      # side-effect-free query
+        zero = Money(0, self._currency)            # an empty order totals zero, it does not raise
+        return reduce(Money.add, (line.subtotal() for line in self._lines), zero)
+
+    def add_line(self, line: OrderLine) -> None:   # command — mutates, returns nothing
+        self._check_invariants(pending_line=line)
+        self._lines.append(line)
+        self._record(LineAdded(self.id, line.sku))
+
+    def _check_invariants(self, pending_line: OrderLine | None = None) -> None:
+        prospective_line_count = len(self._lines) + (0 if pending_line is None else 1)
+        if prospective_line_count > self.MAX_LINES:
+            raise TooManyOrderLines(self.id, prospective_line_count)
+        if self._status is OrderStatus.PLACED:
+            raise OrderAlreadyPlaced(self.id)
+```
+Three habits in one shape: `total` computes without mutating; `add_line` mutates
+without returning a computed result; `_check_invariants` names the aggregate's
+invariant in one place, so the rule gated at the modeling gate is findable in the
+code. Do **not** use bare `assert` for invariants — `python -O` strips it.
 
 ## Testing note
 
