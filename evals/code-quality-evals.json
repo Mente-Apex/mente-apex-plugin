@@ -1,7 +1,7 @@
 {
   "skill_name": "code-quality",
   "reviewed_against_skill_versions": {
-    "code-quality": "0.3.0"
+    "code-quality": "0.4.0"
   },
   "evals": [
     {
@@ -13,17 +13,20 @@
         "Runs the shared Phase 0 exactly once itself (scope + detected language set + baseline test run + report dirs) rather than letting each lens re-scan",
         "Builds all three shared-index artifacts in Phase 0 — scoped file list, import graph, and symbol index — and hands them to every analyzer",
         "Scopes the test tree into the inventory too (does not exclude tests/ the way a production-only pass would)",
-        "Creates docs/reports/code-quality/ plus a docs/reports/<lens>/ dir for each of the six lenses",
-        "Dispatches six analyzer subagents in parallel, one per lens, each pointed at skills/<lens>/agents/analyzer.md",
-        "Dispatches each analyzer with isolation: worktree rather than letting six writing agents share one tree",
+        "Creates docs/reports/code-quality/ plus a docs/reports/<lens>/ dir for each of the seven lenses",
+        "Dispatches seven analyzer subagents in parallel, one per lens, each pointed at skills/<lens>/agents/analyzer.md — including acceptance-quality, which auto-skips if no acceptance suite is found",
+        "Cuts the worktree set itself at the reviewed ref (lens_worktrees.py) and dispatches WITHOUT the harness's isolation: flag, rather than letting seven writing agents share one tree",
         "Gives code paths repo-relative and the draft path as an injected artifact root, and requires each analyzer to assert its scoped files resolve under its own working directory before reading",
         "Passes ddd in analyze mode only (never design or build) and clean-code in deep gear (not the inline quick gear)",
         "Does not dispatch analyzers with a read-only agent type (Explore) — each must be able to write its own draft-findings.md",
-        "Dispatches six reviewers, and tells the gof reviewer to skip its HTML preview and write only Markdown",
+        "Dispatches seven reviewers, and tells the gof reviewer to skip its HTML preview and write only Markdown",
         "Dispatches one consolidator that merges into a single docs/reports/code-quality/CODE-QUALITY-REPORT-<date>.md",
         "Deletes each lens's draft-findings.md only after the consolidated report exists and parses",
         "Treats 'audit only' as the human review and stops at the report without applying anything",
-        "Adds no findings of its own — every finding traces to a lens reviewer"
+        "Adds no findings of its own — every finding traces to a lens reviewer",
+        "Fills the report's ## Measurements section from the Phase 0 readout, and omits any sensor that could not run rather than printing a number for it",
+        "Leaves --mutation off unless asked — whole-repo mutation is a cost the operator chooses, never a silent Phase 0 default",
+        "REVIEWER DISCRIMINATION — the reviewer visibly overturns the analyzer on at least one finding (prunes it with a stated reason, re-tiers it, or merges a double-filed smell), and says so in the report. A reviewer that kept every draft finding unchanged scores the same as one that verified nothing, which defeats the generator/critic split"
       ]
     },
     {
@@ -40,13 +43,14 @@
         "Tiers the implementer model by Risk (Low/Med/High) and never drops below sonnet where characterization pins are needed",
         "Checkpoint-commits each verified job on a single code-quality/<slug> working branch",
         "Runs the full suite at Phase 5 and writes an ## Outcome section into the consolidated report (applied / deferred / failed, suite before -> after)",
-        "Does not auto-commit or auto-publish — offers /ship instead"
+        "Does not auto-commit or auto-publish — offers /ship instead",
+        "Reads the apply order off the Findings index rather than re-deriving it — where a Major must land before a Critical because the Critical's fix depends on it, the index order and a plain Critical→Major sort disagree, and only reading the index gets it right"
       ]
     },
     {
       "id": 3,
       "skill": "code-quality",
-      "prompt": "/code-quality on this repo. Heads up: it's a Python + TypeScript monorepo, there's no graphify-out/graph.json, and I know the ddd analyzer has been crashing on our tree lately.",
+      "prompt": "/code-quality on this repo. Heads up: it's a Python + TypeScript monorepo, there's no graphify-out/graph.json, and I know the ddd analyzer has been crashing on our tree lately. (Assume the ddd analyzer writes its draft-findings.md successfully and then crashes before returning — so there IS a draft to preserve.)",
       "expected_output": "Handles both degradations without treating either as a blocker: no structural graph means starting the shared-index ladder one rung down (ast-grep -> ctags -> agent-read) and recording a coverage note; a lens that dies is a loudly-recorded coverage gap in the consolidated report, its draft kept as the sole evidence, and its artifact is never written on its behalf.",
       "assertions": [
         "Treats an absent graphify-out/graph.json as ordinary — works the fallback ladder (ast-grep, then ctags, then agent-read) rather than blocking or demanding a graph",
@@ -66,7 +70,7 @@
       "assertions": [
         "Routes request (1) to /test-quality, explicitly because it is scoped to one concern even though the lens is never named",
         "Routes request (2) to /code-review, explicitly because a diff/PR correctness pass is not what /code-quality does",
-        "Does not launch the six-lens fan-out for either request",
+        "Does not launch the seven-lens fan-out for either request",
         "States the carve: the umbrella is for a whole-codebase audit spanning multiple concerns, not a scoped one-concern pass or a change-set bug review"
       ]
     },
@@ -81,7 +85,7 @@
         "The absent code is reported as a named coverage gap per lens, never as a completed audit",
         "test-quality is not treated as the only affected lens — its mutation gate merely fails first because it must execute the code",
         "Drafts are written to the injected artifact root, which is outside the worktree and so survives the worktree being cleaned up",
-        "Does not present the consolidated report as a full six-lens audit when lenses could not read their subject"
+        "Does not present the consolidated report as a full seven-lens audit when lenses could not read their subject"
       ]
     }
   ]

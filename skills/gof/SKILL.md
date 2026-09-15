@@ -13,7 +13,7 @@ description: >
   detection, or any mention of creational / structural / behavioral patterns.
 user-invocable: true
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # gof — GoF pattern analysis & guided refactor

@@ -1,7 +1,7 @@
 {
   "skill_name": "gof",
   "reviewed_against_skill_versions": {
-    "gof": "0.2.0"
+    "gof": "0.3.0"
   },
   "evals": [
     {
@@ -14,7 +14,7 @@
         "Detects the Singleton in Config and grades it with the full label (e.g. 'C — Structural issues'), not just a bare letter",
         "The grade reflects the thread-safety gap (unguarded __new__ race) — it is NOT graded 'A — Clean implementation'",
         "Surfaces the Singleton⇄DIP tension per docs/lens-overlap.md and reconciles it with the human rather than auto-recommending the pattern",
-        "Writes the final report via references/report-template.md (IDs/Risk/Status present) and a self-contained HTML preview per references/html-report.md",
+        "Writes the final report via references/report-template.md (IDs/Risk/Status present) and a self-contained HTML preview through the shared renderer (scripts/report_html.py, --badges grade), offered rather than written unasked",
         "Does not apply any change without the human decision gate"
       ]
     },

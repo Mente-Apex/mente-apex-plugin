@@ -1,7 +1,7 @@
 {
   "skill_name": "clean-code",
   "reviewed_against_skill_versions": {
-    "clean-code": "0.2.0"
+    "clean-code": "0.3.0"
   },
   "evals": [
     {
@@ -14,7 +14,7 @@
         "Uses the quick gear for a small diff (inline findings, no report file, no subagents)",
         "Reports each finding with file:line, the principle, the reader-cost, a concrete suggestion, and a severity",
         "Honours the 'where this bends' notes (no false-DRY, speculative-abstraction, or over-extraction findings)",
-        "Says so plainly if nothing meaningful is wrong instead of manufacturing findings"
+        "Loads references/<language>.md for the detected language and judges against it — a record accessor, a builder or a checked-exception boundary is clean in Java and ceremony in Python"
       ]
     },
     {
@@ -24,9 +24,10 @@
       "expected_output": "Uses the deep gear: two-stage analyzer->reviewer verification, writing docs/reports/clean-code/CLEAN-CODE-REPORT-<date>.md via the report template; apply stays opt-in.",
       "assertions": [
         "Uses the deep gear for a module-sized scope",
-        "Dispatches a read-only analyzer then an independent reviewer that re-verifies every finding",
+        "Dispatches an analyzer (read-only over the code, per the shared role it delegates to) then an independent reviewer that re-verifies every finding",
         "Creates git-excluded docs/reports/clean-code/ and writes the report using references/report-template.md",
-        "Does not apply changes unless explicitly asked (review stops at findings)"
+        "Does not apply changes unless explicitly asked (review stops at findings)",
+        "REVIEWER DISCRIMINATION — the reviewer visibly overturns the analyzer on at least one finding (prunes it with a stated reason, re-tiers it, or merges a double-filed smell), and says so in the report. A reviewer that kept every draft finding unchanged scores the same as one that verified nothing, which defeats the generator/critic split"
       ]
     },
     {
@@ -51,6 +52,18 @@
         "States that /solid, /gof, and /clean-architecture refactors come out clean by construction",
         "Points at docs/clean-code-standard.md as the single source of truth consumers link (never copy)",
         "Distinguishes the ambient substrate role from the invoked standalone review"
+      ]
+    },
+    {
+      "id": 5,
+      "skill": "clean-code",
+      "prompt": "Quick clean-code pass on this diff before I commit? (The diff is a small, well-named function with a docstring, one early return, and a test alongside it. There is nothing meaningfully wrong with it.)",
+      "expected_output": "Says plainly that nothing meaningful is wrong, and files nothing. A clean review is a high-signal result, not a failure to find something.",
+      "assertions": [
+        "Says plainly that nothing meaningful is wrong rather than manufacturing a finding to justify the pass",
+        "Files no Critical or Major findings against a clean diff",
+        "Does not propose speculative abstraction, a false-DRY merge, or the removal of a good why-comment",
+        "If it raises anything at all, it is explicitly Minor and framed as optional"
       ]
     }
   ]

@@ -1,7 +1,7 @@
 {
   "skill_name": "test-quality",
   "reviewed_against_skill_versions": {
-    "test-quality": "0.3.0"
+    "test-quality": "0.4.0"
   },
   "evals": [
     {
@@ -19,7 +19,8 @@
         "Covers all four rubric areas: suite structure/organization, test craft, test strategy, and stale-test tending",
         "Reviewer re-verifies findings against the real tests and tiers them Critical/Major/Minor",
         "Writes docs/reports/test-quality/TEST-QUALITY-REPORT-<YYYY-MM-DD>.md",
-        "Ends report-only — modifies no test file, and makes applying an explicit opt-in at the gate"
+        "Ends report-only — modifies no test file, and makes applying an explicit opt-in at the gate",
+        "Loads test-quality's own references/<language>.md for the audit view, and cites tdd's adapter for how a test should be written rather than inventing a second standard"
       ]
     },
     {
@@ -61,7 +62,8 @@
         "Files the fix as a solid or ddd finding via docs/lens-overlap.md and cross-references it, rather than duplicating the recommendation here",
         "Still names the test-side symptom in its own report (vacuous mock-only tests, coupling to implementation detail)",
         "Defers pure line-craft issues inside test files to clean-code rather than claiming them",
-        "Does not recommend simply deleting or rewriting the mocks without addressing the production-side seam"
+        "Does not recommend simply deleting or rewriting the mocks without addressing the production-side seam",
+        "RESTRAINT — does NOT flag the repository and mailer mocks, which are legitimate boundary mocking, while still catching the domain-class over-mocking. A run that flagged every boundary mock indiscriminately must fail this eval"
       ]
     },
     {

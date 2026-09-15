@@ -1,7 +1,7 @@
 {
   "skill_name": "ddd",
   "reviewed_against_skill_versions": {
-    "ddd": "0.2.0"
+    "ddd": "0.2.1"
   },
   "evals": [
     {
