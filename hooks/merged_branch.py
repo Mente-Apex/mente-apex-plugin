@@ -325,12 +325,23 @@ def is_merged(
     if code != 0:
         # Not an ancestor. Under merge-commit that settles it; under a squash or
         # rebase merge it settles nothing, because the branch's commits were
-        # rewritten. The forge is the only thing that can tell them apart, and
-        # it needs no guard behind it: a MERGED pull request for this head ref
-        # is a stronger statement than either fact below (issue #108).
-        return revision in forge_merged
-    if revision in forge_merged:
-        return True
+        # rewritten (issue #108). The forge is the only thing that can tell those
+        # apart -- but it answers with head-ref NAMES, not commits, and names get
+        # reused: `fix/login` merged in March and recreated in September is a
+        # different branch wearing a merged name, and fork PRs make `patch-1`,
+        # `develop` and `master` routine entries in that set.
+        #
+        # So the name is necessary and not sufficient, and the same two questions
+        # that qualify an ancestor qualify it here: was this branch published, or
+        # has it moved since it was created? A recreated name has neither, and
+        # announcing it would list the branch the user is standing on as safe to
+        # delete.
+        if revision not in forge_merged:
+            return False
+        remote_for_forge = tracking.split("/", 1)[0]
+        if _exists_on_remote(cwd, revision, remote_for_forge, deadline=deadline):
+            return True
+        return not _created_and_never_moved(cwd, revision, deadline=deadline)
     remote = tracking.split("/", 1)[0]
     if _exists_on_remote(cwd, revision, remote, deadline=deadline):
         return True
@@ -447,9 +458,14 @@ def merged_local_branches(
         objectname, _, branch = line.partition(" ")
         if not branch or branch == default or branch in exclude:
             continue
+        # ADJUDICATED, not reported. This set records every ref the batched pass
+        # has already ruled on, so the forge pass below cannot re-add one it
+        # deliberately skipped: a freshly recreated branch sitting at the
+        # tracking tip is exactly the false positive the guard above exists to
+        # stop, and re-adding it by a second route is how that bug came back.
+        seen.add(branch)
         if objectname == tracking_tip:
             continue
-        seen.add(branch)
         lingering.append(branch)
 
     # The ancestor test above cannot see a squash- or rebase-merged branch, so

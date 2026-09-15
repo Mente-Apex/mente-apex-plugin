@@ -446,13 +446,30 @@ class TestTheTemplateIsTrueToItsOwnChecker:
         role marker rides along rather than taking a column of its own."""
         block = self.shape_block()
 
-        assert "1ᴾ" in block and "1ᴿ" in block
+        assert "2ᴾ" in block and "2ᴿ" in block
 
-    def test_grouped_members_sharing_a_number_are_not_a_violation(self):
-        """The rule must not fire on the template's own correct example."""
-        violations = check_report(self.shape_block())
+    def test_the_example_passes_the_checker_completely(self):
+        """The assertion this class's docstring always claimed to make.
 
-        assert "group-split" not in rule_names(violations)
+        It checked one rule — `group-split` — while the example failed five
+        others: an index listing four findings the body did not contain, elided
+        stubs with no Status line, and Apply-log examples naming IDs that existed
+        nowhere. An agent copying the shape inherited a report that fails at the
+        Phase 3 gate and blocks Phase 5 `--strict` on template scaffolding.
+        """
+        assert check_report(self.shape_block()) == []
+
+    def test_a_commented_apply_log_example_is_not_read_as_an_entry(self):
+        """Every lens template shows the log format as commented examples.
+        Reading one as real work reported the template's own scaffolding as
+        something somebody forgot to stamp."""
+        commented = report(
+            rows=[(1, "solid/major-1", "Thing", "pending")],
+            findings=[("solid/major-1", "Thing", "pending")],
+            apply_log="<!-- <UTC ts> [solid/major-1] applied — covered — green -->",
+        )
+
+        assert "stale-pending" not in rule_names(check_report(commented))
 
     def test_the_template_points_at_the_checker(self):
         template = (

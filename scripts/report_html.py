@@ -36,6 +36,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 HEADING = re.compile(r"^(#{1,4})\s+(.*)$")
+FENCE = re.compile(r"^\s*```")
+# The explicit anchor every lens report-template mandates above each finding
+# heading, e.g. `<a id="solid-critical-1"></a>`. Deliberately strict: an id of
+# word characters and hyphens only, nothing else allowed through, because this is
+# the one place raw markup from the report reaches the page unescaped.
+EXPLICIT_ANCHOR = re.compile(r'^\s*<a\s+id="([\w-]+)"\s*>\s*</a>\s*$')
 INLINE_CODE = re.compile(r"`([^`]+)`")
 BOLD = re.compile(r"\*\*([^*]+)\*\*")
 LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
@@ -85,14 +91,30 @@ class Section:
     level: int
     title: str
     body: list = field(default_factory=list)
+    explicit_anchor: str = ""
+
+    @property
+    def is_internal(self):
+        """True for a section that must not be published — see
+        `INTERNAL_SECTIONS`."""
+        return self.title.strip().lower() in INTERNAL_SECTIONS
 
     @property
     def anchor(self):
         """A URL-safe id for the sidebar link.
 
-        Derived from the title rather than counted, so two runs of the same
-        report produce the same anchors and a link someone saved still works.
+        **The report's own explicit anchor wins.** Every lens template mandates
+        `<a id="<lens>-<tier>-<n>"></a>` above each finding heading, and the
+        umbrella's *Full detail* links point at exactly that — so deriving an id
+        from the title instead left every one of those links dead, and made the
+        id change whenever a finding was retitled.
+
+        The derived slug is the fallback for a section with no anchor of its own
+        (Summary, Coverage & method). Derived from the title rather than counted,
+        so two runs of the same report produce the same ids.
         """
+        if self.explicit_anchor:
+            return self.explicit_anchor
         slug = re.sub(r"[^a-z0-9]+", "-", self.title.lower()).strip("-")
         return slug or "section"
 
@@ -105,7 +127,28 @@ def parse_report(markdown_text):
     """
     sections = []
     current = Section(level=2, title="Report", body=[])
+    inside_fence = False
+    pending_anchor = ""
     for line in markdown_text.splitlines():
+        if FENCE.match(line):
+            inside_fence = not inside_fence
+            current.body.append(line)
+            continue
+        if inside_fence:
+            # A `##` line inside a fence is QUOTED EVIDENCE, not a heading.
+            # Treating it as one invented a phantom section and its nav link, and
+            # tore the fence into two unbalanced blocks across two cards -- and
+            # these lenses audit Markdown-heavy trees where quoting a heading is
+            # the ordinary case.
+            current.body.append(line)
+            continue
+        anchor_match = EXPLICIT_ANCHOR.match(line)
+        if anchor_match:
+            # Held for the heading it precedes, and never emitted as body: it was
+            # being html-escaped into visible junk text while the id it declares
+            # went missing, so every Findings-index deep link resolved nowhere.
+            pending_anchor = anchor_match.group(1)
+            continue
         match = HEADING.match(line)
         if match and len(match.group(1)) == 1:
             # The document title. It names the page, not a card.
@@ -114,7 +157,12 @@ def parse_report(markdown_text):
         if match:
             if current.body or current.title != "Report":
                 sections.append(current)
-            current = Section(level=len(match.group(1)), title=match.group(2).strip())
+            current = Section(
+                level=len(match.group(1)),
+                title=match.group(2).strip(),
+                explicit_anchor=pending_anchor,
+            )
+            pending_anchor = ""
             continue
         current.body.append(line)
     sections.append(current)
@@ -207,6 +255,15 @@ def _render_body(lines):
     return "\n".join(parts)
 
 
+# Sections internal to the Markdown workflow, never rendered. The Markdown report
+# is gitignored; the HTML is the artifact that gets forwarded to a colleague or a
+# client. `Reviewer notes` carries every finding the critic PRUNED with the reason
+# it was pruned, and `Apply log` carries timestamps and diffstats -- neither is
+# for an outside reader, and the HTML is a read-only preview rather than a place
+# a finding's Status gets edited. The rule came from gof's per-lens spec and was
+# lost when the renderer was shared; it lives in code now, where it is checkable.
+INTERNAL_SECTIONS = frozenset({"reviewer notes", "apply log"})
+
 STYLE = """
 :root { color-scheme: light dark; --bg:#ffffff; --fg:#1f2328; --muted:#57606a;
   --line:#d0d7de; --card:#f6f8fa; --side:#1f2328; --sidefg:#e6edf3; }
@@ -269,7 +326,10 @@ def render_html(markdown_text, *, title=None, subtitle="", badges=DEFAULT_BADGES
 
     nav_links = []
     cards = []
+    used_anchors = {}
     for section in sections:
+        if section.is_internal:
+            continue
         rule = badge_for(section.title, badges)
         badge = (
             f'<span class="badge" style="background:{rule.background};'
@@ -277,16 +337,22 @@ def render_html(markdown_text, *, title=None, subtitle="", badges=DEFAULT_BADGES
             if rule
             else ""
         )
+        # Two lenses can both emit `### Critical`, and a duplicate id makes the
+        # second one unreachable — the nav link scrolls to the first.
+        anchor = section.anchor
+        seen_count = used_anchors.get(anchor, 0)
+        used_anchors[anchor] = seen_count + 1
+        if seen_count:
+            anchor = f"{anchor}-{seen_count + 1}"
+
         heading_level = min(max(section.level, 2), 4)
         cards.append(
-            f'<section id="{section.anchor}">'
+            f'<section id="{anchor}">'
             f"<h{heading_level}>{badge}{_inline(section.title)}</h{heading_level}>"
             f"{_render_body(section.body)}"
             f"</section>"
         )
-        nav_links.append(
-            f'<a href="#{section.anchor}">{html.escape(section.title)}</a>'
-        )
+        nav_links.append(f'<a href="#{anchor}">{html.escape(section.title)}</a>')
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">

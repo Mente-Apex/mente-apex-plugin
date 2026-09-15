@@ -63,6 +63,16 @@ def _run_git(repo_root, *arguments):
             f"git {' '.join(arguments)} did not finish within "
             f"{GIT_TIMEOUT_SECONDS}s in {repo_root}"
         ) from exc
+    except OSError as exc:
+        # git missing from PATH, repo_root gone, undecodable output. Without this
+        # the exception escaped `main`, which catches only WorktreeSetupError, so
+        # the orchestrator parsed empty stdout, got no {"error": ...}, and the
+        # audit proceeded with no worktrees -- the invisible failure this module
+        # exists to refuse. `mutation_gate_baseline` converts OSError for the
+        # same reason.
+        raise WorktreeSetupError(
+            f"could not run git {' '.join(arguments)} in {repo_root}: {exc}"
+        ) from exc
 
 
 def resolve_ref(repo_root, ref, run_git=_run_git):
@@ -91,7 +101,9 @@ def _head_of(worktree, run_git):
 def create_worktrees(repo_root, ref, names, root=None, run_git=_run_git):
     """One detached worktree per name, all at `ref`, verified before returning.
 
-    Returns `(root, {name: path})`. `root` is a fresh temp directory unless one
+    Returns `(root, {name: path}, commit)` -- the commit included so a caller
+    reports the SHA that was actually verified rather than resolving the ref again.
+    `root` is a fresh temp directory unless one
     is given -- outside the repository either way, because a worktree nested
     inside the tree it was cut from is a tree that contains itself and every
     file walk downstream doubles.
@@ -103,10 +115,19 @@ def create_worktrees(repo_root, ref, names, root=None, run_git=_run_git):
     that does not match the branch. Every worktree's HEAD is compared against
     the resolved SHA here, and a mismatch tears the whole set down.
     """
-    repo_root = Path(repo_root)
+    # Absolute from here down, both of them. `git worktree add` resolves a
+    # relative destination against `git -C <repo_root>`, while `_head_of` ran
+    # `git -C <destination>` against the PROCESS cwd -- so with a relative
+    # --repo-root the verifier checked a directory that did not exist, and a
+    # correctly-created set was torn down with this module's own #156 alarm about
+    # a defect that had not occurred. The payload also hands `root` back to
+    # `remove`, possibly from a different cwd.
+    repo_root = Path(repo_root).resolve()
     commit = resolve_ref(repo_root, ref, run_git)
     root = (
-        Path(tempfile.mkdtemp(prefix="lens-worktrees-")) if root is None else Path(root)
+        Path(tempfile.mkdtemp(prefix="lens-worktrees-"))
+        if root is None
+        else Path(root).resolve()
     )
     root.mkdir(parents=True, exist_ok=True)
 
@@ -137,7 +158,7 @@ def create_worktrees(repo_root, ref, names, root=None, run_git=_run_git):
         # would merge both without knowing which was which.
         remove_worktrees(repo_root, created.values(), run_git=run_git)
         raise
-    return root, created
+    return root, created, commit
 
 
 def remove_worktrees(repo_root, paths, run_git=_run_git):
@@ -162,12 +183,16 @@ def remove_worktrees(repo_root, paths, run_git=_run_git):
 
 
 def _create_command(arguments):
-    root, created = create_worktrees(
+    root, created, commit = create_worktrees(
         arguments.repo_root, arguments.ref, arguments.lenses, root=arguments.root
     )
     return {
         "ref": arguments.ref,
-        "commit": resolve_ref(arguments.repo_root, arguments.ref),
+        # The commit that was VERIFIED, returned by the creation itself. Resolving
+        # the ref a second time here could report a different SHA than the one the
+        # worktrees were checked against, if the ref moved in between -- which is
+        # precisely the drift this module exists to detect.
+        "commit": commit,
         "root": str(root),
         "worktrees": {name: str(path) for name, path in created.items()},
     }

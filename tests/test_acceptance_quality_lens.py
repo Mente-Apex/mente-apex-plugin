@@ -15,6 +15,7 @@ audits one that exists, and neither does the other's job.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -62,7 +63,10 @@ class TestTheLensExistsAndIsShaped:
         assert "refactor-agents/reviewer.md" in read("agents/reviewer.md")
 
     def test_it_declares_a_version(self):
-        assert 'version: "0.1.0"' in read("SKILL.md")
+        """That it HAS one, not which one — pinning the number here is the same
+        transcribe-don't-derive mistake this branch is about, and the eval-stamp
+        guard already checks the value against its eval set."""
+        assert re.search(r'^\s+version: "\d+\.\d+\.\d+"', read("SKILL.md"), re.M)
 
 
 class TestItIsCalibratedToTheColdOccasionalReader:
