@@ -1,114 +1,32 @@
-# GoF HTML report spec
+# GoF HTML preview
 
-Standalone visual spec for the self-contained HTML preview written alongside
-the Markdown report. This file is the single source of truth for the HTML's
-structure and styling — the skill build step reads it, not the other way
-around.
+The renderer is shared — see [../../../docs/html-previews.md](../../../docs/html-previews.md)
+for the command, the self-containment rules and why it is a script rather than a
+styling spec (issue #130). This file keeps only what is this lens's own.
 
-The HTML mirrors the MD report's Detected patterns + Findings + Not
-applicable sections; it is a gitignored artifact written after the MD.
+## Vocabulary
 
-## File
+`gof` badges **pattern grades A–F**, not Critical/Major/Minor tiers, so it
+renders with `--badges grade`:
 
-`docs/reports/gof/GOF-REPORT-<YYYY-MM-DD>.html`, written in a single Write
-tool call after the Markdown file exists. Fully self-contained — no CDN
-scripts, external stylesheets, fonts, or remote images. All CSS lives inline
-in a `<style>` block in `<head>`. No JavaScript is required; a small
-`<script>` for active nav-link highlighting on scroll is allowed. The file
-must open correctly in any modern browser without a local server.
+    sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/report_html.py" \
+        docs/reports/gof/GOF-REPORT-<YYYY-MM-DD>.md --badges grade
 
-## Layout
-
-- **Sticky top header bar** — project name and generation date.
-- **Dark sidebar navigation**, sticky on scroll, listing every section by
-  anchor link: Executive Summary, each detected pattern by name, each
-  recommendation by ID, Not Applicable.
-- **Main content area**, max-width ~900px, comfortable line-height, a
-  readable serif or system-ui font for body text and monospace for code.
-- `scroll-behavior: smooth` on `html`.
-
-## Grade badges
-
-Colour-coded pill on each detected-pattern heading:
-
-| Grade | Colour | Background | Text |
-|---|---|---|---|
-| A | green | `#22c55e` | white |
-| B | blue | `#3b82f6` | white |
-| C | amber | `#f59e0b` | white |
-| D | orange | `#f97316` | white |
-| F | red | `#dc2626` | white |
-
-## Category chips
-
-Small outlined pills placed before the pattern name, one colour per
-category:
-
-- Creational — muted purple
-- Structural — muted teal
-- Behavioral — muted indigo
-
-## Executive Summary card
-
-Rendered as a prominent card at the top:
-
-- Maturity level as a progress-bar-style indicator: Nascent → Emerging →
-  Moderate → Mature.
-- Detected patterns listed with their grade badges.
-- Recommendation counts (Critical / Major / Minor) with numbered bullets for
-  the top wins.
-
-## Detected-pattern cards
-
-One card per entry in "Detected patterns (graded inventory)":
-
-- Coloured left border matching the grade colour.
-- Labelled sub-sections (Location, Evidence, Strengths, Issues,
-  Recommendation, Related) using small-caps labels in muted text.
-- A distinct light-yellow background for the Recommendation block so it
-  stands out from the rest of the card.
-
-## Recommendation cards
-
-One card per Critical/Major/Minor rec:
-
-- Coloured left border by tier: Critical red `#dc2626`, Major amber `#f59e0b`,
-  Minor slate `#64748b` — slate rather than blue so the tier palette never
-  reads as one of the grade-badge colours above (`#3b82f6` is already Grade B).
-- Labelled sub-sections matching the MD report's fields: Pattern, Location,
-  Problem now, Proposed change, Expected benefit, Related, Risk,
-  Verification, Status.
-- A small status pill (`pending` / `applied` / `failed` / `skipped`) in the
-  card header — a stated lossy mapping of the canonical `Status:` vocabulary
-  ([docs/report-contract.md](../../../docs/report-contract.md) /
-  [docs/refactor-workflow.md](../../../docs/refactor-workflow.md)): `failed`
-  collapses `failed (reverted)`, and `skipped` collapses both
-  `skipped (not approved)` and `skipped (lost conflict to <winner-id>)`. The
-  MD report's `Status:` line keeps the full value; the pill is a compact
-  preview, not a second source of truth.
-- Where the recommendation includes a before/after sketch, render it in a
-  two-column layout where space allows (stacked on narrow viewports).
-
-## Code / sketch blocks
-
-- Dark background (`#1e1e2e`), light text (`#cdd6f4`).
-- A small "BEFORE" / "AFTER" label badge in the top-right corner of each
-  block.
-
-## Not applicable grid
-
-A clean two-column grid of small cards, each showing the pattern name and
-its one-line reason — mirrors the MD report's "Not applicable" table.
-
-## Content mapping
-
-| HTML section | Source in the MD report |
+| Grade | Colour |
 |---|---|
-| Executive Summary card | `## Summary` |
-| Detected-pattern cards | `## Detected patterns (graded inventory — informational)` |
-| Recommendation cards | `## Findings` (Critical / Major / Minor) |
-| Not Applicable grid | `## Not applicable` |
+| A — Clean implementation | green `#22c55e` |
+| B | blue `#3b82f6` |
+| C — Structural issues | amber `#f59e0b` |
+| D | orange `#f97316` |
+| F | red `#dc2626` |
 
-Reviewer notes and the Apply log are internal to the MD workflow and are not
-rendered in the HTML — the HTML is a read-only preview for humans, not a
-place recommendation Status gets edited.
+The grade scale is a real distinction this lens makes about an *existing*
+implementation, which is why it was not flattened into the tier scale when the
+renderer was shared: a `C` Singleton is not a "Major finding", it is a working
+pattern with a stated gap.
+
+## Under the umbrella
+
+`/code-quality` instructs this lens's reviewer to **skip the HTML preview** — the
+one consolidated report is the product there, and six per-lens previews are six
+files nobody opens.
