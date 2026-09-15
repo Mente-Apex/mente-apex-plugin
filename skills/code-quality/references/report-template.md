@@ -77,25 +77,55 @@ do I apply these in*, and *where does this run currently stand*. The index is on
 scannable table that answers all three at a glance, so nobody reverse-engineers the
 apply order from scattered *Related* lines or hunts a code's principle across pages.
 
-- **One row per finding**, every actionable finding listed (grouped-change members
-  included — the `Group role` column places them). Decode the Lens / Principle codes
-  via the Legend.
-- **Ordered by `Order`** — the recommended apply sequence, *not* merely tier order.
-  It is Critical → Major → Minor **with dependency overrides made explicit**: a
-  change that creates a module another moves into runs first; a grouped change is one
-  job, so its members share one `Order` number (Primary row first). Ungrouped recs
-  that must precede/follow another get ordered accordingly, not just by tier.
-- **`Principle` is the "which principle broke" column** the plain code can't carry
-  (the code encodes lens + tier + number, never SRP-vs-OCP). SOLID → `SRP`/`OCP`/…;
-  clean-arch → `ADP`/`SDP`/`SAP`/`Dependency Rule`; ddd → the concept
-  (`leaked language`, `missing port`); gof → the pattern; clean-code → its rule
-  (`#4 DRY`, `#8 few args`). All decodable in the Legend.
-- **`Status` mirrors each finding's `Status:` line** — so the index is a live progress
-  board during apply, and the persisted overview at a glance after.
+**Five columns, and no more.** The old eight (Order, Code, Tier, Lens · Principle,
+Group role, Title, Risk, Status) wrapped on any realistic width and squeezed the one
+column a reader actually scans — the title — into a sliver. Tier is already inside the
+ID (`solid/major-1` says Major), and group role belongs beside the order number it
+shares, so both fold in:
 
-Follow the table with a short **Apply order** note: one line of *why* for any
-non-obvious ordering (e.g. "group-2 before ddd/minor-2 — the split gives the
-extracted function its home"). Obvious tier-order needs no note.
+| Column | Carries |
+|---|---|
+| `#` | Apply order. Grouped members share the number and mark their role: `2ᴾ` primary, `2ᴿ` rides along. |
+| `Finding` | The ID in backticks, then the title. One line, and the title gets the width. |
+| `Breaks` | Lens · principle — the "which principle broke" fact the ID cannot carry. Decode in the Legend. |
+| `Risk` | Low / Med / High, as the apply phase reads it. |
+| `Status` | Mirrors the finding's own `Status:` line exactly. |
+
+- **One row per finding**, every actionable finding listed, grouped members included.
+- **`#` is the apply sequence, not tier order.** Critical → Major → Minor **with
+  dependency overrides made explicit**: a change that creates the module another moves
+  into runs first. A grouped change is one job and shares one number.
+- **`Status` mirrors the finding's `Status:` line exactly** — same word, same
+  parenthetical. Two places, one fact; they are compared mechanically (below), and a
+  dashboard that disagrees with the report is worse than no dashboard, because it is
+  read, believed, and wrong.
+
+**Open with the progress line**, above the table, so the state is legible before the
+first row: `**3 of 9 applied · 5 pending · 1 deferred**`. On an audit-only run that
+reads `0 of 9 applied · 9 pending`, which is honest and takes one line.
+
+**The `#` column is a queue, not a suggestion.** Phase 4 consumes it top to bottom. A
+finding may be taken out of turn — the operator may reorder deliberately — but then the
+Apply log carries a one-line reason, because the failure this hides is the expensive
+one: a change applied before the change that was going to give it a home. Follow the
+table with a short **Apply order** note: one line of *why* for each non-obvious
+position ("group-2 before ddd/minor-2 — the split gives ddd/minor-2's extracted
+function its home"). Obvious tier order needs no note.
+
+**Check it rather than trusting it.** The index, the findings' `Status:` lines and the
+Apply log are three views of the same run, and prose asking an agent to keep them in
+sync is a guard nothing can check:
+
+    sh "$CLAUDE_PLUGIN_ROOT/bin/mente-python" "$CLAUDE_PLUGIN_ROOT/scripts/report_index.py" \
+        docs/reports/code-quality/CODE-QUALITY-REPORT-<YYYY-MM-DD>.md
+
+It prints the progress line and every disagreement: a status that drifted between row
+and finding, a finding the Apply log records but nobody stamped, an `applied` with no
+log line behind it, an order jumped with no reason, a grouped change split across two
+numbers. Advisory by default (a report mid-apply is legitimately inconsistent for as
+long as one edit takes); `--strict` exits non-zero for a hook or CI. **Run it at the
+Phase 3 gate and again at Phase 5** — once before the human reads the report, once
+before the Outcome is written.
 
 ## Outcome (the persisted run summary — filled at Phase 5, not at generation)
 
@@ -142,18 +172,21 @@ no outcome — the index Status column, all `pending`, already says so).
 
 ## Findings index
 
-Recommended apply order top to bottom; grouped-change members share one Order (Primary first).
-Decode Lens / Principle via the Legend.
+**0 of 4 applied · 4 pending**
 
-| Order | Code | Tier | Lens · Principle | Group role | Title | Risk | Status |
-|---|---|---|---|---|---|---|---|
-| 1 | `solid/major-1` | Major | SOLID · SRP | group-2 · Primary | Split the 1889-line command god-module | Med | pending |
-| 1 | `clean-code/major-1` | Major | clean-code · #4 DRY | group-2 · Rides along | Extract the 4-site credential read | Low | pending |
-| 2 | `clean-arch/major-1` | Major | clean-arch · ADP | — | Break the 23-module import cycle | Low | pending |
-| 3 | `clean-code/minor-1` | Minor | clean-code · #4 DRY | — | Extract the duplicated skeleton-report dict | Low | pending |
+Apply top to bottom. `ᴾ` primary of a grouped change, `ᴿ` rides along with it — one
+group is one job. Decode `Breaks` in the Legend.
 
-**Apply order.** <one line of *why* per non-obvious ordering; obvious tier order needs none — e.g.
+| # | Finding | Breaks | Risk | Status |
+|---|---|---|---|---|
+| 1ᴾ | `solid/major-1` Split the 1889-line command god-module | SOLID · SRP | Med | pending |
+| 1ᴿ | `clean-code/major-1` Extract the 4-site credential read | clean-code · #4 DRY | Low | pending |
+| 2 | `clean-arch/major-1` Break the 23-module import cycle | clean-arch · ADP | Low | pending |
+| 3 | `clean-code/minor-1` Extract the duplicated skeleton-report dict | clean-code · #4 DRY | Low | pending |
+
+**Apply order.** <one line of *why* per non-obvious position; obvious tier order needs none — e.g.
 "group-2 before ddd/minor-2 — the package split gives ddd/minor-2's extracted function its home.">
+<and, where a finding was taken out of turn, the reason — the Apply log carries it too>
 
 ## Legend
 
